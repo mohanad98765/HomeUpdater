@@ -107,6 +107,7 @@ async def reboot(req: RebootRequest = RebootRequest()) -> dict:
             logger.info("POST /api/system/reboot - cancelling pending shutdown")
             subprocess.run(
                 ["shutdown", "/a"],
+                stdin=subprocess.DEVNULL,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -122,6 +123,7 @@ async def reboot(req: RebootRequest = RebootRequest()) -> dict:
         logger.info(f"POST /api/system/reboot - scheduling reboot in {delay}s")
         subprocess.run(
             ["shutdown", "/r", "/t", str(delay), "/c", msg],
+            stdin=subprocess.DEVNULL,
             check=True,
             capture_output=True,
             text=True,

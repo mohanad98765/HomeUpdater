@@ -103,6 +103,7 @@ def _read_arp_table() -> dict[str, str]:
     try:
         result = subprocess.run(
             ["arp", "-a"],
+            stdin=subprocess.DEVNULL,  # windowed builds have no valid stdin handle
             capture_output=True,
             text=True,
             timeout=10,

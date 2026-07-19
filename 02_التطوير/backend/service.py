@@ -40,6 +40,15 @@ class HomeUpdaterService(win32serviceutil.ServiceFramework):
         win32event.SetEvent(self._stop_event)
 
     def SvcDoRun(self):
+        import os
+        import sys
+
+        # A service has no console: sys.stdout/stderr are None. Guard them so
+        # uvicorn's log formatter (sys.stdout.isatty()) doesn't crash.
+        for name in ("stdout", "stderr"):
+            if getattr(sys, name) is None:
+                setattr(sys, name, open(os.devnull, "w"))  # noqa: SIM115
+
         import uvicorn
 
         from app.config import settings
@@ -56,6 +65,7 @@ class HomeUpdaterService(win32serviceutil.ServiceFramework):
                 host=settings.host,
                 port=settings.port,
                 log_level=settings.log_level.lower(),
+                log_config=None,
             )
         )
         thread = threading.Thread(target=self._server.run, daemon=True)

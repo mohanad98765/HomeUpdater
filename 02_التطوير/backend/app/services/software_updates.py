@@ -56,6 +56,7 @@ async def _run(*args: str, timeout: float = 600.0) -> tuple[int, str, str]:
     """Run a command and return (returncode, stdout, stderr)."""
     proc = await asyncio.create_subprocess_exec(
         *args,
+        stdin=asyncio.subprocess.DEVNULL,  # windowed builds have no valid stdin handle
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

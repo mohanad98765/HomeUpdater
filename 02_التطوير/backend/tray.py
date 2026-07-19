@@ -14,6 +14,17 @@ import threading
 import webbrowser
 
 
+def _ensure_std_streams() -> None:
+    """In a windowed (--noconsole) build, sys.stdout/stderr are None. Give them a
+    discard sink so libraries that touch them (uvicorn's log formatter calls
+    sys.stdout.isatty(), plus print/loguru) don't crash the whole app."""
+    import sys
+
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w"))  # noqa: SIM115
+
+
 def _make_icon_image():
     """The brand tray icon (assets/tray.png, bundled by PyInstaller).
 
@@ -45,8 +56,11 @@ class _BackgroundServer:
 
         from app.main import app
 
+        # log_config=None: skip uvicorn's own logging setup (its color formatter
+        # calls sys.stdout.isatty(), which crashes in a windowed build). The app
+        # configures loguru itself in the lifespan.
         self._server = uvicorn.Server(
-            uvicorn.Config(app, host=host, port=port, log_level=log_level)
+            uvicorn.Config(app, host=host, port=port, log_level=log_level, log_config=None)
         )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
 
@@ -58,6 +72,8 @@ class _BackgroundServer:
 
 
 def main() -> None:
+    _ensure_std_streams()  # must run before uvicorn/loguru touch the streams
+
     import pystray
 
     from app.config import settings

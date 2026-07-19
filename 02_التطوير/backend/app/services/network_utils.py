@@ -64,6 +64,7 @@ def _get_default_gateway() -> str | None:
     try:
         result = subprocess.run(
             ["route", "PRINT", "0.0.0.0"],
+            stdin=subprocess.DEVNULL,  # windowed builds have no valid stdin handle
             capture_output=True,
             text=True,
             timeout=3,
