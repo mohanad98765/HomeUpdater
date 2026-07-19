@@ -2,7 +2,7 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('../frontend/dist', 'frontend_dist'), ('alembic', 'alembic'), ('alembic.ini', '.'), ('VERSION', '.')]
+datas = [('../frontend/dist', 'frontend_dist'), ('alembic', 'alembic'), ('alembic.ini', '.'), ('VERSION', '.'), ('assets', 'assets')]
 binaries = []
 hiddenimports = ['win32com', 'win32com.client', 'pythoncom', 'win32timezone', 'adb_shell']
 hiddenimports += collect_submodules('sqlalchemy')
@@ -49,6 +49,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['assets\\HomeUpdater.ico'],
 )
 coll = COLLECT(
     exe,

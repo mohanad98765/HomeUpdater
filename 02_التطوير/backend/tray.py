@@ -15,14 +15,25 @@ import webbrowser
 
 
 def _make_icon_image():
-    """A placeholder brand icon (blue shield + update check). TODO(Phase A): swap
-    for the real logo once art exists."""
+    """The brand tray icon (assets/tray.png, bundled by PyInstaller).
+
+    Falls back to a drawn house mark if the asset is missing.
+    """
+    import sys
+    from pathlib import Path
+
     from PIL import Image, ImageDraw
+
+    base = getattr(sys, "_MEIPASS", None) or str(Path(__file__).resolve().parent)
+    icon_path = Path(base) / "assets" / "tray.png"
+    if icon_path.is_file():
+        return Image.open(icon_path)
 
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([10, 6, 54, 50], radius=12, fill=(13, 71, 161, 255))  # #0D47A1
-    draw.line([(22, 30), (30, 39), (45, 19)], fill=(255, 255, 255, 255), width=6, joint="curve")
+    draw.rounded_rectangle([6, 6, 58, 58], radius=14, fill=(13, 71, 161, 255))  # #0D47A1
+    draw.polygon([(32, 18), (16, 32), (48, 32)], fill=(255, 255, 255, 255))
+    draw.rectangle([22, 30, 42, 48], fill=(255, 255, 255, 255))
     return img
 
 
