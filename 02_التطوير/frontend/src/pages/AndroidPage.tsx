@@ -333,7 +333,27 @@ function AddDeviceDialog({
             </button>
           </div>
 
-          <p className="text-sm text-fg-muted mb-4">{t("android.addDialog.hint")}</p>
+          <p className="text-sm text-fg-muted mb-3">{t("android.addDialog.hint")}</p>
+
+          <div className="mb-4 p-3 rounded-md bg-info/10 border border-info/30 text-xs text-fg-muted space-y-2">
+            <div className="font-bold text-info">أين أجد الـ IP والمنفذ؟</div>
+            <div>
+              <b>Android 11 فأحدث (لاسلكي):</b> الإعدادات ← خيارات المطوّر ←{" "}
+              <span dir="ltr">Wireless debugging</span> (فعّله) ← اضغط على الخيار نفسه ← ستظهر{" "}
+              <span dir="ltr">«IP address &amp; Port»</span> مثل{" "}
+              <span dir="ltr" className="font-mono">192.168.1.50:37123</span> — انسخ الاثنين هنا.
+              <span className="text-warning"> المنفذ يتغيّر كل مرّة (ليس 5555).</span>
+            </div>
+            <div>
+              <b>أقدم أو عبر USB:</b> وصّل الهاتف بالكمبيوتر بكابل مرّة، شغّل{" "}
+              <span dir="ltr" className="font-mono">adb tcpip 5555</span>، ثم استخدم IP الهاتف مع المنفذ{" "}
+              <span dir="ltr" className="font-mono">5555</span>.
+            </div>
+            <div className="text-fg-subtle">
+              أوّل اتصال: سيسأل الهاتف «السماح بتصحيح USB؟» — اقبل. (اللاسلكي قد يتطلّب «إقران» أولاً من
+              نفس الشاشة عبر رمز الإقران.)
+            </div>
+          </div>
 
           <div className="space-y-3">
             <div>

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   ExternalLink,
   Info,
+  Search,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -31,6 +32,21 @@ interface Overview {
   devices: DeviceCVE[];
   vendors_total: number;
   vendors_checked: number;
+}
+interface CVEItem {
+  id: string;
+  score: number;
+  severity: string;
+  published: string;
+  description: string;
+  url: string;
+}
+interface CVESummary {
+  keyword: string;
+  total_results: number;
+  cves: CVEItem[];
+  fetched_at: string | null;
+  cached: boolean;
 }
 
 const sevBadge = (s: string | null) =>
@@ -66,6 +82,17 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["security-overview"] }),
   });
 
+  // فحص يدوي: اكتب أي مصنّع/كلمة (TP-Link، Cisco…) وافحصه مباشرة — يعمل دائماً
+  const [keyword, setKeyword] = useState("");
+  const manual = useMutation<CVESummary, Error, string>({
+    mutationFn: (kw) =>
+      apiFetch<CVESummary>(`/api/security/cves?keyword=${encodeURIComponent(kw)}`),
+  });
+  const runManual = () => {
+    const kw = keyword.trim();
+    if (kw) manual.mutate(kw);
+  };
+
   const devices = overview.data?.devices ?? [];
   const withVendor = useMemo(() => devices.filter((d) => d.vendor), [devices]);
   const flagged = useMemo(() => withVendor.filter((d) => (d.cve_total ?? 0) > 0), [withVendor]);
@@ -86,6 +113,11 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
           type="button"
           onClick={() => refresh.mutate()}
           disabled={refresh.isPending || withVendor.length === 0}
+          title={
+            withVendor.length === 0
+              ? "افحص الشبكة أولاً من صفحة «الأجهزة» ليظهر مصنّعو الأجهزة، أو استخدم «الفحص اليدوي» بالأسفل"
+              : "فحص ثغرات كل مصنّعي الأجهزة المكتشفة"
+          }
           className="btn-primary inline-flex items-center gap-2"
         >
           {refresh.isPending ? (
@@ -111,6 +143,102 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
           افتح رابط <span dir="ltr">NVD</span> لتفاصيل كل ثغرة. أوّل فحص قد يستغرق دقيقة (حدود معدّل NVD)،
           ثم يُخزَّن مؤقتاً 24 ساعة.
         </div>
+      </div>
+
+      {/* فحص يدوي — يعمل دائماً بلا حاجة لمسح الشبكة */}
+      <div className="card mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Search className="w-4 h-4 text-primary" />
+          <h3 className="font-bold">فحص يدوي لأي مصنّع</h3>
+        </div>
+        <p className="text-xs text-fg-muted mb-3">
+          اكتب اسم أي مصنّع أو منتج (مثل <span dir="ltr">TP-Link</span>، <span dir="ltr">Cisco</span>،{" "}
+          <span dir="ltr">Samsung</span>، <span dir="ltr">iPhone</span>) وافحص ثغراته مباشرة من{" "}
+          <span dir="ltr">NVD</span> — دون الحاجة لمسح الشبكة.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            dir="ltr"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runManual()}
+            placeholder="TP-Link، Cisco، Samsung…"
+            className="flex-1 min-w-[200px] px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
+          />
+          <button
+            type="button"
+            onClick={runManual}
+            disabled={manual.isPending || keyword.trim().length === 0}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            {manual.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> جارٍ الفحص…
+              </>
+            ) : (
+              <>
+                <Search className="w-4 h-4" /> فحص
+              </>
+            )}
+          </button>
+        </div>
+
+        {manual.isError && (
+          <div className="mt-3 p-3 rounded-md border border-danger/30 bg-danger/10 text-danger text-sm">
+            تعذّر الفحص: {manual.error.message}
+          </div>
+        )}
+
+        {manual.data && (
+          <div className="mt-4">
+            <div className="text-sm mb-2">
+              نتائج <span className="font-bold" dir="ltr">{manual.data.keyword}</span>:{" "}
+              <span className="font-mono font-bold text-warning">
+                {manual.data.total_results.toLocaleString()}
+              </span>{" "}
+              ثغرة معروفة إجمالاً
+              {manual.data.cached && <span className="text-fg-subtle text-xs"> (من الكاش)</span>}
+            </div>
+            {manual.data.cves.length === 0 ? (
+              <p className="text-sm text-success inline-flex items-center gap-1">
+                <ShieldCheck className="w-4 h-4" /> لا نتائج مطابقة.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                {manual.data.cves.map((c) => (
+                  <li key={c.id} className="p-3 hover:bg-surface-2/50">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1"
+                        dir="ltr"
+                      >
+                        {c.id} <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <div className="flex items-center gap-2">
+                        {c.severity && (
+                          <span className={cn("badge", sevBadge(c.severity))}>
+                            {sevLabel[c.severity] || c.severity}
+                            {c.score > 0 && ` · ${c.score.toFixed(1)}`}
+                          </span>
+                        )}
+                        <span className="text-xs text-fg-subtle font-mono">{c.published}</span>
+                      </div>
+                    </div>
+                    {c.description && (
+                      <p className="mt-1 text-xs text-fg-muted line-clamp-2" dir="ltr">
+                        {c.description}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Stats */}

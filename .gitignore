@@ -58,6 +58,13 @@ installer-output/
 *.msi
 !setup.exe
 
+# --- Code-signing secrets (NEVER commit private keys) ---
+*.pfx
+*.p12
+*.snk
+*.key
+# public certificate (.cer) is safe to keep for verification
+
 # Claude Code runtime artifacts
 .claude/scheduled_tasks.lock
 

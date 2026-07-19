@@ -16,6 +16,7 @@ import {
   RotateCw,
   Monitor,
   Power,
+  Info,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -339,6 +340,21 @@ function WUAUpdatesView({ kind }: { kind: "windows" | "drivers" }) {
           </div>
         </div>
       )}
+
+      {/* Scope note — what this tab updates, and where other devices are handled */}
+      <div className="card mb-6 flex items-start gap-3 text-sm border-info/30 bg-info/5">
+        <Info className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
+        <div className="text-fg-muted">
+          تحديثات <span className="font-semibold text-fg">Windows والبرامج والتعريفات</span> هنا تُطبَّق
+          على <span className="font-semibold text-fg">هذا الجهاز</span> (المركز الذي يعمل عليه HomeUpdater)،
+          لأن أدوات التحديث (<span dir="ltr">Windows Update</span> و<span dir="ltr">winget</span>) تنفَّذ محلياً.
+          لتحديث أجهزة أخرى من نفس المكان استخدم تبويباتها:{" "}
+          <span className="font-semibold text-fg">Android</span> (لاسلكياً عبر ADB)،{" "}
+          <span className="font-semibold text-fg">لينكس/SSH</span>، و<span className="font-semibold text-fg">المنزل الذكي</span>{" "}
+          (Home Assistant). تحديث أجهزة <span dir="ltr">Windows</span> أخرى <span className="font-semibold text-fg">عن بُعد</span>{" "}
+          يتطلّب تفعيل <span dir="ltr">WinRM</span> على كل جهاز — ميزة مخطَّطة (المرحلة 1.6).
+        </div>
+      </div>
 
       {/* Stat row */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">

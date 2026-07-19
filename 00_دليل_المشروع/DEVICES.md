@@ -20,11 +20,30 @@
 |-------|---------|
 | الاكتشاف | ARP scan + nmap (port 5985 WinRM, 445 SMB) |
 | التعرّف | MAC OUI + SMB OS detection + hostname |
-| التحديث | ✅ تلقائي عبر `winget upgrade --all` (للبرامج) + Windows Update (للنظام) |
+| التحديث (الجهاز المحلي / الـ hub) | ✅ تلقائي عبر `winget upgrade --all` (للبرامج) + Windows Update (للنظام) + التعريفات |
+| التحديث (أجهزة Windows أخرى عن بُعد) | 🟡 قيد التخطيط (المرحلة 1.6) — عبر WinRM: تشغيل winget / PSWindowsUpdate على الهدف |
 | المصادر الرسمية | Microsoft Update Catalog, winget index |
 | المصادر غير الرسمية | Chocolatey, Scoop |
-| المتطلبات | تفعيل WinRM أو SSH على الجهاز الهدف |
-| الحدود | يحتاج صلاحيات Admin، بعض البرامج لا تدعم winget |
+| المتطلبات (المحلي) | صلاحيات Admin على الـ hub |
+| المتطلبات (عن بُعد) | تفعيل WinRM على الهدف + بيانات اعتماد مسؤول |
+| الحدود | أدوات Windows Update/winget تنفَّذ محلياً على كل جهاز؛ التحديث عن بُعد يحتاج WinRM لأن لا API سحابياً مركزياً. بعض البرامج لا تدعم winget |
+
+> **لماذا التحديث المحلي فقط الآن؟** `Windows Update` و`winget` أدوات تعمل على
+> الجهاز نفسه، فتحديث الـ hub مباشر. تحديث أجهزة Windows أخرى يتطلّب قناة تنفيذ
+> عن بُعد — الخيار العملي هو **WinRM** (PowerShell Remoting)، وهو ما تغطّيه
+> المرحلة 1.6 أدناه. (أجهزة لينكس/الأندرويد/أجهزة HA تُحدَّث عن بُعد فعلاً عبر
+> SSH/ADB/REST — الفجوة محصورة في أجهزة Windows البعيدة.)
+
+#### المرحلة 1.6 — تحديث Windows عن بُعد (WinRM) — التصميم المقترح
+- **الاعتماد الجديد:** `pywinrm` (HTTP/HTTPS إلى منفذ 5985/5986).
+- **جدول `winrm_hosts`:** host, username, password (مشفَّرة/غير معادة)، اسم مخصّص،
+  آخر حالة — على غرار جدول `ssh_hosts`.
+- **الخدمة `winrm.py`:** `probe()` (اسم النظام/الإصدار)، `check_updates()` (تشغيل
+  `winget upgrade` أو موديول `PSWindowsUpdate` عن بُعد)، `apply_updates()`.
+- **endpoints:** `/api/winrm/hosts` CRUD + `/check` + `/upgrade` (كلمة المرور لا تُعرَض).
+- **صفحة «حواسيب Windows»:** إضافة جهاز عن بُعد + فحص + ترقية بنقرة.
+- **الأمان:** WinRM عبر HTTPS مفضَّل؛ تحذير صريح عند HTTP؛ بيانات الاعتماد لا تُسجَّل.
+- **الحدود:** يجب على المستخدم تفعيل WinRM على الهدف (`Enable-PSRemoting`) ومنحه صلاحيات مسؤول.
 
 ### 1.2 Linux (Ubuntu/Debian/Fedora)
 | البند | التفصيل |
