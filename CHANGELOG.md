@@ -30,6 +30,10 @@
 ### أُضيف (Added)
 - أقفال تزامن (HTTP 409) على المسح والفحص والتثبيت لمنع العمليات المتوازية المتضاربة.
 - تهيئة مستودع Git مع `.gitignore` جذر شامل.
+- **حزمة اختبارات pytest (47 اختباراً)** تحت `backend/tests/` تغطّي: مُحلِّل winget
+  (عربي/إنجليزي)، middleware الأمان (Host/CSRF)، upsert المسح مع MAC فارغ، حقن ADB،
+  قفل مؤشِّرات التقدُّم، أقفال التزامن، واختبارات smoke للـ endpoints. جميعها تجتاز
+  على الإصدارات المثبَّتة في `requirements.txt`.
 
 ### أُزيل / نُظِّف (Removed)
 - 5 وحدات ميتة: `services/network.py`, `services/classifier.py`, `models/device.py`,
