@@ -184,18 +184,21 @@ async def trigger_scan(
                 d.vendor = raw["vendor"]
             d.device_type = raw["device_type"]
         else:
-            db.add(
-                DeviceORM(
-                    ip=raw["ip"],
-                    mac=raw["mac"] or None,  # None (not "") so multiple MAC-less hosts coexist
-                    hostname=raw["hostname"] or "",
-                    vendor=raw["vendor"] or "",
-                    device_type=raw["device_type"],
-                    is_online=True,
-                    first_seen=now,
-                    last_seen=now,
-                )
+            d = DeviceORM(
+                ip=raw["ip"],
+                mac=raw["mac"] or None,  # None (not "") so multiple MAC-less hosts coexist
+                hostname=raw["hostname"] or "",
+                vendor=raw["vendor"] or "",
+                device_type=raw["device_type"],
+                is_online=True,
+                first_seen=now,
+                last_seen=now,
             )
+            db.add(d)
+            # Track it in `existing` so a duplicate key later in THIS batch (e.g.
+            # two IPs sharing one MAC, common with ARP-based discovery) updates
+            # this row instead of inserting again and hitting the UNIQUE(mac).
+            existing[key] = d
             new_count += 1
 
     # Mark previously-known devices that didn't respond as offline

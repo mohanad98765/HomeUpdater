@@ -64,6 +64,38 @@ def test_rescan_updates_without_duplicating(client, monkeypatch):
     assert second["new"] == 0  # nothing new on the second pass
 
 
+def test_duplicate_mac_in_one_scan_does_not_crash(client, monkeypatch):
+    # Two IPs sharing one MAC (ARP proxy / router alias) must not violate
+    # UNIQUE(devices.mac) — they collapse to a single device row.
+    async def fake_scan(subnet):
+        return {
+            "subnet": "10.0.0.0/24",
+            "devices": [
+                {
+                    "mac": "AA:BB:CC:00:00:01",
+                    "ip": "10.0.0.5",
+                    "hostname": "",
+                    "vendor": "",
+                    "device_type": "unknown",
+                },
+                {
+                    "mac": "AA:BB:CC:00:00:01",
+                    "ip": "10.0.0.6",
+                    "hostname": "",
+                    "vendor": "",
+                    "device_type": "unknown",
+                },
+            ],
+        }
+
+    monkeypatch.setattr("app.routers.devices.scan_network", fake_scan)
+    r = client.post("/api/devices/scan", json={}, headers=CSRF_HEADER)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 1  # deduped by MAC
+    assert body["new"] == 1
+
+
 def test_concurrent_scan_rejected(client):
     scan_progress.is_running = True
     try:
