@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- ملاحظة: شعار مؤقَّت — استبدله عند توفُّر شعار المستخدم النهائي -->
+  <rect width="64" height="64" rx="14" fill="#0D47A1"/>
+  <!-- درع -->
+  <path d="M32 12 L48 18 V32 C48 41.5 41 49.5 32 52 C23 49.5 16 41.5 16 32 V18 Z"
+        fill="#1976D2" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/>
+  <!-- علامة التحديث -->
+  <path d="M26 30 A6 6 0 1 1 32 36"
+        stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <path d="M26 26 V31 H31" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- نقطة وصل (شبكة) -->
+  <circle cx="32" cy="40" r="2.5" fill="#26A69A"/>
+</svg>

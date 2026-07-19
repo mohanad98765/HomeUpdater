@@ -1,0 +1,61 @@
+# ================================================================
+#  HomeUpdater Backend - Python Dependencies
+#  Last updated: 2026-04-27
+# ================================================================
+
+# === Core Web Framework ===
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# === Database ===
+sqlalchemy==2.0.36
+alembic==1.14.0
+aiosqlite==0.20.0
+# greenlet is a transitive dep of sqlalchemy[asyncio], but isn't always
+# auto-installed on Python 3.13. Pin it explicitly to avoid the
+# "ValueError: the greenlet library is required" startup crash.
+greenlet==3.1.1
+
+# === Network Discovery ===
+python-nmap==0.7.1
+scapy==2.6.1
+zeroconf==0.136.0
+# Use psutil for network interface info (replaces netifaces).
+# Reason: netifaces is unmaintained and has no wheels for Python 3.11+,
+#   so pip tries to compile from source which requires Microsoft Visual C++.
+#   psutil provides equivalent network-interface info via psutil.net_if_addrs()
+#   and ships prebuilt wheels for every supported Python version.
+psutil==6.1.0
+
+# === SSH / Remote Operations ===
+paramiko==3.5.0
+asyncssh==2.18.0
+
+# === Android (ADB) ===
+adb-shell==0.4.4
+
+# === HTTP / API ===
+httpx==0.28.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+
+# === Security ===
+cryptography==44.0.0
+argon2-cffi==23.1.0
+passlib==1.7.4
+
+# === Logging & Monitoring ===
+loguru==0.7.3
+
+# === Windows Native Integration ===
+pywin32==308; sys_platform == "win32"
+pystray==0.19.5
+Pillow==11.0.0
+
+# === Development & Testing ===
+pytest==8.3.4
+pytest-asyncio==0.25.0
+black==24.10.0
+ruff==0.8.4

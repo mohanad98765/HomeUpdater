@@ -1,0 +1,219 @@
+"""
+SQLAlchemy ORM models for persisted entities.
+
+Phase 1.3 introduces:
+  - DeviceORM: a row in the `devices` table.
+
+The API wire format is produced by each model's `to_dict()` here plus the inline
+Pydantic request bodies in routers/*.py. (models/device.py is legacy/unused.)
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Optional
+
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    """Shared declarative base for all HomeUpdater ORM models."""
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class DeviceORM(Base):
+    """A device known to live on the local network."""
+
+    __tablename__ = "devices"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # Network identity.
+    # NULL (not "") when the MAC is unknown — SQLite lets a UNIQUE column hold
+    # many NULLs, so several MAC-less hosts (common on non-admin scans) can all
+    # be stored. Storing "" here would violate the UNIQUE index on the 2nd host.
+    mac: Mapped[Optional[str]] = mapped_column(
+        String(32), unique=True, index=True, nullable=True, default=None
+    )
+    ip: Mapped[str] = mapped_column(String(45), index=True, default="")
+    hostname: Mapped[str] = mapped_column(String(255), default="")
+    vendor: Mapped[str] = mapped_column(String(255), default="")
+
+    # Classification
+    device_type: Mapped[str] = mapped_column(String(32), default="unknown")
+
+    # User overrides (Phase 1.3)
+    custom_name: Mapped[str] = mapped_column(String(255), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    # Lifecycle
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    is_online: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "mac": self.mac or "",  # keep the wire contract (never null) for the UI
+            "ip": self.ip,
+            "hostname": self.hostname,
+            "vendor": self.vendor,
+            "device_type": self.device_type,
+            "custom_name": self.custom_name,
+            "notes": self.notes,
+            "status": "online" if self.is_online else "offline",
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            # display_name: custom > hostname > vendor > ip
+            "display_name": (
+                self.custom_name or self.hostname or self.vendor or self.ip
+            ),
+        }
+
+
+class AndroidDeviceORM(Base):
+    """An Android phone/tablet the user has added via ADB over TCP/IP."""
+
+    __tablename__ = "android_devices"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    host: Mapped[str] = mapped_column(String(64), index=True)
+    port: Mapped[int] = mapped_column(Integer, default=5555)
+    serial: Mapped[str] = mapped_column(String(128), default="")
+    manufacturer: Mapped[str] = mapped_column(String(128), default="")
+    model: Mapped[str] = mapped_column(String(128), default="")
+    brand: Mapped[str] = mapped_column(String(128), default="")
+    android_version: Mapped[str] = mapped_column(String(32), default="")
+    sdk_version: Mapped[str] = mapped_column(String(32), default="")
+    security_patch: Mapped[str] = mapped_column(String(32), default="")
+
+    # User overrides
+    custom_name: Mapped[str] = mapped_column(String(255), default="")
+
+    # Lifecycle
+    is_online: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "host": self.host,
+            "port": self.port,
+            "serial": self.serial,
+            "manufacturer": self.manufacturer,
+            "model": self.model,
+            "brand": self.brand,
+            "android_version": self.android_version,
+            "sdk_version": self.sdk_version,
+            "security_patch": self.security_patch,
+            "custom_name": self.custom_name,
+            "is_online": self.is_online,
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "display_name": (
+                self.custom_name
+                or f"{self.manufacturer} {self.model}".strip()
+                or self.serial
+                or f"{self.host}:{self.port}"
+            ),
+        }
+
+
+class SoftwarePackageORM(Base):
+    """A winget package that has an upgrade available."""
+
+    __tablename__ = "software_packages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    package_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    current_version: Mapped[str] = mapped_column(String(64), default="")
+    available_version: Mapped[str] = mapped_column(String(64), default="")
+    source: Mapped[str] = mapped_column(String(32), default="winget")
+    size_mb: Mapped[float] = mapped_column(Float, default=0.0)
+
+    is_installed: Mapped[bool] = mapped_column(Boolean, default=False)
+    install_result: Mapped[int] = mapped_column(Integer, default=0)
+    last_checked: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "package_id": self.package_id,
+            "name": self.name,
+            "current_version": self.current_version,
+            "available_version": self.available_version,
+            "source": self.source,
+            "size_mb": self.size_mb,
+            "is_installed": self.is_installed,
+            "install_result": self.install_result,
+            "last_checked": self.last_checked.isoformat() if self.last_checked else None,
+        }
+
+
+class WindowsUpdateORM(Base):
+    """Cached Windows Update entry from the local Windows Update Agent.
+
+    `kind` is "windows" for Software updates and "driver" for Driver updates.
+    """
+
+    __tablename__ = "windows_updates"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # "windows" or "driver" — added Phase 1.5
+    kind: Mapped[str] = mapped_column(String(16), default="windows", index=True)
+
+    # Microsoft's stable identifier
+    update_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    # Display
+    title: Mapped[str] = mapped_column(String(500), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    kb_articles: Mapped[str] = mapped_column(String(500), default="")  # comma-separated
+    categories: Mapped[str] = mapped_column(String(500), default="")   # comma-separated
+
+    # Metadata
+    severity: Mapped[str] = mapped_column(String(32), default="Unspecified")
+    size_mb: Mapped[float] = mapped_column(Float, default=0.0)
+    is_downloaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    requires_reboot: Mapped[bool] = mapped_column(Boolean, default=False)
+    release_date: Mapped[str] = mapped_column(String(32), default="")
+
+    # State / install tracking
+    is_installed: Mapped[bool] = mapped_column(Boolean, default=False)
+    install_result: Mapped[int] = mapped_column(Integer, default=0)  # 0=not tried, 2=success
+    last_checked: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "update_id": self.update_id,
+            "title": self.title,
+            "description": self.description,
+            "kb_articles": [k for k in self.kb_articles.split(",") if k],
+            "categories": [c for c in self.categories.split(",") if c],
+            "severity": self.severity,
+            "size_mb": self.size_mb,
+            "is_downloaded": self.is_downloaded,
+            "requires_reboot": self.requires_reboot,
+            "is_installed": self.is_installed,
+            "install_result": self.install_result,
+            "release_date": self.release_date,
+            "last_checked": self.last_checked.isoformat() if self.last_checked else None,
+        }

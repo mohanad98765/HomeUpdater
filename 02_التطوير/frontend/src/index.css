@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================================================================
+   محدِّث المنزل — HomeUpdater
+   نظام ثيمات متعدد + دعم RTL/LTR
+   كل الألوان عبر CSS variables — Tailwind يقرأها ديناميكياً.
+   ================================================================ */
+
+@layer base {
+  /* ======================================================
+     الثيم الافتراضي: فاتح أزرق (Light)
+     يَطبق على :root و [data-theme="light"]
+     ====================================================== */
+  :root,
+  [data-theme="light"] {
+    --color-bg:           248 250 252;   /* slate-50 */
+    --color-surface:      255 255 255;   /* white */
+    --color-surface-2:    241 245 249;   /* slate-100 */
+    --color-fg:            15  23  42;   /* slate-900 */
+    --color-fg-muted:     100 116 139;   /* slate-500 */
+    --color-fg-subtle:    148 163 184;   /* slate-400 */
+    --color-border:       226 232 240;   /* slate-200 */
+    --color-primary:       13  71 161;   /* #0D47A1 */
+    --color-primary-fg:   255 255 255;
+    --color-primary-soft: 219 234 254;   /* blue-100 */
+    --color-accent:        38 166 154;   /* #26A69A */
+    --color-success:       34 197  94;
+    --color-warning:      245 158  11;
+    --color-danger:       220  38  38;
+    --color-info:           3 169 244;
+    color-scheme: light;
+  }
+
+  /* ======================================================
+     داكن أزرق (Dark)
+     ====================================================== */
+  [data-theme="dark"] {
+    --color-bg:            15  23  42;   /* slate-900 */
+    --color-surface:       30  41  59;   /* slate-800 */
+    --color-surface-2:     51  65  85;   /* slate-700 */
+    --color-fg:           241 245 249;   /* slate-100 */
+    --color-fg-muted:     148 163 184;   /* slate-400 */
+    --color-fg-subtle:    100 116 139;   /* slate-500 */
+    --color-border:        51  65  85;   /* slate-700 */
+    --color-primary:       96 165 250;   /* blue-400 */
+    --color-primary-fg:    15  23  42;
+    --color-primary-soft:  30  58 138;   /* blue-900 */
+    --color-accent:        77 208 200;
+    --color-success:       74 222 128;
+    --color-warning:      251 191  36;
+    --color-danger:       248 113 113;
+    --color-info:          56 189 248;
+    color-scheme: dark;
+  }
+
+  /* ======================================================
+     محيطي (Ocean) — سماوي/فيروزي فاتح
+     ====================================================== */
+  [data-theme="ocean"] {
+    --color-bg:           240 249 255;   /* sky-50 */
+    --color-surface:      255 255 255;
+    --color-surface-2:    224 242 254;   /* sky-100 */
+    --color-fg:            12  74 110;   /* sky-900 */
+    --color-fg-muted:       3 105 161;   /* sky-700 */
+    --color-fg-subtle:     14 165 233;   /* sky-500 */
+    --color-border:       186 230 253;   /* sky-200 */
+    --color-primary:       14 116 144;   /* cyan-700 */
+    --color-primary-fg:   255 255 255;
+    --color-primary-soft: 207 250 254;   /* cyan-100 */
+    --color-accent:        20 184 166;   /* teal-500 */
+    --color-success:       16 185 129;
+    --color-warning:      245 158  11;
+    --color-danger:       239  68  68;
+    --color-info:          14 165 233;
+    color-scheme: light;
+  }
+
+  /* ======================================================
+     غابة (Forest) — أخضر طبيعي
+     ====================================================== */
+  [data-theme="forest"] {
+    --color-bg:           247 254 231;   /* lime-50 */
+    --color-surface:      255 255 255;
+    --color-surface-2:    236 253 245;   /* emerald-50 */
+    --color-fg:            20  83  45;   /* green-900 */
+    --color-fg-muted:      22 101  52;   /* green-800 */
+    --color-fg-subtle:     34 197  94;   /* green-500 */
+    --color-border:       187 247 208;   /* green-200 */
+    --color-primary:       22 101  52;   /* green-800 */
+    --color-primary-fg:   255 255 255;
+    --color-primary-soft: 220 252 231;   /* green-100 */
+    --color-accent:       132 204  22;   /* lime-500 */
+    --color-success:       34 197  94;
+    --color-warning:      234 179   8;
+    --color-danger:       220  38  38;
+    --color-info:          14 165 233;
+    color-scheme: light;
+  }
+
+  /* ======================================================
+     شفق (Sunset) — برتقالي دافئ
+     ====================================================== */
+  [data-theme="sunset"] {
+    --color-bg:           255 251 235;   /* amber-50 */
+    --color-surface:      255 255 255;
+    --color-surface-2:    254 243 199;   /* amber-100 */
+    --color-fg:           124  45  18;   /* orange-900 */
+    --color-fg-muted:     154  52  18;   /* orange-800 */
+    --color-fg-subtle:    249 115  22;   /* orange-500 */
+    --color-border:       254 215 170;   /* orange-200 */
+    --color-primary:      154  52  18;   /* orange-800 */
+    --color-primary-fg:   255 255 255;
+    --color-primary-soft: 255 237 213;   /* orange-100 */
+    --color-accent:       234  88  12;   /* orange-600 */
+    --color-success:       22 163  74;
+    --color-warning:      245 158  11;
+    --color-danger:       220  38  38;
+    --color-info:          14 165 233;
+    color-scheme: light;
+  }
+
+  /* ======================================================
+     ملكي (Royal) — بنفسجي داكن
+     ====================================================== */
+  [data-theme="royal"] {
+    --color-bg:            30  27  75;   /* indigo-950 */
+    --color-surface:       49  46 129;   /* indigo-900 */
+    --color-surface-2:     67  56 202;   /* indigo-700 */
+    --color-fg:           224 231 255;   /* indigo-100 */
+    --color-fg-muted:     165 180 252;   /* indigo-300 */
+    --color-fg-subtle:    129 140 248;   /* indigo-400 */
+    --color-border:        79  70 229;   /* indigo-600 */
+    --color-primary:      192 132 252;   /* purple-400 */
+    --color-primary-fg:    30  27  75;
+    --color-primary-soft:  88  28 135;   /* purple-900 */
+    --color-accent:       217  70 239;   /* fuchsia-500 */
+    --color-success:       74 222 128;
+    --color-warning:      251 191  36;
+    --color-danger:       248 113 113;
+    --color-info:          56 189 248;
+    color-scheme: dark;
+  }
+
+  /* ======================================================
+     منتصف الليل (Midnight) — أسود مزرق
+     ====================================================== */
+  [data-theme="midnight"] {
+    --color-bg:             3   7  18;   /* gray-950 */
+    --color-surface:       17  24  39;   /* gray-900 */
+    --color-surface-2:     31  41  55;   /* gray-800 */
+    --color-fg:           243 244 246;
+    --color-fg-muted:     156 163 175;
+    --color-fg-subtle:    107 114 128;
+    --color-border:        55  65  81;
+    --color-primary:       96 165 250;
+    --color-primary-fg:    17  24  39;
+    --color-primary-soft:  30  58 138;
+    --color-accent:        45 212 191;
+    --color-success:       52 211 153;
+    --color-warning:      250 204  21;
+    --color-danger:       251 113 133;
+    --color-info:          56 189 248;
+    color-scheme: dark;
+  }
+
+  /* ======================================================
+     السلوك العام
+     ====================================================== */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-fg));
+    font-feature-settings: "kern", "liga", "calt";
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  html[dir="rtl"] body { font-family: "Cairo", "Inter", system-ui, sans-serif; }
+  html[dir="ltr"] body { font-family: "Inter", "Cairo", system-ui, sans-serif; }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Tajawal", "Plus Jakarta Sans", system-ui, sans-serif;
+    font-weight: 700;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track {
+    background: rgb(var(--color-surface-2));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-fg-subtle) / 0.5);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-fg-muted));
+  }
+}
+
+@layer components {
+  /* بطاقة عامة — يستخدم semantic colors */
+  .card {
+    background-color: rgb(var(--color-surface));
+    color: rgb(var(--color-fg));
+    border: 1px solid rgb(var(--color-border));
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
+    padding: 1.5rem;
+  }
+
+  /* زر أساسي */
+  .btn-primary {
+    background-color: rgb(var(--color-primary));
+    color: rgb(var(--color-primary-fg));
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: filter 0.15s ease, transform 0.05s ease;
+  }
+  .btn-primary:hover { filter: brightness(0.92); }
+  .btn-primary:active { transform: translateY(1px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* زر ثانوي */
+  .btn-secondary {
+    background-color: rgb(var(--color-surface-2));
+    color: rgb(var(--color-fg));
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: filter 0.15s ease;
+  }
+  .btn-secondary:hover { filter: brightness(0.95); }
+
+  /* شارة (badge) */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  .badge-success { background: rgb(var(--color-success) / 0.15); color: rgb(var(--color-success)); }
+  .badge-warning { background: rgb(var(--color-warning) / 0.15); color: rgb(var(--color-warning)); }
+  .badge-danger  { background: rgb(var(--color-danger)  / 0.15); color: rgb(var(--color-danger)); }
+  .badge-info    { background: rgb(var(--color-info)    / 0.15); color: rgb(var(--color-info)); }
+}
