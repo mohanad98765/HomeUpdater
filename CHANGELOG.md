@@ -30,10 +30,19 @@
 ### أُضيف (Added)
 - أقفال تزامن (HTTP 409) على المسح والفحص والتثبيت لمنع العمليات المتوازية المتضاربة.
 - تهيئة مستودع Git مع `.gitignore` جذر شامل.
-- **حزمة اختبارات pytest (47 اختباراً)** تحت `backend/tests/` تغطّي: مُحلِّل winget
+- **حزمة اختبارات pytest (48 اختباراً)** تحت `backend/tests/` تغطّي: مُحلِّل winget
   (عربي/إنجليزي)، middleware الأمان (Host/CSRF)، upsert المسح مع MAC فارغ، حقن ADB،
-  قفل مؤشِّرات التقدُّم، أقفال التزامن، واختبارات smoke للـ endpoints. جميعها تجتاز
+  قفل مؤشِّرات التقدُّم، أقفال التزامن، اختبارات smoke، وتشغيل migration. جميعها تجتاز
   على الإصدارات المثبَّتة في `requirements.txt`.
+- **Alembic migrations**: بنية كاملة + migration أساسي، و`init_db()` يُشغِّل
+  `upgrade head` عند الإقلاع (مع تبنّي قاعدة بيانات قديمة عبر `stamp` بلا انهيار).
+- **CI عبر GitHub Actions**: فحص backend (ruff + black + pytest على windows) وبناء
+  frontend (tsc + vite على ubuntu). *(يعمل بعد ربط المستودع بـ GitHub ودفعه.)*
+
+### تغيير (Changed)
+- تنسيق كامل للـ backend بـ black + ruff، وإعداد `pyproject` لتجاهل نمط FastAPI
+  (`B008`) واستثناء `alembic/` المُولَّد. إزالة 8 مفاتيح OUI مكرَّرة في
+  `mac_vendor.py` كانت تُلبِّس المُصنِّعين (بانتظار تدقيق نهائي مقابل سجلّ IEEE).
 
 ### أُزيل / نُظِّف (Removed)
 - 5 وحدات ميتة: `services/network.py`, `services/classifier.py`, `models/device.py`,
