@@ -39,8 +39,10 @@ adb-shell==0.4.4
 # --- Logging ---
 loguru==0.7.3
 
-# --- Windows Native Integration (WUA COM API) ---
+# --- Windows Native Integration (WUA COM API + tray icon) ---
 pywin32==308; sys_platform == "win32"
+pystray==0.19.5
+Pillow==11.0.0
 
 # --- Development & Testing ---
 pytest==8.3.4
@@ -69,7 +71,3 @@ beautifulsoup4==4.12.3
 cryptography==44.0.0      # also a transitive dep of adb-shell
 argon2-cffi==23.1.0
 passlib==1.7.4
-
-# Phase B.6 — Windows tray icon + splash screen
-pystray==0.19.5
-Pillow==11.0.0

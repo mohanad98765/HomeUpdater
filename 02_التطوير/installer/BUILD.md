@@ -23,18 +23,29 @@ npm run build       # يُنتج frontend\dist
 cd 02_التطوير\backend
 .\.venv\Scripts\python.exe -m PyInstaller HomeUpdater.spec --noconfirm
 ```
-النتيجة: `backend\dist\HomeUpdater\HomeUpdater.exe` (مجلَّد onedir يحوي كل شيء:
-الواجهة المبنيّة، migrations، والاعتماديات).
+النتيجة: `backend\dist\HomeUpdater\HomeUpdater.exe` — **تطبيق tray** (بلا نافذة
+console) يُشغِّل الخادم في الخلفية ويَعرض أيقونة في شريط النظام، بقائمة نقر-يمين
+(افتح HomeUpdater / التوثيق / خروج). المجلَّد onedir يحوي كل شيء: الواجهة المبنيّة،
+migrations، والاعتماديات.
 
 **تحقُّق سريع** (يشغّل الخادم بلا فتح متصفّح):
 ```powershell
 $env:HOMEUPDATER_NO_BROWSER=1
 .\dist\HomeUpdater\HomeUpdater.exe
-# افتح http://127.0.0.1:8000 — يجب أن ترى الواجهة، و /api/system/health يرجع healthy
+# أيقونة tray تَظهر؛ افتح http://127.0.0.1:8000 — الواجهة تعمل و /api/system/health يرجع healthy
 ```
 
 > الـ exe يُشغِّل `alembic upgrade head` تلقائياً عند الإقلاع، ويَخدم الواجهة والـ API
-> من خادم واحد على المنفذ 8000.
+> من خادم واحد على المنفذ 8000. نقطة الدخول `tray.py`؛ و`launcher.py` بديل console للتشخيص.
+
+### تشغيله كخدمة Windows (اختياري — يعمل بلا تسجيل دخول)
+`service.py` يُسجِّل الـ backend كخدمة Windows (يحتاج صلاحيات مدير):
+```powershell
+cd 02_التطوير\backend
+.\.venv\Scripts\python.exe service.py install
+.\.venv\Scripts\python.exe service.py start     # stop / remove للإيقاف / الإزالة
+```
+الخدمة تعمل headless (بلا أيقونة tray) وتُبقي الـ hub شغّالاً بعد تسجيل الخروج.
 
 ## المرحلة 3 — بناء ملفّ التثبيت (Inno Setup)
 ```powershell
