@@ -92,6 +92,18 @@ def draw_splash(size=800) -> Image.Image:
     return img.resize((size, size), Image.LANCZOS)
 
 
+def draw_loading_splash(w=460, h=300) -> Image.Image:
+    """Landscape startup splash shown by the PyInstaller bootloader on launch."""
+    W, H = w * SS, h * SS
+    img = _gradient(W, H)
+    d = ImageDraw.Draw(img)
+    _house(d, W * 0.5, H * 0.32, W * 0.26)
+    _centered(d, "HomeUpdater", ImageFont.truetype(LAT_SEMI, int(W * 0.085)), H * 0.55, W)
+    _centered(d, _ar("محدِّث المنزل"), ImageFont.truetype(AR_FONT, int(W * 0.058)), H * 0.68, W)
+    _centered(d, _ar("جارٍ التشغيل…"), ImageFont.truetype(AR_FONT, int(W * 0.042)), H * 0.84, W)
+    return img.resize((w, h), Image.LANCZOS)
+
+
 def main() -> None:
     here = Path(__file__).resolve().parent
     root = here.parent.parent
@@ -115,9 +127,18 @@ def main() -> None:
     # App splash (PNG).
     draw_splash(800).save(gen / "splash-800.png")
 
-    for p in sorted(inst.glob("wizard-*.bmp")) + sorted(gen.glob("wizard-*.png")) + [
-        gen / "splash-800.png"
-    ]:
+    # PyInstaller startup splash — bundled into the exe via --splash.
+    backend_assets = root / "02_التطوير" / "backend" / "assets"
+    backend_assets.mkdir(parents=True, exist_ok=True)
+    loading = draw_loading_splash()
+    loading.save(backend_assets / "splash.png")
+    loading.save(gen / "splash-loading.png")
+
+    for p in (
+        sorted(inst.glob("wizard-*.bmp"))
+        + sorted(gen.glob("wizard-*.png"))
+        + [gen / "splash-800.png", gen / "splash-loading.png", backend_assets / "splash.png"]
+    ):
         print("  ", p.relative_to(root))
 
 

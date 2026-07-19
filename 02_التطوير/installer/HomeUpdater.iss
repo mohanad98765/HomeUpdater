@@ -47,7 +47,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; then enable: Name: "arabic"; MessagesFile: "Languages\Arabic.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "startupicon"; Description: "Run {#AppName} automatically at sign-in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]

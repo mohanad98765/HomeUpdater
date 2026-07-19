@@ -25,6 +25,16 @@ def _ensure_std_streams() -> None:
             setattr(sys, name, open(os.devnull, "w"))  # noqa: SIM115
 
 
+def _close_splash() -> None:
+    """Close the PyInstaller startup splash (only present in the --splash build)."""
+    try:
+        import pyi_splash
+
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
 def _make_icon_image():
     """The brand tray icon (assets/tray.png, bundled by PyInstaller).
 
@@ -104,9 +114,24 @@ def main() -> None:
         # Once the tray loop is running, route backend notifications to toasts.
         notifications.set_sink(lambda title, message: ic.notify(message, title))
 
-    if not os.environ.get("HOMEUPDATER_NO_BROWSER"):
-        threading.Timer(2.0, _open).start()
+    def _wait_ready_then_open():
+        # Keep the startup splash visible until the server accepts connections,
+        # then close it and open the browser — so the UI is live when it appears.
+        import socket
+        import time
 
+        host, port = settings.host, settings.port
+        for _ in range(80):  # up to ~8s
+            try:
+                with socket.create_connection((host, port), timeout=0.2):
+                    break
+            except OSError:
+                time.sleep(0.1)
+        _close_splash()
+        if not os.environ.get("HOMEUPDATER_NO_BROWSER"):
+            webbrowser.open(url)
+
+    threading.Thread(target=_wait_ready_then_open, daemon=True).start()
     icon.run(setup=_on_ready)
 
 
