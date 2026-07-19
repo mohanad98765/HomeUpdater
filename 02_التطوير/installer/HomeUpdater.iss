@@ -1,0 +1,74 @@
+; ============================================================
+;  HomeUpdater — Inno Setup installer script
+;  Build with: iscc HomeUpdater.iss   (or open in the Inno Setup IDE)
+;  Prerequisite: the PyInstaller bundle must exist at
+;     ..\backend\dist\HomeUpdater\   (see BUILD.md)
+; ============================================================
+
+; Read the version straight from backend/VERSION so it never drifts.
+#define VerFile FileOpen("..\backend\VERSION")
+#define AppVersion Trim(FileRead(VerFile))
+#expr FileClose(VerFile)
+
+#define AppName "HomeUpdater"
+#define AppNameAr "محدِّث المنزل"
+#define AppPublisher "HomeUpdater"
+#define AppExe "HomeUpdater.exe"
+
+[Setup]
+; A stable, unique AppId — do NOT change between releases (keeps upgrades clean).
+AppId={{8F3A1C7E-2B4D-4E6A-9C1F-5D7E8A9B0C1D}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppVerName={#AppName} {#AppVersion}
+AppPublisher={#AppPublisher}
+DefaultDirName={autopf}\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+; The backend drives Windows Update / winget / nmap — it needs elevation.
+PrivilegesRequired=admin
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir=Output
+OutputBaseFilename=HomeUpdater-Setup-{#AppVersion}
+Compression=lzma2/max
+SolidCompression=yes
+WizardStyle=modern
+; TODO (Phase A): provide branded artwork, then uncomment:
+; SetupIconFile=assets\HomeUpdater.ico
+; WizardImageFile=assets\wizard.bmp
+; WizardSmallImageFile=assets\wizard-small.bmp
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+; Arabic needs a third-party Languages\Arabic.isl (not shipped with Inno). Add it,
+; then enable: Name: "arabic"; MessagesFile: "Languages\Arabic.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "startupicon"; Description: "Run {#AppName} automatically at sign-in"; GroupDescription: "Startup:"; Flags: unchecked
+
+[Files]
+; The entire PyInstaller onedir output.
+Source: "..\backend\dist\{#AppName}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Bundle portable Nmap for network discovery. Place the Nmap files under
+; installer\vendor\nmap\ before compiling (GPL — ship its LICENSE alongside).
+; The app finds nmap via PATH; installing it under {app}\nmap and adding that to
+; PATH (or setting HOMEUPDATER_NMAP_PATH) wires it up. TODO(B.3): automate.
+; Source: "vendor\nmap\*"; DestDir: "{app}\nmap"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startupicon
+
+[Run]
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Stop a running instance before removing files.
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM {#AppExe} /F"; Flags: runhidden; RunOnceId: "StopHomeUpdater"
+
+; NOTE: user data in %APPDATA%\HomeUpdater (DB, config, logs) is intentionally
+; left in place on uninstall. A future "remove my data?" prompt can clear it.
