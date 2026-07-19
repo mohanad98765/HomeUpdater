@@ -14,7 +14,7 @@ import {
   ExternalLink,
   Pencil,
 } from "lucide-react";
-import { apiFetch, cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 
 // ================================================================

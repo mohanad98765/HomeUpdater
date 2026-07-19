@@ -1,61 +1,75 @@
 # ================================================================
 #  HomeUpdater Backend - Python Dependencies
-#  Last updated: 2026-04-27
+#  Last updated: 2026-07-19
+#
+#  Two sections:
+#   [ACTIVE]   imported by the code today (verified).
+#   [RESERVED] declared for an upcoming phase but NOT yet imported.
+#              Kept intentionally so the roadmap work does not have to
+#              re-pin them; grep confirms they are not imported yet.
 # ================================================================
 
-# === Core Web Framework ===
+# ===================== ACTIVE ===================================
+
+# --- Core Web Framework ---
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 pydantic==2.10.3
 pydantic-settings==2.6.1
 
-# === Database ===
+# --- Database ---
 sqlalchemy==2.0.36
-alembic==1.14.0
 aiosqlite==0.20.0
+alembic==1.14.0            # migrations (needed for the devices.mac schema change)
 # greenlet is a transitive dep of sqlalchemy[asyncio], but isn't always
 # auto-installed on Python 3.13. Pin it explicitly to avoid the
 # "ValueError: the greenlet library is required" startup crash.
 greenlet==3.1.1
 
-# === Network Discovery ===
+# --- Network Discovery ---
 python-nmap==0.7.1
-scapy==2.6.1
-zeroconf==0.136.0
-# Use psutil for network interface info (replaces netifaces).
-# Reason: netifaces is unmaintained and has no wheels for Python 3.11+,
-#   so pip tries to compile from source which requires Microsoft Visual C++.
-#   psutil provides equivalent network-interface info via psutil.net_if_addrs()
-#   and ships prebuilt wheels for every supported Python version.
+# Use psutil for network interface info (replaces the unmaintained netifaces,
+# which has no wheels for Python 3.11+). psutil.net_if_addrs() is equivalent
+# and ships prebuilt wheels for every supported Python version.
 psutil==6.1.0
 
-# === SSH / Remote Operations ===
-paramiko==3.5.0
-asyncssh==2.18.0
-
-# === Android (ADB) ===
+# --- Android (ADB) ---
 adb-shell==0.4.4
 
-# === HTTP / API ===
-httpx==0.28.1
-requests==2.32.3
-beautifulsoup4==4.12.3
-
-# === Security ===
-cryptography==44.0.0
-argon2-cffi==23.1.0
-passlib==1.7.4
-
-# === Logging & Monitoring ===
+# --- Logging ---
 loguru==0.7.3
 
-# === Windows Native Integration ===
+# --- Windows Native Integration (WUA COM API) ---
 pywin32==308; sys_platform == "win32"
-pystray==0.19.5
-Pillow==11.0.0
 
-# === Development & Testing ===
+# --- Development & Testing ---
 pytest==8.3.4
 pytest-asyncio==0.25.0
 black==24.10.0
 ruff==0.8.4
+
+# ===================== RESERVED (not yet imported) ==============
+# Uncomment/rely on these as each phase lands. Listed here so the
+# environment already has them and the audit knows they are intentional.
+
+# Phase 1.2+/2 — advanced discovery (mDNS / SSDP)
+scapy==2.6.1
+zeroconf==0.136.0
+
+# Phase 2.1 — SSH / Linux / OpenWRT remote operations
+paramiko==3.5.0
+asyncssh==2.18.0
+
+# Phase 2.2/2.3 — vendor scrapers, CVE feeds, Home Assistant REST
+httpx==0.28.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+
+# Phase O.5 — credential encryption / passphrase hashing
+cryptography==44.0.0      # also a transitive dep of adb-shell
+argon2-cffi==23.1.0
+passlib==1.7.4
+
+# Phase B.6 — Windows tray icon + splash screen
+pystray==0.19.5
+Pillow==11.0.0
