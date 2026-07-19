@@ -66,8 +66,10 @@ iscc HomeUpdater.iss
 ---
 
 ## ملاحظات
-- **الأيقونة والهوية البصرية** (شاشات المُثبِّت، أيقونة الـ exe): تُضاف في Phase A —
-  المواضع مُعلَّمة بـ `TODO` في `HomeUpdater.iss` و`HomeUpdater.spec`.
+- **الهوية البصرية جاهزة:** الأيقونة (`generate_icons.py`) وبانرات المعالج + splash
+  (`generate_wizard_banners.py`) مربوطة في `HomeUpdater.iss`/`HomeUpdater.spec`.
+  لإعادة توليدها من شعارك، عدّل السكربتين في `03_الموارد\logo\` وأعِد تشغيلهما
+  (بانرات المعالج تحتاج `arabic-reshaper` و`python-bidi` وقت التوليد فقط).
 - **بيانات المستخدم** (`%APPDATA%\HomeUpdater`: قاعدة البيانات، الإعدادات، السجلّات)
   تبقى بعد إلغاء التثبيت عمداً.
 - **صلاحيات المدير**: المثبِّت والتطبيق يطلبان UAC (لازم لـ Windows Update/winget/nmap).

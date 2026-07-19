@@ -51,6 +51,9 @@
   زرقاء متدرّجة) عبر `03_الموارد/logo/generate_icons.py`، بكل المقاسات + `.ico`،
   مربوطة بالـ favicon والـ tray وأيقونة الـ exe وأيقونة المثبِّت. قابلة لإعادة التوليد
   من شعار المستخدم لاحقاً.
+- **Phase A — بانرات المعالج + splash**: `generate_wizard_banners.py` يُنتج بانرات
+  Inno (كبير 164×314 + صغير 55×58، بنسختَي DPI) مع نصّ عربي مُشكَّل صحيحاً، وصورة
+  splash 800×800؛ البانرات مربوطة في `HomeUpdater.iss`.
 
 ### تغيير (Changed)
 - تنسيق كامل للـ backend بـ black + ruff، وإعداد `pyproject` لتجاهل نمط FastAPI
