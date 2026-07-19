@@ -232,3 +232,24 @@ class CVECacheORM(Base):
             "cves": json.loads(self.data or "[]"),
             "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }
+
+
+class HAConfigORM(Base):
+    """Single-row Home Assistant connection config (URL + long-lived token)."""
+
+    __tablename__ = "ha_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    base_url: Mapped[str] = mapped_column(String(255), default="")
+    token: Mapped[str] = mapped_column(Text, default="")  # TODO(O.5): encrypt at rest
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        # Never expose the token; report only whether one is set.
+        return {
+            "base_url": self.base_url,
+            "enabled": self.enabled,
+            "has_token": bool(self.token),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

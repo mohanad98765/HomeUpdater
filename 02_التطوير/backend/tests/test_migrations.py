@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "software_packages",
     "windows_updates",
     "cve_cache",
+    "ha_config",
     "alembic_version",
 }
 
