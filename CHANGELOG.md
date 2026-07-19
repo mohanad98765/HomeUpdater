@@ -38,6 +38,11 @@
   `upgrade head` عند الإقلاع (مع تبنّي قاعدة بيانات قديمة عبر `stamp` بلا انهيار).
 - **CI عبر GitHub Actions**: فحص backend (ruff + black + pytest على windows) وبناء
   frontend (tsc + vite على ubuntu). *(يعمل بعد ربط المستودع بـ GitHub ودفعه.)*
+- **Phase B — الـ Installer (بداية)**:
+  - خدمة الملفّات الساكنة: الـ backend يَخدم الواجهة المبنيّة من "/" (خادم واحد للإنتاج).
+  - `launcher.py` + `HomeUpdater.spec`: تجميع PyInstaller ينتج `HomeUpdater.exe` واحداً
+    يُقلع ويُهاجر ويَخدم الواجهة والـ API (مُختبَر فعلياً).
+  - `installer/HomeUpdater.iss` + `BUILD.md`: سكربت Inno Setup ودليل بناء ثلاثي المراحل.
 
 ### تغيير (Changed)
 - تنسيق كامل للـ backend بـ black + ruff، وإعداد `pyproject` لتجاهل نمط FastAPI
