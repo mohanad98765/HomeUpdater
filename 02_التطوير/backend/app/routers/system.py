@@ -15,8 +15,20 @@ from pydantic import BaseModel, Field
 
 from .. import __version__
 from ..config import settings
+from ..services import notifications
 
 router = APIRouter()
+
+
+@router.post("/notify-test")
+async def notify_test() -> dict:
+    """Fire a sample desktop notification — used to verify the tray toast.
+
+    Returns sent=True only when a tray sink handled it (i.e. running as the tray
+    app); otherwise it is logged and sent=False.
+    """
+    sent = notifications.notify("HomeUpdater — محدِّث المنزل", "اختبار الإشعارات — تعمل بنجاح ✓")
+    return {"sent": sent}
 
 
 # ===================================================================

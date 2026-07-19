@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..models.orm import SoftwarePackageORM, WindowsUpdateORM
+from ..services import notifications
 from ..services.software_updates import (
     SoftwareUpdateError,
     install_many,
@@ -166,6 +167,9 @@ async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
             row.install_result = 2
 
     await db.commit()
+    if found:
+        label = "تحديثات Windows" if kind == "windows" else "تحديثات تعريفات"
+        notifications.notify("HomeUpdater — محدِّث المنزل", f"توفّرت {len(found)} {label}")
     return {
         "kind": kind,
         "total_pending": len(found),
@@ -287,6 +291,8 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
             row.install_result = 0
 
     await db.commit()
+    if found:
+        notifications.notify("HomeUpdater — محدِّث المنزل", f"توفّرت {len(found)} تحديثات برامج")
     return {
         "total_pending": len(found),
         "new": new_count,

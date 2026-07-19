@@ -61,6 +61,7 @@ def main() -> None:
     import pystray
 
     from app.config import settings
+    from app.services import notifications
 
     url = f"http://{settings.host}:{settings.port}/"
     server = _BackgroundServer(settings.host, settings.port, settings.log_level.lower())
@@ -83,10 +84,14 @@ def main() -> None:
     )
     icon = pystray.Icon("HomeUpdater", _make_icon_image(), "HomeUpdater — محدِّث المنزل", menu)
 
+    def _on_ready(ic):
+        # Once the tray loop is running, route backend notifications to toasts.
+        notifications.set_sink(lambda title, message: ic.notify(message, title))
+
     if not os.environ.get("HOMEUPDATER_NO_BROWSER"):
         threading.Timer(2.0, _open).start()
 
-    icon.run()
+    icon.run(setup=_on_ready)
 
 
 if __name__ == "__main__":
