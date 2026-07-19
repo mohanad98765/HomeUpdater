@@ -21,7 +21,7 @@
 | الاكتشاف | ARP scan + nmap (port 5985 WinRM, 445 SMB) |
 | التعرّف | MAC OUI + SMB OS detection + hostname |
 | التحديث (الجهاز المحلي / الـ hub) | ✅ تلقائي عبر `winget upgrade --all` (للبرامج) + Windows Update (للنظام) + التعريفات |
-| التحديث (أجهزة Windows أخرى عن بُعد) | 🟡 قيد التخطيط (المرحلة 1.6) — عبر WinRM: تشغيل winget / PSWindowsUpdate على الهدف |
+| التحديث (أجهزة Windows أخرى عن بُعد) | ✅ عبر WinRM (المرحلة 1.6): صفحة «Windows بعيد» تُشغّل winget على الهدف |
 | المصادر الرسمية | Microsoft Update Catalog, winget index |
 | المصادر غير الرسمية | Chocolatey, Scoop |
 | المتطلبات (المحلي) | صلاحيات Admin على الـ hub |
@@ -34,16 +34,20 @@
 > المرحلة 1.6 أدناه. (أجهزة لينكس/الأندرويد/أجهزة HA تُحدَّث عن بُعد فعلاً عبر
 > SSH/ADB/REST — الفجوة محصورة في أجهزة Windows البعيدة.)
 
-#### المرحلة 1.6 — تحديث Windows عن بُعد (WinRM) — التصميم المقترح
-- **الاعتماد الجديد:** `pywinrm` (HTTP/HTTPS إلى منفذ 5985/5986).
-- **جدول `winrm_hosts`:** host, username, password (مشفَّرة/غير معادة)، اسم مخصّص،
-  آخر حالة — على غرار جدول `ssh_hosts`.
-- **الخدمة `winrm.py`:** `probe()` (اسم النظام/الإصدار)، `check_updates()` (تشغيل
-  `winget upgrade` أو موديول `PSWindowsUpdate` عن بُعد)، `apply_updates()`.
+#### المرحلة 1.6 — تحديث Windows عن بُعد (WinRM) — ✅ مُنفَّذة
+- **الاعتماد:** `pywinrm` (HTTP 5985 / HTTPS 5986)، transport افتراضي `ntlm`
+  (يعمل بحساب مسؤول محلي ويُشفّر الحمولة حتى على HTTP، بلا `AllowUnencrypted`).
+- **جدول `winrm_hosts`:** host, username, password (لا تُعاد؛ TODO تشفير عند التخزين)،
+  use_https, transport، اسم مخصّص + نتائج الفحص (نظام/إصدار/hostname/winget).
+  Migration `60df94c429f7`.
+- **الخدمة `services/winrm_hosts.py`:** `probe()` و`check_updates()` و`apply_updates()`
+  عبر `winget upgrade` (يُعاد استخدام مُحلِّل winget المقاوم للعربية). كل نداء WinRM
+  مُغلَّف بـ `asyncio.to_thread` فلا يُعطِّل حلقة الأحداث.
 - **endpoints:** `/api/winrm/hosts` CRUD + `/check` + `/upgrade` (كلمة المرور لا تُعرَض).
-- **صفحة «حواسيب Windows»:** إضافة جهاز عن بُعد + فحص + ترقية بنقرة.
-- **الأمان:** WinRM عبر HTTPS مفضَّل؛ تحذير صريح عند HTTP؛ بيانات الاعتماد لا تُسجَّل.
-- **الحدود:** يجب على المستخدم تفعيل WinRM على الهدف (`Enable-PSRemoting`) ومنحه صلاحيات مسؤول.
+- **صفحة «Windows بعيد»:** إضافة جهاز + فحص + ترقية بنقرة، مع تعليمات `Enable-PSRemoting`.
+- **الأمان:** بيانات الاعتماد لا تُسجَّل ولا تُعاد؛ HTTPS مدعوم؛ 14 اختبار وحدة.
+- **الحدود:** يجب تفعيل WinRM على الهدف (`Enable-PSRemoting -Force`) وحساب مسؤول،
+  وأن يكون winget قابلاً للوصول من جلسة WinRM.
 
 ### 1.2 Linux (Ubuntu/Debian/Fedora)
 | البند | التفصيل |

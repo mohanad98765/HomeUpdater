@@ -292,3 +292,48 @@ class SSHHostORM(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "display_name": self.custom_name or f"{self.username}@{self.host}",
         }
+
+
+class WinRMHostORM(Base):
+    """A remote Windows host managed over WinRM (winget upgrades)."""
+
+    __tablename__ = "winrm_hosts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    host: Mapped[str] = mapped_column(String(128), index=True)
+    port: Mapped[int] = mapped_column(Integer, default=5985)
+    username: Mapped[str] = mapped_column(String(128), default="")
+    password: Mapped[str] = mapped_column(Text, default="")  # TODO(O.5): encrypt at rest
+    use_https: Mapped[bool] = mapped_column(Boolean, default=False)
+    transport: Mapped[str] = mapped_column(String(16), default="ntlm")  # ntlm | kerberos | basic
+    custom_name: Mapped[str] = mapped_column(String(255), default="")
+
+    # Filled by probe
+    os_name: Mapped[str] = mapped_column(String(128), default="")
+    os_version: Mapped[str] = mapped_column(String(64), default="")
+    hostname: Mapped[str] = mapped_column(String(128), default="")
+    has_winget: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_online: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        # The password is never returned.
+        return {
+            "id": self.id,
+            "host": self.host,
+            "port": self.port,
+            "username": self.username,
+            "use_https": self.use_https,
+            "transport": self.transport,
+            "custom_name": self.custom_name,
+            "os_name": self.os_name,
+            "os_version": self.os_version,
+            "hostname": self.hostname,
+            "has_winget": self.has_winget,
+            "is_online": self.is_online,
+            "has_password": bool(self.password),
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "display_name": self.custom_name or self.hostname or f"{self.username}@{self.host}",
+        }

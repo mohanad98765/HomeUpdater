@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HomeUpdater — محدِّث المنزل</title>
+    <style>
+      :root { color-scheme: light dark; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 20px; font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+        background: linear-gradient(160deg, #0d47a1 0%, #1565c0 55%, #1976d2 100%);
+        color: #fff;
+      }
+      .mark {
+        width: 96px; height: 96px; border-radius: 24px; background: rgba(255,255,255,0.12);
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+      }
+      .mark svg { width: 56px; height: 56px; }
+      h1 { font-size: 22px; margin: 0; font-weight: 800; }
+      p { margin: 0; opacity: 0.85; font-size: 14px; }
+      .spinner {
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 3px solid rgba(255,255,255,0.25); border-top-color: #fff;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <path d="M32 12 14 28h6v20h24V28h6L32 12Z" fill="#fff" />
+        <path d="M32 30a8 8 0 1 0 7.4 5" stroke="#0d47a1" stroke-width="3.4"
+              stroke-linecap="round" fill="none" />
+        <path d="M40 24v7h-7" stroke="#0d47a1" stroke-width="3.4"
+              stroke-linecap="round" stroke-linejoin="round" fill="none" />
+      </svg>
+    </div>
+    <h1>محدِّث المنزل — HomeUpdater</h1>
+    <div class="spinner" role="status" aria-label="Loading"></div>
+    <p>… جارٍ التشغيل / Starting …</p>
+  </body>
+</html>

@@ -2,9 +2,14 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('../frontend/dist', 'frontend_dist'), ('alembic', 'alembic'), ('alembic.ini', '.'), ('VERSION', '.'), ('assets', 'assets')]
+datas = [('../frontend/dist', 'frontend_dist'), ('alembic', 'alembic'), ('alembic.ini', '.'), ('VERSION', '.'), ('assets', 'assets'), ('loading.html', '.')]
 binaries = []
 hiddenimports = ['win32com', 'win32com.client', 'pythoncom', 'win32timezone', 'adb_shell']
+# Native app window (pywebview + WebView2 via pythonnet) — dynamically imported.
+hiddenimports += ['webview.platforms.edgechromium', 'webview.platforms.winforms',
+                  'clr', 'clr_loader', 'clr_loader.ffi']
+# Remote Windows updates (pywinrm) — auth stack pulled in dynamically.
+hiddenimports += ['winrm', 'winrm.transport', 'requests_ntlm', 'xmltodict', 'spnego', 'sspilib']
 hiddenimports += collect_submodules('sqlalchemy')
 tmp_ret = collect_all('uvicorn')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
@@ -22,10 +27,22 @@ tmp_ret = collect_all('asyncssh')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('cryptography')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# --- Native window shell (WebView2/edgechromium via pythonnet) ---
+tmp_ret = collect_all('webview')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('clr_loader')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pythonnet')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# --- Remote Windows updates (pywinrm + auth) ---
+tmp_ret = collect_all('winrm')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('sspilib')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['tray.py'],
+    ['app_window.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -74,6 +91,13 @@ coll = COLLECT(
     splash.binaries,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    # UPX can corrupt managed/native interop DLLs -> blank window. Exclude them.
+    upx_exclude=[
+        'WebView2Loader.dll',
+        'Microsoft.Web.WebView2.Core.dll',
+        'Microsoft.Web.WebView2.WinForms.dll',
+        'Microsoft.Web.WebView2.Wpf.dll',
+        'Python.Runtime.dll',
+    ],
     name='HomeUpdater',
 )

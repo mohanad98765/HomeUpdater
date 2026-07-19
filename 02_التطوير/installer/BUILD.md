@@ -23,20 +23,22 @@ npm run build       # يُنتج frontend\dist
 cd 02_التطوير\backend
 .\.venv\Scripts\python.exe -m PyInstaller HomeUpdater.spec --noconfirm
 ```
-النتيجة: `backend\dist\HomeUpdater\HomeUpdater.exe` — **تطبيق tray** (بلا نافذة
-console) يُشغِّل الخادم في الخلفية ويَعرض أيقونة في شريط النظام، بقائمة نقر-يمين
-(افتح HomeUpdater / التوثيق / خروج). المجلَّد onedir يحوي كل شيء: الواجهة المبنيّة،
-migrations، والاعتماديات.
+النتيجة: `backend\dist\HomeUpdater\HomeUpdater.exe` — **تطبيق بنافذة أصلية**
+(WebView2) بلا نافذة console وبلا متصفّح: نقطة الدخول `app_window.py` تُشغِّل الخادم
+في خيط خلفي وتعرض الواجهة في نافذة تطبيق حقيقية. إن كان WebView2 غير مثبّت (نادر على
+Win11) يفتح المتصفّح تلقائياً كبديل. المجلَّد onedir يحوي كل شيء: الواجهة المبنيّة،
+migrations، والاعتماديات. (`tray.py` يبقى نقطة دخول بديلة بأيقونة شريط النظام + متصفّح.)
 
-**تحقُّق سريع** (يشغّل الخادم بلا فتح متصفّح):
+**تحقُّق سريع** (نقرة مزدوجة = تظهر نافذة التطبيق الأصلية):
 ```powershell
-$env:HOMEUPDATER_NO_BROWSER=1
 .\dist\HomeUpdater\HomeUpdater.exe
-# أيقونة tray تَظهر؛ افتح http://127.0.0.1:8000 — الواجهة تعمل و /api/system/health يرجع healthy
+# تفتح نافذة "HomeUpdater — محدِّث المنزل" (WebView2)؛ /api/system/health يرجع healthy
 ```
 
 > الـ exe يُشغِّل `alembic upgrade head` تلقائياً عند الإقلاع، ويَخدم الواجهة والـ API
-> من خادم واحد على المنفذ 8000. نقطة الدخول `tray.py`؛ و`launcher.py` بديل console للتشخيص.
+> من خادم واحد على المنفذ 8000. نقطة الدخول `app_window.py` (نافذة أصلية)؛ `tray.py`
+> بديل (tray + متصفّح)؛ و`launcher.py` بديل console للتشخيص.
+> النافذة الأصلية تحتاج **WebView2 Runtime** (مثبّت افتراضياً على Windows 11).
 
 ### تشغيله كخدمة Windows (اختياري — يعمل بلا تسجيل دخول)
 `service.py` يُسجِّل الـ backend كخدمة Windows (يحتاج صلاحيات مدير):
