@@ -16,6 +16,7 @@ import {
   Trash2,
   Smartphone,
   House,
+  Terminal,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -25,6 +26,7 @@ import { UpdatesPage } from "@/pages/UpdatesPage";
 import { AndroidPage } from "@/pages/AndroidPage";
 import { SecurityPage } from "@/pages/SecurityPage";
 import { HomeAssistantPage } from "@/pages/HomeAssistantPage";
+import { LinuxPage } from "@/pages/LinuxPage";
 
 // ================================================================
 // محدِّث المنزل — App shell + navigation
@@ -42,7 +44,14 @@ interface VersionResponse {
   build: string;
 }
 
-type Page = "dashboard" | "devices" | "updates" | "android" | "security" | "homeassistant";
+type Page =
+  | "dashboard"
+  | "devices"
+  | "updates"
+  | "android"
+  | "security"
+  | "homeassistant"
+  | "linux";
 
 function App() {
   const { t } = useTranslation();
@@ -123,6 +132,12 @@ function App() {
               icon={House}
               label="المنزل الذكي"
             />
+            <NavTab
+              active={page === "linux"}
+              onClick={() => setPage("linux")}
+              icon={Terminal}
+              label="لينكس"
+            />
           </nav>
 
           <div className="flex items-center gap-2">
@@ -151,6 +166,7 @@ function App() {
         {page === "android" && <AndroidPage onBack={() => setPage("dashboard")} />}
         {page === "security" && <SecurityPage onBack={() => setPage("dashboard")} />}
         {page === "homeassistant" && <HomeAssistantPage onBack={() => setPage("dashboard")} />}
+        {page === "linux" && <LinuxPage onBack={() => setPage("dashboard")} />}
       </main>
 
       {/* التذييل */}
