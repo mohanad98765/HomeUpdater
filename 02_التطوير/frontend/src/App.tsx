@@ -6,6 +6,7 @@ import {
   WifiOff,
   Loader2,
   ShieldCheck,
+  ShieldAlert,
   Cpu,
   RefreshCw,
   FlaskConical,
@@ -21,6 +22,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { UpdatesPage } from "@/pages/UpdatesPage";
 import { AndroidPage } from "@/pages/AndroidPage";
+import { SecurityPage } from "@/pages/SecurityPage";
 
 // ================================================================
 // محدِّث المنزل — App shell + navigation
@@ -38,7 +40,7 @@ interface VersionResponse {
   build: string;
 }
 
-type Page = "dashboard" | "devices" | "updates" | "android";
+type Page = "dashboard" | "devices" | "updates" | "android" | "security";
 
 function App() {
   const { t } = useTranslation();
@@ -107,6 +109,12 @@ function App() {
               icon={Smartphone}
               label="Android"
             />
+            <NavTab
+              active={page === "security"}
+              onClick={() => setPage("security")}
+              icon={ShieldAlert}
+              label="الأمان"
+            />
           </nav>
 
           <div className="flex items-center gap-2">
@@ -133,6 +141,7 @@ function App() {
         {page === "devices" && <DevicesPage onBack={() => setPage("dashboard")} />}
         {page === "updates" && <UpdatesPage onBack={() => setPage("dashboard")} />}
         {page === "android" && <AndroidPage onBack={() => setPage("dashboard")} />}
+        {page === "security" && <SecurityPage onBack={() => setPage("dashboard")} />}
       </main>
 
       {/* التذييل */}
