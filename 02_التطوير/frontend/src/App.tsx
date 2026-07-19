@@ -15,6 +15,7 @@ import {
   Download,
   Trash2,
   Smartphone,
+  House,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -23,6 +24,7 @@ import { DevicesPage } from "@/pages/DevicesPage";
 import { UpdatesPage } from "@/pages/UpdatesPage";
 import { AndroidPage } from "@/pages/AndroidPage";
 import { SecurityPage } from "@/pages/SecurityPage";
+import { HomeAssistantPage } from "@/pages/HomeAssistantPage";
 
 // ================================================================
 // محدِّث المنزل — App shell + navigation
@@ -40,7 +42,7 @@ interface VersionResponse {
   build: string;
 }
 
-type Page = "dashboard" | "devices" | "updates" | "android" | "security";
+type Page = "dashboard" | "devices" | "updates" | "android" | "security" | "homeassistant";
 
 function App() {
   const { t } = useTranslation();
@@ -115,6 +117,12 @@ function App() {
               icon={ShieldAlert}
               label="الأمان"
             />
+            <NavTab
+              active={page === "homeassistant"}
+              onClick={() => setPage("homeassistant")}
+              icon={House}
+              label="المنزل الذكي"
+            />
           </nav>
 
           <div className="flex items-center gap-2">
@@ -142,6 +150,7 @@ function App() {
         {page === "updates" && <UpdatesPage onBack={() => setPage("dashboard")} />}
         {page === "android" && <AndroidPage onBack={() => setPage("dashboard")} />}
         {page === "security" && <SecurityPage onBack={() => setPage("dashboard")} />}
+        {page === "homeassistant" && <HomeAssistantPage onBack={() => setPage("dashboard")} />}
       </main>
 
       {/* التذييل */}

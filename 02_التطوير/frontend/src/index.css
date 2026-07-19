@@ -213,6 +213,21 @@
     padding: 1.5rem;
   }
 
+  /* حقل إدخال */
+  .input {
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-fg));
+    border: 1px solid rgb(var(--color-border));
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    transition: border-color 0.15s ease;
+  }
+  .input:focus {
+    outline: none;
+    border-color: rgb(var(--color-primary));
+  }
+
   /* زر أساسي */
   .btn-primary {
     background-color: rgb(var(--color-primary));
