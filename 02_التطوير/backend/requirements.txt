@@ -39,6 +39,9 @@ adb-shell==0.4.4
 # --- Logging ---
 loguru==0.7.3
 
+# --- HTTP client (NVD CVE lookups) ---
+httpx==0.28.1
+
 # --- Windows Native Integration (WUA COM API + tray icon) ---
 pywin32==308; sys_platform == "win32"
 pystray==0.19.5
@@ -62,8 +65,7 @@ zeroconf==0.136.0
 paramiko==3.5.0
 asyncssh==2.18.0
 
-# Phase 2.2/2.3 — vendor scrapers, CVE feeds, Home Assistant REST
-httpx==0.28.1
+# Phase 2.2/2.3 — vendor scrapers, Home Assistant REST (httpx moved to ACTIVE)
 requests==2.32.3
 beautifulsoup4==4.12.3
 

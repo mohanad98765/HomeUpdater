@@ -15,6 +15,7 @@ EXPECTED_TABLES = {
     "android_devices",
     "software_packages",
     "windows_updates",
+    "cve_cache",
     "alembic_version",
 }
 

@@ -10,6 +10,7 @@ Pydantic request bodies in routers/*.py. (models/device.py is legacy/unused.)
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
@@ -205,4 +206,29 @@ class WindowsUpdateORM(Base):
             "install_result": self.install_result,
             "release_date": self.release_date,
             "last_checked": self.last_checked.isoformat() if self.last_checked else None,
+        }
+
+
+class CVECacheORM(Base):
+    """Cached NVD vulnerability lookup for a vendor keyword.
+
+    Discovery only tells us a device's vendor (via its MAC OUI), not the exact
+    product/version — so we surface "known vulnerabilities associated with this
+    vendor" by keyword, cached here to respect NVD's rate limits.
+    """
+
+    __tablename__ = "cve_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    keyword: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    total_results: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[str] = mapped_column(Text, default="[]")  # JSON: list of top CVEs
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "keyword": self.keyword,
+            "total_results": self.total_results,
+            "cves": json.loads(self.data or "[]"),
+            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }
