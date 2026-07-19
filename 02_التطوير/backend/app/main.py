@@ -82,10 +82,7 @@ async def security_guard(request: Request, call_next):
                 "detail": "Host header rejected (DNS-rebinding protection)",
             },
         )
-    if (
-        request.method in _MUTATING_METHODS
-        and request.headers.get("x-homeupdater") is None
-    ):
+    if request.method in _MUTATING_METHODS and request.headers.get("x-homeupdater") is None:
         logger.warning(
             f"Rejected {request.method} {request.url.path}: missing X-HomeUpdater header"
         )

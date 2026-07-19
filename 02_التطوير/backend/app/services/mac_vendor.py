@@ -15,7 +15,6 @@ on first run and cache it. That stays as a future enhancement.
 
 from __future__ import annotations
 
-
 # Maps the first 3 octets (uppercase, no separators, e.g. "5C5F67") to a
 # manufacturer name. Covers the most common consumer device makers.
 _OUI_DB: dict[str, str] = {
@@ -133,7 +132,6 @@ _OUI_DB: dict[str, str] = {
     "18A6F7": "TP-Link",
     "30B5C2": "TP-Link",
     "3C46D8": "TP-Link",
-    "5091E3": "TP-Link",
     "60E327": "TP-Link",
     "841B5E": "TP-Link",
     "94E36D": "TP-Link",
@@ -194,7 +192,6 @@ _OUI_DB: dict[str, str] = {
     "001B21": "Intel Corporate",
     "001E64": "Intel Corporate",
     "0021CC": "Intel Corporate",
-    "002608": "Intel Corporate",
     "1C1B0D": "Intel Corporate",
     "2C0BE9": "Intel Corporate",
     "30E83B": "Intel Corporate",
@@ -218,7 +215,6 @@ _OUI_DB: dict[str, str] = {
     "0017FA": "Microsoft Corporation",
     "0050F2": "Microsoft Corporation",
     "00125A": "Microsoft Corporation",
-    "187C81": "Microsoft Corporation",
     "28186A": "Microsoft Corporation",
     "30597B": "Microsoft Corporation",
     "60453E": "Microsoft Corporation",
@@ -230,10 +226,7 @@ _OUI_DB: dict[str, str] = {
     # ---- Dell / HP / Lenovo / Acer / MSI ----------------------------
     "0014C2": "Dell Inc",
     "001C23": "Dell Inc",
-    "0021CC": "Dell Inc",
-    "00248C": "Dell Inc",
     "0026B9": "Dell Inc",
-    "182032": "Dell Inc",
     "246E96": "Dell Inc",
     "30D042": "Dell Inc",
     "5C260A": "Dell Inc",
@@ -259,7 +252,6 @@ _OUI_DB: dict[str, str] = {
     "684A76": "Lenovo",
     "AC2B6E": "Lenovo",
     "F84F57": "Lenovo",
-    "00248C": "Acer",
     "001A6B": "Acer",
     "1C7508": "Acer",
     "B05ADA": "Acer",
@@ -269,7 +261,6 @@ _OUI_DB: dict[str, str] = {
     "001E75": "LG Electronics",
     "001E76": "LG Electronics",
     "001F6B": "LG Electronics",
-    "0026E2": "LG Electronics",
     "8842F7": "LG Electronics",
     "C4366C": "LG Electronics",
     "F80CF3": "LG Electronics",
@@ -292,7 +283,6 @@ _OUI_DB: dict[str, str] = {
     "D8311C": "Roku",
     "002472": "Google",
     "086219": "Google",
-    "1C1B0D": "Google",
     "20DF3F": "Google",
     "3C5A37": "Google",
     "54600F": "Google",

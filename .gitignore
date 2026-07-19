@@ -60,3 +60,6 @@ installer-output/
 
 # Claude Code runtime artifacts
 .claude/scheduled_tasks.lock
+
+# TypeScript incremental build info
+*.tsbuildinfo

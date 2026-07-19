@@ -16,8 +16,7 @@ Mounted in main.py with prefix /api/devices.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -45,7 +44,7 @@ router = APIRouter()
 class ScanRequest(BaseModel):
     """Optional override for POST /scan."""
 
-    subnet: Optional[str] = Field(
+    subnet: str | None = Field(
         default=None,
         description="CIDR like '192.168.1.0/24'. Omit for auto-detection.",
     )
@@ -54,8 +53,8 @@ class ScanRequest(BaseModel):
 class DeviceUpdate(BaseModel):
     """PATCH body for device fields the user can edit."""
 
-    custom_name: Optional[str] = Field(default=None, max_length=255)
-    notes: Optional[str] = Field(default=None, max_length=4000)
+    custom_name: str | None = Field(default=None, max_length=255)
+    notes: str | None = Field(default=None, max_length=4000)
 
 
 # ===================================================================
@@ -83,15 +82,12 @@ async def device_stats(db: AsyncSession = Depends(get_db)) -> dict:
     total = total_q.scalar_one()
 
     online_q = await db.execute(
-        select(func.count())
-        .select_from(DeviceORM)
-        .where(DeviceORM.is_online.is_(True))
+        select(func.count()).select_from(DeviceORM).where(DeviceORM.is_online.is_(True))
     )
     online = online_q.scalar_one()
 
     by_type_q = await db.execute(
-        select(DeviceORM.device_type, func.count())
-        .group_by(DeviceORM.device_type)
+        select(DeviceORM.device_type, func.count()).group_by(DeviceORM.device_type)
     )
     by_type = {row[0]: row[1] for row in by_type_q.all()}
 
@@ -158,7 +154,7 @@ async def trigger_scan(
 
     logger.info(f"POST /api/devices/scan (override={target_subnet})")
     started_at = time.time()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     try:
         result = await scan_network(target_subnet)
@@ -247,9 +243,7 @@ async def clear_devices(db: AsyncSession = Depends(get_db)) -> dict:
 # GET /api/devices/{id}  -> single device
 # ===================================================================
 @router.get("/{device_id}")
-async def get_device(
-    device_id: int, db: AsyncSession = Depends(get_db)
-) -> dict:
+async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     device = await db.get(DeviceORM, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

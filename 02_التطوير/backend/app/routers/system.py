@@ -73,6 +73,7 @@ async def system_info():
 # ===================================================================
 class RebootRequest(BaseModel):
     """Optional confirmation for POST /reboot."""
+
     delay_seconds: int = Field(default=60, ge=5, le=600)
     cancel: bool = False
 
@@ -94,16 +95,25 @@ async def reboot(req: RebootRequest = RebootRequest()) -> dict:
             logger.info("POST /api/system/reboot - cancelling pending shutdown")
             subprocess.run(
                 ["shutdown", "/a"],
-                check=False, capture_output=True, text=True, timeout=10,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             return {"status": "cancelled", "message": "Pending reboot cancelled (if any)"}
 
         delay = int(req.delay_seconds)
-        msg = f"HomeUpdater is rebooting this PC in {delay} seconds to finish installing Windows updates."
+        msg = (
+            f"HomeUpdater is rebooting this PC in {delay} seconds "
+            "to finish installing Windows updates."
+        )
         logger.info(f"POST /api/system/reboot - scheduling reboot in {delay}s")
         subprocess.run(
             ["shutdown", "/r", "/t", str(delay), "/c", msg],
-            check=True, capture_output=True, text=True, timeout=10,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return {
             "status": "scheduled",

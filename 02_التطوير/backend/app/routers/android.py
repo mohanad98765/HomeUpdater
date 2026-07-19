@@ -13,8 +13,7 @@ Endpoints (mounted under /api/android):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -43,7 +42,7 @@ class AddDeviceRequest(BaseModel):
 
 
 class UpdateDeviceRequest(BaseModel):
-    custom_name: Optional[str] = Field(default=None, max_length=255)
+    custom_name: str | None = Field(default=None, max_length=255)
 
 
 # ==================================================================
@@ -51,9 +50,7 @@ class UpdateDeviceRequest(BaseModel):
 # ==================================================================
 @router.get("/devices")
 async def list_devices(db: AsyncSession = Depends(get_db)) -> dict:
-    result = await db.execute(
-        select(AndroidDeviceORM).order_by(AndroidDeviceORM.last_seen.desc())
-    )
+    result = await db.execute(select(AndroidDeviceORM).order_by(AndroidDeviceORM.last_seen.desc()))
     rows = result.scalars().all()
     return {
         "devices": [r.to_dict() for r in rows],
@@ -77,7 +74,7 @@ async def add_device(
     except AndroidError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Upsert by (host, port)
     existing_q = await db.execute(
@@ -146,9 +143,7 @@ async def update_device(
 # POST /devices/{id}/refresh  -> re-probe
 # ==================================================================
 @router.post("/devices/{device_id}/refresh")
-async def refresh_device(
-    device_id: int, db: AsyncSession = Depends(get_db)
-) -> dict:
+async def refresh_device(device_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     row = await db.get(AndroidDeviceORM, device_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -163,7 +158,7 @@ async def refresh_device(
         row.sdk_version = info.sdk_version
         row.security_patch = info.security_patch
         row.is_online = True
-        row.last_seen = datetime.now(timezone.utc)
+        row.last_seen = datetime.now(UTC)
     except AndroidError as exc:
         row.is_online = False
         await db.commit()
@@ -195,7 +190,7 @@ async def get_apps(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     row.is_online = True
-    row.last_seen = datetime.now(timezone.utc)
+    row.last_seen = datetime.now(UTC)
     await db.commit()
 
     return {

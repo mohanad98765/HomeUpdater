@@ -23,7 +23,6 @@ import asyncio
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
 
 from loguru import logger
 
@@ -59,6 +58,7 @@ def _ensure_keys() -> tuple[str, str]:
 def _signer():
     """Return a PythonRSASigner bound to our key pair."""
     from adb_shell.auth.sign_pythonrsa import PythonRSASigner  # type: ignore[import-not-found]
+
     pub, priv = _ensure_keys()
     return PythonRSASigner(pub, priv)
 
@@ -73,6 +73,7 @@ class AndroidError(RuntimeError):
 @dataclass
 class DeviceInfo:
     """Snapshot of Android device properties read via getprop."""
+
     host: str
     port: int
     serial: str
@@ -101,6 +102,7 @@ class DeviceInfo:
 @dataclass
 class AppInfo:
     """One installed app on an Android device."""
+
     package_name: str
     version_name: str = ""
     version_code: str = ""
@@ -123,6 +125,7 @@ class AppInfo:
 def _connect_blocking(host: str, port: int, timeout: float = 10.0):
     """Blocking connect. Runs in an executor."""
     from adb_shell.adb_device import AdbDeviceTcp  # type: ignore[import-not-found]
+
     device = AdbDeviceTcp(host, port, default_transport_timeout_s=timeout)
     device.connect(rsa_keys=[_signer()], auth_timeout_s=15.0)
     return device
@@ -146,6 +149,7 @@ async def _in_executor(func, *args, **kwargs):
 # ==================================================================
 async def probe(host: str, port: int = 5555) -> DeviceInfo:
     """Connect, read device properties, disconnect. Fast reachability check."""
+
     def _work():
         device = _connect_blocking(host, port)
         try:
@@ -190,6 +194,7 @@ async def probe(host: str, port: int = 5555) -> DeviceInfo:
 
 async def list_apps(host: str, port: int = 5555, include_system: bool = False) -> list[AppInfo]:
     """List installed apps on the device."""
+
     def _work():
         device = _connect_blocking(host, port)
         try:
@@ -200,7 +205,7 @@ async def list_apps(host: str, port: int = 5555, include_system: bool = False) -
                 # Format: package:/data/app/pkg-x/base.apk=com.example.app
                 if not line.startswith("package:"):
                     continue
-                body = line[len("package:"):].strip()
+                body = line[len("package:") :].strip()
                 if "=" not in body:
                     continue
                 path, pkg = body.rsplit("=", 1)
@@ -211,7 +216,9 @@ async def list_apps(host: str, port: int = 5555, include_system: bool = False) -
             for pkg, path in pkgs:
                 info = AppInfo(package_name=pkg, apk_path=path)
                 try:
-                    dump = _shell_blocking(device, f"dumpsys package {pkg} | grep version", timeout=10)
+                    dump = _shell_blocking(
+                        device, f"dumpsys package {pkg} | grep version", timeout=10
+                    )
                     for line in dump.splitlines():
                         line = line.strip()
                         if line.startswith("versionName="):

@@ -11,12 +11,11 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Literal, Optional
-
+from typing import Literal
 
 Phase = Literal[
     "idle",
-    "checking",      # searching Windows Update for pending items
+    "checking",  # searching Windows Update for pending items
     "downloading",
     "installing",
     "rebooting",
@@ -42,19 +41,17 @@ class UpdateEvent:
 @dataclass
 class _UpdateProgress:
     is_running: bool = False
-    operation: str = ""        # "check" or "install"
-    started_at: Optional[float] = None
-    finished_at: Optional[float] = None
+    operation: str = ""  # "check" or "install"
+    started_at: float | None = None
+    finished_at: float | None = None
     phase: Phase = "idle"
     total: int = 0
     completed: int = 0
     last_message: str = ""
-    error: Optional[str] = None
-    log: Deque[UpdateEvent] = field(default_factory=lambda: deque(maxlen=80))
+    error: str | None = None
+    log: deque[UpdateEvent] = field(default_factory=lambda: deque(maxlen=80))
     # Guards log append/clear/snapshot against the concurrent /status reader.
-    _lock: threading.Lock = field(
-        default_factory=threading.Lock, repr=False, compare=False
-    )
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     # ---- mutators ---------------------------------------------------
     def begin(self, operation: str, total: int = 0) -> None:
@@ -75,9 +72,7 @@ class _UpdateProgress:
         self.phase = phase
         self.add(phase, message)
 
-    def update_progress(
-        self, completed: int, total: Optional[int] = None, message: str = ""
-    ) -> None:
+    def update_progress(self, completed: int, total: int | None = None, message: str = "") -> None:
         if total is not None:
             self.total = total
         self.completed = completed

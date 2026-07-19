@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.android import AndroidError, _PACKAGE_RE, open_play_store
+from app.services.android import _PACKAGE_RE, AndroidError, open_play_store
 
 VALID = ["com.whatsapp", "com.google.android.youtube", "org.mozilla.firefox", "a.b.c"]
 INJECTION = [

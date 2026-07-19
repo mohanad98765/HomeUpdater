@@ -6,8 +6,6 @@ Regression tests for the devices scan endpoint:
 
 from __future__ import annotations
 
-import pytest
-
 from app.services.progress import scan_progress
 from tests.conftest import CSRF_HEADER
 
@@ -18,9 +16,20 @@ def _fake_scan_result():
         "devices": [
             # Two devices with NO MAC — used to violate the UNIQUE("") constraint.
             {"mac": "", "ip": "10.0.0.2", "hostname": "", "vendor": "", "device_type": "unknown"},
-            {"mac": "", "ip": "10.0.0.3", "hostname": "h3", "vendor": "Dell", "device_type": "computer"},
-            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.0.0.1", "hostname": "router",
-             "vendor": "TP-Link", "device_type": "router"},
+            {
+                "mac": "",
+                "ip": "10.0.0.3",
+                "hostname": "h3",
+                "vendor": "Dell",
+                "device_type": "computer",
+            },
+            {
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "ip": "10.0.0.1",
+                "hostname": "router",
+                "vendor": "TP-Link",
+                "device_type": "router",
+            },
         ],
     }
 

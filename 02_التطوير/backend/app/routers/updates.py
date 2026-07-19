@@ -10,8 +10,7 @@ Endpoints (mounted under /api/updates):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -132,12 +131,10 @@ async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
     except WindowsUpdateError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Upsert by update_id, scoped to this kind
-    existing_q = await db.execute(
-        select(WindowsUpdateORM).where(WindowsUpdateORM.kind == kind)
-    )
+    existing_q = await db.execute(select(WindowsUpdateORM).where(WindowsUpdateORM.kind == kind))
     existing = {r.update_id: r for r in existing_q.scalars().all()}
 
     found_ids: set[str] = set()
@@ -197,9 +194,7 @@ async def trigger_drivers_install(
     return await _install_wua(db, payload, kind="driver")
 
 
-async def _install_wua(
-    db: AsyncSession, payload: InstallRequest, *, kind: str
-) -> dict:
+async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) -> dict:
     _reject_if_busy()
     update_ids = list(payload.update_ids)
     if not update_ids:
@@ -264,7 +259,7 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
     except SoftwareUpdateError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     existing_q = await db.execute(select(SoftwarePackageORM))
     existing = {r.package_id: r for r in existing_q.scalars().all()}
 
@@ -302,6 +297,7 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
 
 class SoftwareInstallRequest(BaseModel):
     """POST /software/install body."""
+
     package_ids: list[str] = Field(default_factory=list)
 
 
@@ -319,9 +315,7 @@ async def trigger_software_install(
         )
         package_ids = [r.package_id for r in q.scalars().all()]
     if not package_ids:
-        raise HTTPException(
-            status_code=400, detail="No pending packages - run check first"
-        )
+        raise HTTPException(status_code=400, detail="No pending packages - run check first")
 
     logger.info(f"POST /api/updates/software/install ({len(package_ids)} packages)")
     try:

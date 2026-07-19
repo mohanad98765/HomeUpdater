@@ -10,8 +10,7 @@ Pydantic request bodies in routers/*.py. (models/device.py is legacy/unused.)
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -22,7 +21,7 @@ class Base(DeclarativeBase):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class DeviceORM(Base):
@@ -37,7 +36,7 @@ class DeviceORM(Base):
     # NULL (not "") when the MAC is unknown — SQLite lets a UNIQUE column hold
     # many NULLs, so several MAC-less hosts (common on non-admin scans) can all
     # be stored. Storing "" here would violate the UNIQUE index on the 2nd host.
-    mac: Mapped[Optional[str]] = mapped_column(
+    mac: Mapped[str | None] = mapped_column(
         String(32), unique=True, index=True, nullable=True, default=None
     )
     ip: Mapped[str] = mapped_column(String(45), index=True, default="")
@@ -52,12 +51,8 @@ class DeviceORM(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
 
     # Lifecycle
-    first_seen: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
-    last_seen: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     is_online: Mapped[bool] = mapped_column(Boolean, default=True)
 
     def to_dict(self) -> dict:
@@ -74,9 +69,7 @@ class DeviceORM(Base):
             "first_seen": self.first_seen.isoformat() if self.first_seen else None,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             # display_name: custom > hostname > vendor > ip
-            "display_name": (
-                self.custom_name or self.hostname or self.vendor or self.ip
-            ),
+            "display_name": (self.custom_name or self.hostname or self.vendor or self.ip),
         }
 
 
@@ -144,9 +137,7 @@ class SoftwarePackageORM(Base):
 
     is_installed: Mapped[bool] = mapped_column(Boolean, default=False)
     install_result: Mapped[int] = mapped_column(Integer, default=0)
-    last_checked: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    last_checked: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     def to_dict(self) -> dict:
         return {
@@ -183,7 +174,7 @@ class WindowsUpdateORM(Base):
     title: Mapped[str] = mapped_column(String(500), default="")
     description: Mapped[str] = mapped_column(Text, default="")
     kb_articles: Mapped[str] = mapped_column(String(500), default="")  # comma-separated
-    categories: Mapped[str] = mapped_column(String(500), default="")   # comma-separated
+    categories: Mapped[str] = mapped_column(String(500), default="")  # comma-separated
 
     # Metadata
     severity: Mapped[str] = mapped_column(String(32), default="Unspecified")
@@ -195,9 +186,7 @@ class WindowsUpdateORM(Base):
     # State / install tracking
     is_installed: Mapped[bool] = mapped_column(Boolean, default=False)
     install_result: Mapped[int] = mapped_column(Integer, default=0)  # 0=not tried, 2=success
-    last_checked: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    last_checked: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     def to_dict(self) -> dict:
         return {

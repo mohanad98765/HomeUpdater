@@ -12,15 +12,14 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Literal
-
+from typing import Literal
 
 Phase = Literal[
     "idle",
-    "detecting",     # determining subnet/gateway
-    "scanning",      # nmap ARP scan in progress
-    "resolving",     # reverse-DNS lookups
-    "classifying",   # device-type heuristics
+    "detecting",  # determining subnet/gateway
+    "scanning",  # nmap ARP scan in progress
+    "resolving",  # reverse-DNS lookups
+    "classifying",  # device-type heuristics
     "done",
     "error",
 ]
@@ -29,6 +28,7 @@ Phase = Literal[
 @dataclass
 class ProgressEvent:
     """One entry in the activity log."""
+
     elapsed_seconds: float
     phase: Phase
     message: str
@@ -44,6 +44,7 @@ class ProgressEvent:
 @dataclass
 class _ProgressState:
     """The mutable global state of the current/last scan."""
+
     is_running: bool = False
     started_at: float | None = None
     finished_at: float | None = None
@@ -52,13 +53,11 @@ class _ProgressState:
     devices_count: int = 0
     last_message: str = ""
     error: str | None = None
-    log: Deque[ProgressEvent] = field(default_factory=lambda: deque(maxlen=50))
+    log: deque[ProgressEvent] = field(default_factory=lambda: deque(maxlen=50))
     # Writer runs in an executor thread; readers hit /status concurrently.
     # The lock guards every append/clear/snapshot of `log` to avoid
     # "deque mutated during iteration" 500s while the UI polls.
-    _lock: threading.Lock = field(
-        default_factory=threading.Lock, repr=False, compare=False
-    )
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     # ---- mutators ------------------------------------------------
     def begin(self, subnet: str) -> None:

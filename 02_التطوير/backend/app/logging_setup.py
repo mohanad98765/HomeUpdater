@@ -9,9 +9,10 @@ Implements the Logging requirements from WINDOWS_FUNDAMENTALS.md (Section O.1):
 """
 
 import sys
+
 from loguru import logger
 
-from .config import settings, get_logs_dir
+from .config import get_logs_dir, settings
 
 
 def setup_logging() -> None:

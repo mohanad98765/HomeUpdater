@@ -18,13 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from dataclasses import dataclass, asdict
-from typing import Any, Optional
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from loguru import logger
 
 from .update_progress import update_progress
-
 
 # Severity values returned by Microsoft Update — keep as strings for the UI.
 SEVERITY_LEVELS = ("Critical", "Important", "Moderate", "Low", "Unspecified")
@@ -34,16 +33,16 @@ SEVERITY_LEVELS = ("Critical", "Important", "Moderate", "Low", "Unspecified")
 class UpdateInfo:
     """One pending Windows update."""
 
-    update_id: str          # WUA UpdateIdentity.UpdateID (used to re-find it for install)
+    update_id: str  # WUA UpdateIdentity.UpdateID (used to re-find it for install)
     title: str
     description: str
     kb_articles: list[str]  # e.g. ["KB5034441"]
-    severity: str           # "Critical" / "Important" / etc. or ""
-    size_mb: float          # MaxDownloadSize in MB
+    severity: str  # "Critical" / "Important" / etc. or ""
+    size_mb: float  # MaxDownloadSize in MB
     is_downloaded: bool
     requires_reboot: bool
-    categories: list[str]   # e.g. ["Security Updates"]
-    release_date: Optional[str] = None  # ISO date if available
+    categories: list[str]  # e.g. ["Security Updates"]
+    release_date: str | None = None  # ISO date if available
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -135,7 +134,8 @@ def _check_blocking(kind: str = "Software") -> list[UpdateInfo]:
             )
             updates.append(info)
             update_progress.update_progress(
-                completed=i + 1, total=total,
+                completed=i + 1,
+                total=total,
                 message=f"Read details for: {info.title[:80]}",
             )
 
@@ -169,6 +169,7 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
         result = searcher.Search("IsInstalled=0 and IsHidden=0")
 
         import win32com.client  # type: ignore[import-not-found]
+
         wanted = win32com.client.Dispatch("Microsoft.Update.UpdateColl")
         for i in range(result.Updates.Count):
             u = result.Updates.Item(i)
@@ -190,9 +191,7 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
         downloader.Updates = wanted
         download_result = downloader.Download()
         if download_result.ResultCode not in (2, 3):  # 2=Succeeded, 3=SucceededWithErrors
-            raise WindowsUpdateError(
-                f"Download failed (ResultCode={download_result.ResultCode})"
-            )
+            raise WindowsUpdateError(f"Download failed (ResultCode={download_result.ResultCode})")
 
         # 3) Install only the items that downloaded successfully
         to_install = win32com.client.Dispatch("Microsoft.Update.UpdateColl")
@@ -213,13 +212,15 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
         for i in range(to_install.Count):
             u = to_install.Item(i)
             r = install_result.GetUpdateResult(i)
-            results.append({
-                "update_id": str(u.Identity.UpdateID),
-                "title": str(u.Title or ""),
-                "result_code": int(r.ResultCode),  # 2 = Succeeded
-                "hresult": int(r.HResult),
-                "succeeded": int(r.ResultCode) == 2,
-            })
+            results.append(
+                {
+                    "update_id": str(u.Identity.UpdateID),
+                    "title": str(u.Title or ""),
+                    "result_code": int(r.ResultCode),  # 2 = Succeeded
+                    "hresult": int(r.HResult),
+                    "succeeded": int(r.ResultCode) == 2,
+                }
+            )
 
         succeeded = sum(1 for x in results if x["succeeded"])
         reboot = bool(install_result.RebootRequired)
@@ -227,9 +228,10 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
             update_progress.reboot_required()
 
         update_progress.update_progress(
-            completed=succeeded, total=to_install.Count,
+            completed=succeeded,
+            total=to_install.Count,
             message=f"Installed {succeeded}/{to_install.Count}"
-                    + (" (reboot required)" if reboot else ""),
+            + (" (reboot required)" if reboot else ""),
         )
 
         return {

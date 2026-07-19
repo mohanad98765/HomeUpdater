@@ -11,12 +11,10 @@ import ipaddress
 import os
 import socket
 import subprocess
-from dataclasses import dataclass, asdict
-from typing import Optional
+from dataclasses import asdict, dataclass
 
 import psutil
 from loguru import logger
-
 
 # Maximum subnet size we will scan automatically. Anything broader than /24
 # (i.e. prefix < 24) gets capped to /24 around the local IP, because:
@@ -35,16 +33,16 @@ class NetworkInfo:
 
     local_ip: str
     netmask: str
-    raw_subnet: str         # what Windows reports (could be huge, e.g. /16)
-    suggested_subnet: str   # capped to /24 for fast scanning
-    gateway_ip: Optional[str]
+    raw_subnet: str  # what Windows reports (could be huge, e.g. /16)
+    suggested_subnet: str  # capped to /24 for fast scanning
+    gateway_ip: str | None
     interface_name: str
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def _outbound_ip() -> Optional[str]:
+def _outbound_ip() -> str | None:
     """Return the IP used to reach the public internet (no traffic sent)."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -56,7 +54,7 @@ def _outbound_ip() -> Optional[str]:
         return None
 
 
-def _get_default_gateway() -> Optional[str]:
+def _get_default_gateway() -> str | None:
     """
     Read the default IPv4 gateway. Windows-only via `route print`.
     Returns None on Linux/Mac (we will fall back to "<network>.1" guess).
@@ -98,7 +96,7 @@ def _cap_subnet(local_ip: str, network: ipaddress.IPv4Network) -> ipaddress.IPv4
         return network
 
 
-def get_network_info() -> Optional[NetworkInfo]:
+def get_network_info() -> NetworkInfo | None:
     """Detect everything we know about the active local network."""
     local_ip = _outbound_ip()
     if not local_ip:
@@ -194,26 +192,71 @@ def is_valid_cidr(value: str) -> bool:
 # 4) Device-type classifier (heuristic)
 # ===================================================================
 _ROUTER_VENDORS = (
-    "cisco", "tp-link", "tplink", "asus", "asustek", "netgear", "mikrotik",
-    "ubiquiti", "linksys", "d-link", "dlink", "huawei tech", "zte",
-    "fortinet", "fritzbox", "avm", "mercusys",
+    "cisco",
+    "tp-link",
+    "tplink",
+    "asus",
+    "asustek",
+    "netgear",
+    "mikrotik",
+    "ubiquiti",
+    "linksys",
+    "d-link",
+    "dlink",
+    "huawei tech",
+    "zte",
+    "fortinet",
+    "fritzbox",
+    "avm",
+    "mercusys",
 )
 _PHONE_VENDORS = (
-    "apple", "samsung", "huawei device", "xiaomi", "oneplus", "oppo",
-    "vivo", "realme", "honor", "motorola",
+    "apple",
+    "samsung",
+    "huawei device",
+    "xiaomi",
+    "oneplus",
+    "oppo",
+    "vivo",
+    "realme",
+    "honor",
+    "motorola",
 )
 _TV_VENDORS = (
-    "lg electronics", "sony", "tcl", "vizio", "roku", "hisense",
-    "panasonic", "philips tv",
+    "lg electronics",
+    "sony",
+    "tcl",
+    "vizio",
+    "roku",
+    "hisense",
+    "panasonic",
+    "philips tv",
 )
 _COMPUTER_VENDORS = (
-    "dell", "hp inc", "hewlett", "lenovo", "intel corp", "acer",
-    "msi", "razer", "microsoft corp",
+    "dell",
+    "hp inc",
+    "hewlett",
+    "lenovo",
+    "intel corp",
+    "acer",
+    "msi",
+    "razer",
+    "microsoft corp",
 )
 _IOT_VENDORS = (
-    "ring", "amazon technologies", "google nest", "google llc", "ecobee",
-    "tuya", "philips lighting", "espressif", "tplink iot", "shelly",
-    "sonoff", "raspberrypi", "raspberry pi",
+    "ring",
+    "amazon technologies",
+    "google nest",
+    "google llc",
+    "ecobee",
+    "tuya",
+    "philips lighting",
+    "espressif",
+    "tplink iot",
+    "shelly",
+    "sonoff",
+    "raspberrypi",
+    "raspberry pi",
 )
 
 

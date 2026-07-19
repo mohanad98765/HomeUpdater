@@ -17,8 +17,8 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
-from dataclasses import dataclass, asdict
-from typing import Any, Optional
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from loguru import logger
 
@@ -29,12 +29,12 @@ from .update_progress import update_progress
 class SoftwarePackageInfo:
     """One winget package with an upgrade available."""
 
-    package_id: str           # e.g. "Mozilla.Firefox"
-    name: str                 # e.g. "Mozilla Firefox"
+    package_id: str  # e.g. "Mozilla.Firefox"
+    name: str  # e.g. "Mozilla Firefox"
     current_version: str
     available_version: str
-    source: str               # "winget" / "msstore"
-    size_mb: float = 0.0      # winget rarely reports size; fill 0
+    source: str  # "winget" / "msstore"
+    size_mb: float = 0.0  # winget rarely reports size; fill 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -61,10 +61,10 @@ async def _run(*args: str, timeout: float = 600.0) -> tuple[int, str, str]:
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.communicate()
-        raise SoftwareUpdateError(f"Command timed out: {' '.join(args)}")
+        raise SoftwareUpdateError(f"Command timed out: {' '.join(args)}") from None
     return (
         proc.returncode or 0,
         stdout.decode("utf-8", errors="replace"),
@@ -81,7 +81,7 @@ def _is_separator_row(line: str) -> bool:
     return len(s) >= 10 and set(s) <= {"-", "─"}
 
 
-def _parse_winget_row(line: str) -> Optional[SoftwarePackageInfo]:
+def _parse_winget_row(line: str) -> SoftwarePackageInfo | None:
     """Parse a single data row language- and alignment-independently.
 
     Columns are separated by runs of 2+ spaces, while a package NAME uses only
@@ -135,7 +135,7 @@ def _parse_winget_table(text: str) -> list[SoftwarePackageInfo]:
     """
     lines = text.splitlines()
     sep_idx = next((i for i, ln in enumerate(lines) if _is_separator_row(ln)), None)
-    data_lines = lines[sep_idx + 1:] if sep_idx is not None else lines
+    data_lines = lines[sep_idx + 1 :] if sep_idx is not None else lines
 
     packages: list[SoftwarePackageInfo] = []
     for line in data_lines:
@@ -156,13 +156,12 @@ async def list_software_updates() -> list[SoftwarePackageInfo]:
     """List installed apps that have an upgrade available."""
     _ensure_windows()
     update_progress.begin("check-software")
-    update_progress.set_phase(
-        "checking", "Asking winget for available app upgrades"
-    )
+    update_progress.set_phase("checking", "Asking winget for available app upgrades")
 
     try:
         rc, stdout, stderr = await _run(
-            "winget", "upgrade",
+            "winget",
+            "upgrade",
             "--include-unknown",
             "--accept-source-agreements",
             timeout=120.0,
@@ -173,7 +172,8 @@ async def list_software_updates() -> list[SoftwarePackageInfo]:
             )
         packages = _parse_winget_table(stdout)
         update_progress.update_progress(
-            completed=len(packages), total=len(packages),
+            completed=len(packages),
+            total=len(packages),
             message=f"Found {len(packages)} app(s) with updates",
         )
     except SoftwareUpdateError as exc:
@@ -193,7 +193,9 @@ async def install_software_update(package_id: str) -> dict[str, Any]:
     _ensure_windows()
     update_progress.set_phase("installing", f"Installing {package_id}")
     rc, stdout, stderr = await _run(
-        "winget", "upgrade", package_id,
+        "winget",
+        "upgrade",
+        package_id,
         "--silent",
         "--accept-source-agreements",
         "--accept-package-agreements",
@@ -215,7 +217,8 @@ async def install_many(package_ids: list[str]) -> dict[str, Any]:
     succeeded = 0
     for i, pkg_id in enumerate(package_ids, 1):
         update_progress.update_progress(
-            completed=i - 1, total=len(package_ids),
+            completed=i - 1,
+            total=len(package_ids),
             message=f"Installing {pkg_id} ({i}/{len(package_ids)})",
         )
         try:

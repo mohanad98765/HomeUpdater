@@ -21,7 +21,6 @@ from .mac_vendor import enrich_vendor
 from .network_utils import classify_device, get_local_subnet, normalize_mac
 from .progress import scan_progress
 
-
 # How long to give nmap to scan the whole subnet, end-to-end.
 # Set high because /16 networks can take several minutes.
 DEFAULT_SCAN_TIMEOUT_SECONDS = 600  # 10 minutes
@@ -59,6 +58,7 @@ async def scan_network(
     host_estimate = 0
     try:
         import ipaddress as _ip
+
         net = _ip.IPv4Network(target, strict=False)
         host_estimate = max(net.num_addresses - 2, 1)
     except Exception:
@@ -94,9 +94,7 @@ async def scan_network(
 
     loop = asyncio.get_event_loop()
     try:
-        devices: list[dict[str, Any]] = await loop.run_in_executor(
-            None, _do_scan, target, timeout
-        )
+        devices: list[dict[str, Any]] = await loop.run_in_executor(None, _do_scan, target, timeout)
     except DiscoveryError as exc:
         scan_progress.fail(str(exc))
         raise
@@ -128,9 +126,7 @@ def _do_scan(subnet: str, timeout: int) -> list[dict[str, Any]]:
         nm = nmap.PortScanner()
     except nmap.PortScannerError as e:
         logger.exception("Could not initialize nmap PortScanner")
-        raise DiscoveryError(
-            "nmap not found. Make sure Nmap is installed and on PATH."
-        ) from e
+        raise DiscoveryError("nmap not found. Make sure Nmap is installed and on PATH.") from e
 
     # -sn  : ping/host-discovery scan only (no port scan)
     # NO -PR (no ARP-only): we want nmap to use its default probe set
@@ -167,9 +163,10 @@ def _do_scan(subnet: str, timeout: int) -> list[dict[str, Any]]:
             entry = _parse_host(nm, ip)
             if entry:
                 devices.append(entry)
+                vendor_suffix = f"({entry['vendor']})" if entry["vendor"] else ""
                 scan_progress.update_count(
                     len(devices),
-                    f"Found {entry['ip']} {('(' + entry['vendor'] + ')') if entry['vendor'] else ''}".strip(),
+                    f"Found {entry['ip']} {vendor_suffix}".strip(),
                 )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(f"Could not parse host {ip}: {exc}")
@@ -177,7 +174,7 @@ def _do_scan(subnet: str, timeout: int) -> list[dict[str, Any]]:
     return devices
 
 
-def _parse_host(nm: "nmap.PortScanner", ip: str) -> dict[str, Any] | None:
+def _parse_host(nm: nmap.PortScanner, ip: str) -> dict[str, Any] | None:
     """Pull IP/MAC/hostname/vendor out of a single nmap result entry."""
     host = nm[ip]
 
