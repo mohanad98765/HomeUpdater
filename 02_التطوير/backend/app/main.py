@@ -8,11 +8,14 @@ This is the main application file. It:
 4. Provides a healthy /api/health endpoint
 """
 
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from . import __version__
@@ -20,6 +23,33 @@ from .config import settings
 from .db import init_db
 from .logging_setup import setup_logging
 from .routers import android, devices, system, updates
+
+
+def _get_frontend_dist() -> Path | None:
+    """Locate the built frontend (frontend/dist) for production single-server mode.
+
+    Returns None in development (no build), where the Vite dev server serves the
+    UI instead. Checked locations, in order:
+      1. HOMEUPDATER_FRONTEND_DIST env var (explicit override)
+      2. PyInstaller bundle: <_MEIPASS>/frontend_dist
+      3. Source tree: 02_التطوير/frontend/dist
+    """
+    import os
+
+    override = os.environ.get("HOMEUPDATER_FRONTEND_DIST")
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "frontend_dist")
+    # app/ -> backend/ -> 02_التطوير/ -> frontend/dist
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "frontend" / "dist")
+
+    for path in candidates:
+        if path.is_dir() and (path / "index.html").is_file():
+            return path
+    return None
 
 
 @asynccontextmanager
@@ -120,10 +150,10 @@ app.include_router(updates.router, prefix="/api/updates", tags=["Updates"])
 app.include_router(android.router, prefix="/api/android", tags=["Android"])
 
 
-# ─── Root ─────────────────────────────────────────────────────────
-@app.get("/")
-async def root():
-    """Welcome endpoint."""
+# ─── API welcome (always available) ───────────────────────────────
+@app.get("/api")
+async def api_root():
+    """Welcome / liveness payload for the API."""
     return {
         "name": settings.app_name,
         "name_ar": settings.app_name_ar,
@@ -131,6 +161,28 @@ async def root():
         "api_docs": "/docs",
         "status": "running",
     }
+
+
+# ─── Frontend ─────────────────────────────────────────────────────
+# In production (a build exists) the backend serves the SPA at "/", so the whole
+# app is one server. In development there is no build, so "/" returns the JSON
+# welcome and the Vite dev server serves the UI. Mounted LAST so it never
+# shadows the /api/* routers or /docs.
+_frontend_dist = _get_frontend_dist()
+if _frontend_dist is not None:
+    logger.info(f"Serving frontend build from {_frontend_dist}")
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
+else:
+
+    @app.get("/")
+    async def root():
+        """Dev-mode welcome (no frontend build present)."""
+        return {
+            "name": settings.app_name,
+            "version": __version__,
+            "status": "running",
+            "note": "frontend build not found — using Vite dev server",
+        }
 
 
 def run():

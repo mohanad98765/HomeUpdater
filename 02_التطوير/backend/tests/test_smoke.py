@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 
-def test_root(client):
-    r = client.get("/")
+def test_api_welcome(client):
+    # /api is the stable JSON welcome regardless of whether a frontend build exists.
+    r = client.get("/api")
     assert r.status_code == 200
     assert r.json()["status"] == "running"
+
+
+def test_root_responds(client):
+    # "/" serves the SPA when a build exists, otherwise the dev JSON welcome.
+    # Either way it must respond 200.
+    r = client.get("/")
+    assert r.status_code == 200
 
 
 def test_health(client):
