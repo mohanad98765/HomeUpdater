@@ -42,6 +42,10 @@ loguru==0.7.3
 # --- HTTP client (NVD CVE lookups) ---
 httpx==0.28.1
 
+# --- SSH (Linux host updates) ---
+asyncssh==2.18.0
+cryptography==44.0.0  # required by asyncssh (also transitive via adb-shell)
+
 # --- Windows Native Integration (WUA COM API + tray icon) ---
 pywin32==308; sys_platform == "win32"
 pystray==0.19.5
@@ -61,15 +65,13 @@ ruff==0.8.4
 scapy==2.6.1
 zeroconf==0.136.0
 
-# Phase 2.1 — SSH / Linux / OpenWRT remote operations
+# Phase 2.1 — legacy SSH client (asyncssh moved to ACTIVE)
 paramiko==3.5.0
-asyncssh==2.18.0
 
 # Phase 2.2/2.3 — vendor scrapers, Home Assistant REST (httpx moved to ACTIVE)
 requests==2.32.3
 beautifulsoup4==4.12.3
 
-# Phase O.5 — credential encryption / passphrase hashing
-cryptography==44.0.0      # also a transitive dep of adb-shell
+# Phase O.5 — credential encryption / passphrase hashing (cryptography now ACTIVE)
 argon2-cffi==23.1.0
 passlib==1.7.4

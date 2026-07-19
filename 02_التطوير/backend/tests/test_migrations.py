@@ -17,6 +17,7 @@ EXPECTED_TABLES = {
     "windows_updates",
     "cve_cache",
     "ha_config",
+    "ssh_hosts",
     "alembic_version",
 }
 

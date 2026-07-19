@@ -22,7 +22,7 @@ from . import __version__
 from .config import settings
 from .db import init_db
 from .logging_setup import setup_logging
-from .routers import android, devices, homeassistant, security, system, updates
+from .routers import android, devices, homeassistant, security, ssh, system, updates
 
 
 def _get_frontend_dist() -> Path | None:
@@ -150,6 +150,7 @@ app.include_router(updates.router, prefix="/api/updates", tags=["Updates"])
 app.include_router(android.router, prefix="/api/android", tags=["Android"])
 app.include_router(security.router, prefix="/api/security", tags=["Security"])
 app.include_router(homeassistant.router, prefix="/api/homeassistant", tags=["HomeAssistant"])
+app.include_router(ssh.router, prefix="/api/ssh", tags=["SSH"])
 
 
 # ─── API welcome (always available) ───────────────────────────────

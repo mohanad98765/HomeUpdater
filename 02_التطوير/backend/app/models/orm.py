@@ -253,3 +253,42 @@ class HAConfigORM(Base):
             "has_token": bool(self.token),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class SSHHostORM(Base):
+    """A Linux host managed over SSH (apt/dnf updates)."""
+
+    __tablename__ = "ssh_hosts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    host: Mapped[str] = mapped_column(String(128), index=True)
+    port: Mapped[int] = mapped_column(Integer, default=22)
+    username: Mapped[str] = mapped_column(String(64), default="")
+    password: Mapped[str] = mapped_column(Text, default="")  # TODO(O.5): encrypt at rest
+    custom_name: Mapped[str] = mapped_column(String(255), default="")
+
+    # Filled by probe
+    os_name: Mapped[str] = mapped_column(String(128), default="")
+    os_id: Mapped[str] = mapped_column(String(32), default="")
+    pkg_manager: Mapped[str] = mapped_column(String(16), default="")  # apt | dnf | ""
+    is_online: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        # The password is never returned.
+        return {
+            "id": self.id,
+            "host": self.host,
+            "port": self.port,
+            "username": self.username,
+            "custom_name": self.custom_name,
+            "os_name": self.os_name,
+            "os_id": self.os_id,
+            "pkg_manager": self.pkg_manager,
+            "is_online": self.is_online,
+            "has_password": bool(self.password),
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "display_name": self.custom_name or f"{self.username}@{self.host}",
+        }
