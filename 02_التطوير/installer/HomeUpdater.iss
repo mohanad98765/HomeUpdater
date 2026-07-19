@@ -53,11 +53,10 @@ Name: "startupicon"; Description: "Run {#AppName} automatically at sign-in"; Gro
 [Files]
 ; The entire PyInstaller onedir output.
 Source: "..\backend\dist\{#AppName}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
-; Bundle portable Nmap for network discovery. Place the Nmap files under
-; installer\vendor\nmap\ before compiling (GPL — ship its LICENSE alongside).
-; The app finds nmap via PATH; installing it under {app}\nmap and adding that to
-; PATH (or setting HOMEUPDATER_NMAP_PATH) wires it up. TODO(B.3): automate.
-; Source: "vendor\nmap\*"; DestDir: "{app}\nmap"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Network discovery works WITHOUT nmap/Npcap (pure-Python TCP+ARP scanner,
+; settings.scan_method="auto"). Nmap is only an optional enhancement: if the
+; user installs it separately it is used automatically. We do NOT bundle
+; Npcap (its free license restricts redistribution).
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

@@ -11,12 +11,15 @@ to avoid blocking the FastAPI event loop.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import socket
 from typing import Any
 
 import nmap
 from loguru import logger
 
+from ..config import settings
+from .discovery_python import discover_python
 from .mac_vendor import enrich_vendor
 from .network_utils import classify_device, get_local_subnet, normalize_mac
 from .progress import scan_progress
@@ -33,6 +36,17 @@ class DiscoveryError(RuntimeError):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+def _nmap_available() -> bool:
+    return shutil.which("nmap") is not None
+
+
+def _choose_method() -> str:
+    method = getattr(settings, "scan_method", "auto")
+    if method in ("nmap", "python"):
+        return method
+    return "nmap" if _nmap_available() else "python"
+
+
 async def scan_network(
     subnet: str | None = None,
     timeout: int = DEFAULT_SCAN_TIMEOUT_SECONDS,
@@ -40,21 +54,44 @@ async def scan_network(
     """
     Run a host-discovery scan on the local subnet and return the parsed result.
 
-    Returns a dict like:
+    Uses the pure-Python scanner by default (no nmap/Npcap needed); uses nmap
+    only when it is installed and selected via settings.scan_method. Returns:
       {
         "subnet": "192.168.1.0/24",
         "devices": [ {ip, mac, hostname, vendor, device_type, status}, ... ],
         "host_count": 42,
       }
 
-    Raises:
-      DiscoveryError if nmap fails (not installed, no privileges, etc.)
+    Raises DiscoveryError on failure.
     """
     target = subnet or get_local_subnet()
-    logger.info(f"Starting host-discovery scan on subnet: {target}")
+    method = _choose_method()
+    logger.info(f"Starting host-discovery scan on {target} (method={method})")
     scan_progress.begin(target)
 
-    # Estimate the size of the scan so we can show a useful message
+    try:
+        if method == "nmap":
+            devices = await _scan_with_nmap(target, timeout)
+        else:
+            devices = await discover_python(target)
+    except DiscoveryError as exc:
+        scan_progress.fail(str(exc))
+        raise
+    except Exception as exc:
+        scan_progress.fail(str(exc))
+        raise DiscoveryError(str(exc)) from exc
+
+    scan_progress.finish(len(devices))
+    logger.info(f"Scan complete on {target}: {len(devices)} device(s) found")
+    return {
+        "subnet": target,
+        "devices": devices,
+        "host_count": len(devices),
+    }
+
+
+async def _scan_with_nmap(target: str, timeout: int) -> list[dict[str, Any]]:
+    """nmap-based discovery (used only when nmap is installed and selected)."""
     host_estimate = 0
     try:
         import ipaddress as _ip
@@ -67,15 +104,12 @@ async def scan_network(
     if host_estimate >= 1024:
         scan_progress.set_phase(
             "scanning",
-            f"Probing {host_estimate:,} addresses with ICMP + TCP + ARP (may take several minutes)",
+            f"Probing {host_estimate:,} addresses with nmap (may take several minutes)",
         )
     elif host_estimate > 0:
-        scan_progress.set_phase(
-            "scanning",
-            f"Probing {host_estimate} addresses with ICMP + TCP + ARP",
-        )
+        scan_progress.set_phase("scanning", f"Probing {host_estimate} addresses with nmap")
     else:
-        scan_progress.set_phase("scanning", "Probing addresses")
+        scan_progress.set_phase("scanning", "Probing addresses with nmap")
 
     # Heartbeat — append a log line every 10s while nmap is running so the
     # UI shows continuous activity even when nmap itself is silent for minutes.
@@ -91,30 +125,14 @@ async def scan_network(
             )
 
     heartbeat_task = asyncio.create_task(_heartbeat())
-
     loop = asyncio.get_event_loop()
     try:
         devices: list[dict[str, Any]] = await loop.run_in_executor(None, _do_scan, target, timeout)
-    except DiscoveryError as exc:
-        scan_progress.fail(str(exc))
-        raise
-    except Exception as exc:
-        scan_progress.fail(str(exc))
-        raise DiscoveryError(str(exc)) from exc
     finally:
         heartbeat_task.cancel()
 
-    # Reverse DNS phase already happened inside _do_scan via _parse_host
     scan_progress.set_phase("classifying", "Classifying device types")
-    # (classification already happened in _parse_host too — this is mostly cosmetic)
-
-    scan_progress.finish(len(devices))
-    logger.info(f"Scan complete on {target}: {len(devices)} device(s) found")
-    return {
-        "subnet": target,
-        "devices": devices,
-        "host_count": len(devices),
-    }
+    return devices
 
 
 # ---------------------------------------------------------------------------

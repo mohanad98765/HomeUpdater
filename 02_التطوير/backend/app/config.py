@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # === Network scan ===
     scan_interval_minutes: int = 30
     scan_subnet: str = "auto"  # 'auto' = detect from network interface
+    # 'auto'   = use nmap if its binary is on PATH, else the pure-Python scanner
+    # 'python' = always use the pure-Python scanner (no nmap/Npcap needed)
+    # 'nmap'   = always use nmap (requires nmap + Npcap installed)
+    scan_method: Literal["auto", "python", "nmap"] = "auto"
 
     model_config = SettingsConfigDict(
         env_prefix="HOMEUPDATER_",
