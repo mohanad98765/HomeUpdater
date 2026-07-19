@@ -45,6 +45,8 @@
   - `installer/HomeUpdater.iss` + `BUILD.md`: سكربت Inno Setup ودليل بناء ثلاثي المراحل.
   - **tray + خدمة (B.6)**: `tray.py` (أيقونة شريط النظام + قائمة، الـ exe صار تطبيق
     tray بلا نافذة console) و`service.py` (خدمة Windows عبر pywin32 للتشغيل headless).
+  - **إشعارات Windows (B.6.3)**: toast عبر أيقونة الـ tray عند توفّر تحديثات
+    (Windows / تعريفات / برامج)، بلا اعتمادية جديدة، + endpoint `‎/api/system/notify-test`.
 - **Phase A — الهوية البصرية (أيقونة)**: علامة افتراضية (منزل + سهم تحديث على خلفية
   زرقاء متدرّجة) عبر `03_الموارد/logo/generate_icons.py`، بكل المقاسات + `.ico`،
   مربوطة بالـ favicon والـ tray وأيقونة الـ exe وأيقونة المثبِّت. قابلة لإعادة التوليد
