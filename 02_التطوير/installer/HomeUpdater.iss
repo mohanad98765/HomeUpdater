@@ -63,7 +63,7 @@ Source: "..\backend\dist\{#AppName}\*"; DestDir: "{app}"; Flags: recursesubdirs 
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
-Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startupicon
+Name: "{commonstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startupicon
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
