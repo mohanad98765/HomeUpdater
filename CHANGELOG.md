@@ -43,6 +43,9 @@
   - `launcher.py` + `HomeUpdater.spec`: تجميع PyInstaller ينتج `HomeUpdater.exe` واحداً
     يُقلع ويُهاجر ويَخدم الواجهة والـ API (مُختبَر فعلياً).
   - `installer/HomeUpdater.iss` + `BUILD.md`: سكربت Inno Setup ودليل بناء ثلاثي المراحل.
+  - **المثبِّت النهائي مُنتَج ✅**: صُرِّف عبر Inno Setup 6.7 →
+    `HomeUpdater-Setup-0.1.0.exe` (~29MB) — ملفّ تثبيت واحد بنقرة مزدوجة يحوي
+    الواجهة والـ backend والـ migrations، بالأيقونة وبانرات المعالج.
   - **tray + خدمة (B.6)**: `tray.py` (أيقونة شريط النظام + قائمة، الـ exe صار تطبيق
     tray بلا نافذة console) و`service.py` (خدمة Windows عبر pywin32 للتشغيل headless).
   - **إشعارات Windows (B.6.3)**: toast عبر أيقونة الـ tray عند توفّر تحديثات
