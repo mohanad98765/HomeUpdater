@@ -7,7 +7,7 @@ from the column-based table because winget's JSON output is not stable
 across versions.
 
 Public API:
-  - list_software_updates() -> list[SoftwarePackageInfo]
+  - list_software_updates() -> (list[SoftwarePackageInfo], degraded: bool)
   - install_software_update(package_id) -> dict (exit code, output)
   - install_many(package_ids) -> dict (aggregated)
 """
@@ -64,7 +64,13 @@ async def _run(*args: str, timeout: float = 600.0) -> tuple[int, str, str]:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
         proc.kill()
-        await proc.communicate()
+        # Bound the drain: a spawned installer may inherit the pipe and keep it
+        # open, making an unbounded communicate() block forever (which would
+        # wedge update_progress.is_running=True -> every later op returns 409).
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=10.0)
+        except TimeoutError:
+            pass
         raise SoftwareUpdateError(f"Command timed out: {' '.join(args)}") from None
     return (
         proc.returncode or 0,
@@ -153,8 +159,14 @@ def _parse_winget_table(text: str) -> list[SoftwarePackageInfo]:
 # ===================================================================
 # Public async API
 # ===================================================================
-async def list_software_updates() -> list[SoftwarePackageInfo]:
-    """List installed apps that have an upgrade available."""
+async def list_software_updates() -> tuple[list[SoftwarePackageInfo], bool]:
+    """List installed apps that have an upgrade available.
+
+    Returns ``(packages, degraded)``. ``degraded`` is True when winget exited
+    non-zero (partial output / a parser miss possible) so the caller must NOT
+    infer that packages absent from this list were upgraded externally — doing so
+    would make real pending upgrades silently vanish as "done".
+    """
     _ensure_windows()
     update_progress.begin("check-software")
     update_progress.set_phase("checking", "Asking winget for available app upgrades")
@@ -171,6 +183,7 @@ async def list_software_updates() -> list[SoftwarePackageInfo]:
             raise SoftwareUpdateError(
                 f"winget exited with code {rc}: {stderr.strip() or 'no output'}"
             )
+        degraded = rc != 0
         packages = _parse_winget_table(stdout)
         update_progress.update_progress(
             completed=len(packages),
@@ -186,7 +199,7 @@ async def list_software_updates() -> list[SoftwarePackageInfo]:
         raise SoftwareUpdateError(str(exc)) from exc
 
     update_progress.finish(f"Check complete - {len(packages)} update(s) available")
-    return packages
+    return packages, degraded
 
 
 async def install_software_update(package_id: str) -> dict[str, Any]:

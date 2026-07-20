@@ -14,6 +14,7 @@ import asyncio
 import ipaddress
 import socket
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from loguru import logger
@@ -26,6 +27,12 @@ MAX_SWEEP_HOSTS = 1024
 PROBE_CONCURRENCY = 256
 PROBE_PORT = 80
 PROBE_TIMEOUT = 0.4  # seconds — enough for ARP to resolve on a LAN
+
+# Dedicated pool for reverse-DNS: gethostbyaddr threads for PTR-less hosts run
+# the full ~3s and can't be cancelled, so they must NOT share the default
+# executor with the WUA/winget/ADB blocking calls (which also use
+# run_in_executor(None, ...)) or a scan would stall those operations.
+_RDNS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="rdns")
 
 
 def _hosts_to_sweep(target: str) -> tuple[list[str], str]:
@@ -187,7 +194,9 @@ async def discover_python(target: str) -> list[dict[str, Any]]:
         # Reverse-DNS in parallel with a per-host cap, so hosts without a PTR
         # record don't serialize into a multi-minute wait.
         try:
-            return await asyncio.wait_for(loop.run_in_executor(None, _resolve, ip), timeout=3.0)
+            return await asyncio.wait_for(
+                loop.run_in_executor(_RDNS_EXECUTOR, _resolve, ip), timeout=3.0
+            )
         except Exception:
             return ""
 

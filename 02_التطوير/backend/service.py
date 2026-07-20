@@ -51,24 +51,35 @@ class HomeUpdaterService(win32serviceutil.ServiceFramework):
 
         import uvicorn
 
-        from app.config import settings
+        from app.config import find_free_port, settings
         from app.main import app
 
+        # Don't bind a busy port (which would leave the service reporting RUNNING
+        # while listening on nothing) — move to the next free one, like the GUI.
+        port = find_free_port(settings.port, settings.host)
         servicemanager.LogMsg(
             servicemanager.EVENTLOG_INFORMATION_TYPE,
             servicemanager.PYS_SERVICE_STARTED,
-            (self._svc_name_, ""),
+            (self._svc_name_, f" on port {port}"),
         )
         self._server = uvicorn.Server(
             uvicorn.Config(
                 app,
                 host=settings.host,
-                port=settings.port,
+                port=port,
                 log_level=settings.log_level.lower(),
                 log_config=None,
             )
         )
-        thread = threading.Thread(target=self._server.run, daemon=True)
+
+        def _serve():
+            try:
+                self._server.run()
+            except Exception as exc:  # surface bind/startup failures to the Event Log
+                servicemanager.LogErrorMsg(f"HomeUpdater service failed: {exc}")
+                win32event.SetEvent(self._stop_event)
+
+        thread = threading.Thread(target=_serve, daemon=True)
         thread.start()
         win32event.WaitForSingleObject(self._stop_event, win32event.INFINITE)
 

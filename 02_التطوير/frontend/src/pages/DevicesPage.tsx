@@ -132,8 +132,11 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
     refetchInterval: 1000,
   });
 
-  // Keep selected device fresh (so panel reflects latest data after a scan)
-  const devices: Device[] = scan.data?.devices ?? list.data?.devices ?? [];
+  // The refetchable `list` query is the source of truth (scan.onSuccess
+  // invalidates ['devices'], so it already holds the fresh scan results). Reading
+  // scan.data first would let the stale mutation result permanently shadow later
+  // edits (e.g. a custom name set via the detail panel never appears).
+  const devices: Device[] = list.data?.devices ?? scan.data?.devices ?? [];
   useEffect(() => {
     if (selectedDevice) {
       const fresh = devices.find((d) => d.id === selectedDevice.id);

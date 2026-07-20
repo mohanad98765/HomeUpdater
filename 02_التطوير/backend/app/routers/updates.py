@@ -10,6 +10,7 @@ Endpoints (mounted under /api/updates):
 
 from __future__ import annotations
 
+import functools
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,18 +37,33 @@ from ..services.windows_updates import (
 router = APIRouter()
 
 
-def _reject_if_busy() -> None:
-    """Guard: only one update operation (check/install) may run at a time.
+def _claims_update_slot(operation: str):
+    """Decorator: reserve the single update slot for the whole handler.
 
-    All check/install runs share the single `update_progress` singleton and
-    the WUA/winget COM/subprocess pipeline, so overlapping runs corrupt the
-    progress feed and race on the DB upsert.
+    Only one update operation (check/install) may run at a time — all runs share
+    the `update_progress` singleton and the WUA/winget COM/subprocess pipeline,
+    so overlapping runs corrupt the progress feed and race on the DB upsert. The
+    claim is atomic and happens BEFORE the wrapped coroutine runs (so a second
+    request can't slip through a check-then-act `await` gap), and the slot is
+    always released on exit (early return, error, or normal completion).
     """
-    if update_progress.is_running:
-        raise HTTPException(
-            status_code=409,
-            detail="عملية تحديث أخرى قيد التنفيذ / Another update operation is running",
-        )
+
+    def decorator(fn):
+        @functools.wraps(fn)  # preserves the signature so FastAPI DI still works
+        async def wrapper(*args, **kwargs):
+            if not update_progress.try_claim(operation):
+                raise HTTPException(
+                    status_code=409,
+                    detail="عملية تحديث أخرى قيد التنفيذ / Another update operation is running",
+                )
+            try:
+                return await fn(*args, **kwargs)
+            finally:
+                update_progress.release()
+
+        return wrapper
+
+    return decorator
 
 
 # ===================================================================
@@ -123,9 +139,9 @@ async def trigger_drivers_check(db: AsyncSession = Depends(get_db)) -> dict:
     return await _check_wua(db, kind="driver", wua_type="Driver")
 
 
+@_claims_update_slot("check")
 async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
     """Shared check helper for either Software or Driver updates."""
-    _reject_if_busy()
     logger.info(f"POST /api/updates/{kind}/check")
     try:
         found = await check_for_updates(wua_type)
@@ -198,8 +214,8 @@ async def trigger_drivers_install(
     return await _install_wua(db, payload, kind="driver")
 
 
+@_claims_update_slot("install")
 async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) -> dict:
-    _reject_if_busy()
     update_ids = list(payload.update_ids)
     if not update_ids:
         q = await db.execute(
@@ -254,12 +270,12 @@ async def list_software(db: AsyncSession = Depends(get_db)) -> dict:
 
 
 @router.post("/software/check")
+@_claims_update_slot("check")
 async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
     """Run `winget upgrade` to find packages with new versions."""
-    _reject_if_busy()
     logger.info("POST /api/updates/software/check")
     try:
-        found = await list_software_updates()
+        found, degraded = await list_software_updates()
     except SoftwareUpdateError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -284,11 +300,14 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
         row.is_installed = False
         row.last_checked = now
 
-    # Anything that no longer appears must have been upgraded externally
-    for pkg_id, row in existing.items():
-        if pkg_id not in found_ids and not row.is_installed:
-            row.is_installed = True
-            row.install_result = 0
+    # Anything that no longer appears must have been upgraded externally — but
+    # ONLY trust that on a clean winget run. A degraded/partial result would
+    # otherwise mark still-pending packages as "installed" and hide real upgrades.
+    if not degraded:
+        for pkg_id, row in existing.items():
+            if pkg_id not in found_ids and not row.is_installed:
+                row.is_installed = True
+                row.install_result = 0
 
     await db.commit()
     if found:
@@ -308,12 +327,12 @@ class SoftwareInstallRequest(BaseModel):
 
 
 @router.post("/software/install")
+@_claims_update_slot("install")
 async def trigger_software_install(
     payload: SoftwareInstallRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Run `winget upgrade <id>` for each chosen package."""
-    _reject_if_busy()
     package_ids = list(payload.package_ids)
     if not package_ids:
         q = await db.execute(

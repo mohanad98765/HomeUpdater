@@ -77,6 +77,8 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    uac_admin=True,  # embed a requireAdministrator manifest -> UAC on launch, so
+    # Windows Update / winget / reboot actually have the privileges they need.
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

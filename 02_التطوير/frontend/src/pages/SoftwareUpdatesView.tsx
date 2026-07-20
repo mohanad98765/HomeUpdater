@@ -207,7 +207,9 @@ export function SoftwareUpdatesView() {
         <div className="mb-6 p-4 rounded-lg border border-danger/30 bg-danger/10 text-danger flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="font-bold mb-1">{t("updates.installFailed")}</p>
+            <p className="font-bold mb-1">
+              {t(check.isError ? "updates.checkFailed" : "updates.installFailed")}
+            </p>
             <p className="text-sm font-mono">
               {(check.error || install.error) instanceof Error
                 ? (check.error || install.error)!.message

@@ -40,3 +40,16 @@ def test_software_check_rejected_while_busy(client):
         assert r.status_code == 409
     finally:
         update_progress.is_running = False
+
+
+def test_try_claim_is_atomic_and_releasable():
+    # The slot can be claimed once; a second claim fails until released. This is
+    # what closes the check-then-act race on the "install all" await gap.
+    update_progress.is_running = False
+    try:
+        assert update_progress.try_claim("install") is True
+        assert update_progress.try_claim("check") is False  # already held
+        update_progress.release()
+        assert update_progress.try_claim("check") is True  # free again
+    finally:
+        update_progress.release()

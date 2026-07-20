@@ -222,6 +222,7 @@ const resources = {
         confirmInstall: "هل أنت متأكِّد من تثبيت {{count}} تحديث؟ قد يَستغرق عدَّة دقائق وقد يَتطلَّب إعادة تشغيل الجهاز.",
         installSuccess: "تَمَّ تثبيت {{installed}}/{{total}} تحديث بنجاح",
         installFailed: "فشل التثبيت",
+        checkFailed: "فشل التحقُّق من التحديثات",
         rebootMsg: "⚠️ إعادة تشغيل مطلوبة لإكمال التثبيت",
         progress: {
           checking: "جارٍ الاستعلام…",
@@ -492,6 +493,7 @@ const resources = {
         confirmInstall: "Install {{count}} update(s)? This may take several minutes and could require a reboot.",
         installSuccess: "Installed {{installed}}/{{total}} successfully",
         installFailed: "Install failed",
+        checkFailed: "Update check failed",
         rebootMsg: "⚠️ Reboot required to finish installing",
         progress: {
           checking: "Querying…",

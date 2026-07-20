@@ -39,6 +39,22 @@ _SALT_FILE = "secret.salt"
 _PBKDF2_ITERATIONS = 390_000
 
 
+class CryptoKeyError(RuntimeError):
+    """The encryption key can't be loaded / doesn't match the stored ciphertext.
+
+    Raised instead of silently returning garbage when the DB was copied to a
+    different Windows account/machine (DPAPI-bound key), or the key was lost.
+    """
+
+
+def _is_valid_fernet_key(raw: bytes) -> bool:
+    try:
+        Fernet(raw)
+        return True
+    except Exception:
+        return False
+
+
 def _derive_from_passphrase(passphrase: str, salt: bytes) -> bytes:
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=_PBKDF2_ITERATIONS)
     return base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8")))
@@ -94,8 +110,16 @@ def _load_or_create_key() -> bytes:
             unwrapped = _dpapi_unprotect(raw)
             if unwrapped is not None:
                 return unwrapped
-            # not DPAPI-wrapped (or a different user) — fall back to the raw bytes
-        return raw
+            # DPAPI unwrap failed. Only accept the raw bytes if they are ACTUALLY
+            # a Fernet key (an un-wrapped key file). Do NOT return a DPAPI blob as
+            # a "key" — that yields a wrong key and silent decryption garbage.
+        if _is_valid_fernet_key(raw):
+            return raw
+        raise CryptoKeyError(
+            "ملفّ مفتاح التشفير موجود لكن لا يمكن استخدامه على هذا الحساب/الجهاز "
+            "(رُبّما نُسخت البيانات من جهاز آخر). أزِل secret.key لإنشاء مفتاح جديد "
+            "(ستحتاج لإعادة إدخال كلمات المرور المحفوظة)."
+        )
 
     key = Fernet.generate_key()
     to_store = key
@@ -130,11 +154,23 @@ def encrypt(plaintext: str) -> str:
 
 
 def decrypt(token: str) -> str:
-    """Decrypt a stored secret; return the input unchanged if it is not a valid
-    Fernet token (legacy plaintext written before at-rest encryption)."""
+    """Decrypt a stored secret.
+
+    A genuine pre-encryption plaintext value (which never looks like a Fernet
+    token) is returned unchanged. But a value that clearly IS our ciphertext
+    (Fernet tokens start with "gAAAAA") which fails to decrypt means the key is
+    wrong — we raise instead of silently returning the ciphertext as if it were
+    the secret (which would feed encrypted garbage to a device as its password).
+    """
     if not token:
         return token
     try:
         return _fernet().decrypt(token.encode("utf-8")).decode("utf-8")
-    except (InvalidToken, ValueError):
+    except InvalidToken:
+        if token.startswith("gAAAAA"):
+            raise CryptoKeyError(
+                "تعذّر فكّ تشفير بيانات اعتماد محفوظة — مفتاح التشفير لا يطابقها."
+            ) from None
+        return token  # genuine legacy plaintext
+    except ValueError:
         return token

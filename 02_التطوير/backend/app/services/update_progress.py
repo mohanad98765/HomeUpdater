@@ -54,6 +54,25 @@ class _UpdateProgress:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     # ---- mutators ---------------------------------------------------
+    def try_claim(self, operation: str) -> bool:
+        """Atomically reserve the single operation slot. Returns False if busy.
+
+        MUST be called synchronously (before any ``await``) at the top of each
+        handler: it closes the check-then-act race where two requests both pass
+        an ``is_running`` check during an intervening ``await`` and then run
+        concurrently on the shared WUA/winget pipeline + DB.
+        """
+        with self._lock:
+            if self.is_running:
+                return False
+            self.is_running = True
+            self.operation = operation
+            return True
+
+    def release(self) -> None:
+        """Release the slot on any exit path (early return / error / done)."""
+        self.is_running = False
+
     def begin(self, operation: str, total: int = 0) -> None:
         self.is_running = True
         self.operation = operation

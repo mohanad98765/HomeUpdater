@@ -201,6 +201,10 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
             <div className="p-8 text-center">
               <Loader2 className="w-6 h-6 animate-spin mx-auto text-fg-muted" />
             </div>
+          ) : updates.isError ? (
+            <div className="p-8 text-center text-danger text-sm">
+              تعذّر جلب التحديثات: {(updates.error as Error).message}
+            </div>
           ) : (updates.data?.available.length ?? 0) === 0 ? (
             <div className="p-8 text-center text-success">
               <CheckCircle2 className="w-10 h-10 mx-auto mb-2" />
@@ -232,11 +236,6 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
                 </li>
               ))}
             </ul>
-          )}
-          {updates.isError && (
-            <p className="p-4 text-sm text-danger">
-              {updates.error instanceof Error ? updates.error.message : "تعذّر جلب التحديثات"}
-            </p>
           )}
         </div>
       )}

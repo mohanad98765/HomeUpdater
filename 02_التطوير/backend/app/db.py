@@ -58,8 +58,14 @@ def _run_migrations() -> None:
         probe.dispose()
 
     if "devices" in tables and "alembic_version" not in tables:
-        logger.warning("Adopting pre-Alembic database: stamping current head")
-        command.stamp(cfg, "head")
+        # A legacy create_all DB only has the ORIGINAL tables. Stamping *head*
+        # would mark the later table-creation migrations (cve_cache, ha_config,
+        # ssh_hosts, winrm_hosts) as already applied, leaving those tables
+        # permanently missing. Stamp the BASELINE, then upgrade so those
+        # add-only migrations actually run against the existing base tables.
+        logger.warning("Adopting pre-Alembic database: stamping baseline, then upgrading")
+        command.stamp(cfg, "ac93bb912c25")
+        command.upgrade(cfg, "head")
     else:
         command.upgrade(cfg, "head")
 

@@ -135,7 +135,7 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <button type="button" onClick={() => check.mutate(h.id)} disabled={check.isPending} className="btn-secondary text-sm inline-flex items-center gap-2">
+                    <button type="button" onClick={() => check.mutate(h.id)} disabled={check.isPending && check.variables === h.id} className="btn-secondary text-sm inline-flex items-center gap-2">
                       {check.isPending && check.variables === h.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                       فحص التحديثات
                     </button>
@@ -145,7 +145,7 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                         onClick={() => {
                           if (window.confirm(`ترقية ${c.total} حزمة على ${h.display_name}؟`)) upgrade.mutate(h.id);
                         }}
-                        disabled={upgrade.isPending}
+                        disabled={upgrade.isPending && upgrade.variables === h.id}
                         className="btn-primary text-sm inline-flex items-center gap-2"
                       >
                         {upgrade.isPending && upgrade.variables === h.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
