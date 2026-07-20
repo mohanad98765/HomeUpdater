@@ -9,9 +9,31 @@ command line.
 
 from __future__ import annotations
 
+import time
+
 import asyncssh
 
-CONNECT_TIMEOUT = 12
+from .adaptive_timeout import AdaptiveNetworkTimeout
+
+CONNECT_TIMEOUT = 12  # cold-start / fallback connect timeout (seconds)
+# The connect timeout is learned per host:port: a LAN Raspberry Pi and a distant
+# host no longer share one fixed value. Floor kept generous (SSH handshake + auth
+# needs headroom); ceiling bounds the worst wait.
+_CONNECT_FLOOR = 5.0
+_CONNECT_CEIL = 30.0
+_CONNECT_ESTIMATORS: dict[str, AdaptiveNetworkTimeout] = {}
+
+
+def _connect_estimator(host: str, port: int) -> AdaptiveNetworkTimeout:
+    key = f"{host}:{port}"
+    est = _CONNECT_ESTIMATORS.get(key)
+    if est is None:
+        est = AdaptiveNetworkTimeout(
+            rto_min=_CONNECT_FLOOR, rto_max=_CONNECT_CEIL, rto_initial=CONNECT_TIMEOUT
+        )
+        _CONNECT_ESTIMATORS[key] = est
+    return est
+
 
 # os-release ID / ID_LIKE -> package manager
 _APT_IDS = {"debian", "ubuntu", "raspbian", "linuxmint", "pop", "kali", "devuan"}
@@ -88,14 +110,16 @@ async def _connect(
         known_hosts = asyncssh.import_known_hosts(f"{host} {known_host_key}\n")
     else:
         known_hosts = None
+    est = _connect_estimator(host, port)
+    start = time.monotonic()
     try:
-        return await asyncssh.connect(
+        conn = await asyncssh.connect(
             host,
             port=port,
             username=username,
             password=password,
             known_hosts=known_hosts,
-            connect_timeout=CONNECT_TIMEOUT,
+            connect_timeout=est.current(),
         )
     except asyncssh.PermissionDenied as exc:
         raise SSHError("Authentication failed — check the username/password") from exc
@@ -106,6 +130,8 @@ async def _connect(
         ) from exc
     except Exception as exc:
         raise SSHError(f"Could not connect to {host}:{port}: {exc}") from exc
+    est.on_sample(time.monotonic() - start)  # full success: a real connect-time sample
+    return conn
 
 
 def _capture_host_key(conn) -> str:

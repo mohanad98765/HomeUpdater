@@ -28,7 +28,13 @@ from .software_updates import _parse_winget_table
 
 DEFAULT_PORT = 5985
 DEFAULT_HTTPS_PORT = 5986
-OP_TIMEOUT = 25  # seconds
+OP_TIMEOUT = 25  # seconds — probe/check (quick round-trips)
+# `winget upgrade --all` legitimately runs for minutes; give each WS-Man poll a
+# longer operation window so the install path isn't the same budget as a probe.
+# read_timeout is always operation_timeout + 10 (the pywinrm invariant: the HTTP
+# read must outlast the server's operation window or the socket closes early).
+UPGRADE_OP_TIMEOUT = 90
+READ_TIMEOUT_MARGIN = 10
 
 # PowerShell that locates winget even when it isn't on the session PATH (it lives
 # under the user's WindowsApps). Emits WINGET_NOT_FOUND if truly unavailable.
@@ -141,6 +147,7 @@ def _run_ps_sync(
     transport: str,
     script: str,
     verify_tls: bool = False,
+    op_timeout: int = OP_TIMEOUT,
 ) -> tuple[int, str, str]:
     """Open a WinRM session and run a PowerShell script (blocking).
 
@@ -158,8 +165,8 @@ def _run_ps_sync(
             auth=(username, password),
             transport=transport,
             server_cert_validation=cert_validation,
-            operation_timeout_sec=OP_TIMEOUT,
-            read_timeout_sec=OP_TIMEOUT + 10,
+            operation_timeout_sec=op_timeout,
+            read_timeout_sec=op_timeout + READ_TIMEOUT_MARGIN,  # invariant: read > operation
         )
         result = session.run_ps(script)
     except Exception as exc:  # noqa: BLE001 — normalize every failure to one type
@@ -178,9 +185,19 @@ async def _run_ps(
     transport: str,
     script: str,
     verify_tls: bool = False,
+    op_timeout: int = OP_TIMEOUT,
 ) -> tuple[int, str, str]:
     return await asyncio.to_thread(
-        _run_ps_sync, host, port, username, password, use_https, transport, script, verify_tls
+        _run_ps_sync,
+        host,
+        port,
+        username,
+        password,
+        use_https,
+        transport,
+        script,
+        verify_tls,
+        op_timeout,
     )
 
 
@@ -243,7 +260,15 @@ async def apply_updates(
 ) -> dict:
     """Upgrade all packages on the remote host via winget (silent)."""
     rc, out, err = await _run_ps(
-        host, port, username, password, use_https, transport, _UPGRADE_PS, verify_tls
+        host,
+        port,
+        username,
+        password,
+        use_https,
+        transport,
+        _UPGRADE_PS,
+        verify_tls,
+        op_timeout=UPGRADE_OP_TIMEOUT,  # installs run for minutes, not seconds
     )
     if "WINGET_NOT_FOUND" in out or "WINGET_NOT_FOUND" in err:
         raise WinRMHostError("winget غير متوفّر على الجهاز الهدف.")
