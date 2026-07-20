@@ -54,6 +54,8 @@ async def overview(db: AsyncSession = Depends(get_db)) -> dict:
             "vendor": vendor,
             "cve_total": None,
             "top_severity": None,
+            "top_cve": None,
+            "top_cve_url": None,
             "checked": False,
         }
         if vendor:
@@ -61,8 +63,17 @@ async def overview(db: AsyncSession = Depends(get_db)) -> dict:
             cached = await cve.get_cached(vendor, db)
             if cached:
                 checked.add(vendor)
+                cves = cached.get("cves") or []
                 entry["cve_total"] = cached["total_results"]
-                entry["top_severity"] = _top_severity(cached["cves"])
+                entry["top_severity"] = _top_severity(cves)
+                # The list is stored most-severe-first, so cves[0] is the top CVE.
+                if cves:
+                    top = cves[0]
+                    cid = top.get("id") or None
+                    entry["top_cve"] = cid
+                    entry["top_cve_url"] = top.get("url") or (
+                        f"https://nvd.nist.gov/vuln/detail/{cid}" if cid else None
+                    )
                 entry["checked"] = True
         items.append(entry)
     return {

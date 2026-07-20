@@ -26,6 +26,8 @@ interface DeviceCVE {
   vendor: string;
   cve_total: number | null;
   top_severity: string | null;
+  top_cve: string | null;
+  top_cve_url: string | null;
   checked: boolean;
 }
 interface Overview {
@@ -292,12 +294,29 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
                         <span className="text-fg-subtle text-xs">{t("pages.sec.notChecked")}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">
-                      {d.checked ? (d.cve_total ?? 0).toLocaleString() : "—"}
+                    <td className="px-4 py-3">
+                      <div className="font-mono tabular-nums">
+                        {d.checked ? (d.cve_total ?? 0).toLocaleString() : "—"}
+                      </div>
+                      {d.top_cve && d.top_cve_url && (
+                        <a
+                          href={d.top_cve_url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          title={t("pages.sec.topCveTitle")}
+                          className="mt-0.5 inline-flex items-center gap-1 text-primary hover:underline text-xs font-mono"
+                          dir="ltr"
+                        >
+                          {d.top_cve} <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <a
-                        href={`https://nvd.nist.gov/vuln/search/results?query=${encodeURIComponent(d.vendor)}`}
+                        href={
+                          d.top_cve_url ??
+                          `https://nvd.nist.gov/vuln/search/results?query=${encodeURIComponent(d.vendor)}`
+                        }
                         target="_blank"
                         rel="noreferrer noopener"
                         className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
