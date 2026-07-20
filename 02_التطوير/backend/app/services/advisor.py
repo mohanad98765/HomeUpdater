@@ -19,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crypto
 from ..config import get_data_dir, settings
-from ..models.orm import DeviceORM, SoftwarePackageORM, WindowsUpdateORM
+from ..models.orm import (
+    DeviceORM,
+    SoftwarePackageORM,
+    SSHHostORM,
+    WindowsUpdateORM,
+    WinRMHostORM,
+)
 from ..services import cve
 
 
@@ -159,6 +165,28 @@ async def _tool_list_pending_updates(db: AsyncSession) -> dict:
     }
 
 
+async def _tool_list_remote_targets(db: AsyncSession) -> dict:
+    winrm = (await db.execute(select(WinRMHostORM))).scalars().all()
+    ssh = (await db.execute(select(SSHHostORM))).scalars().all()
+    return {
+        "winrm_hosts": [
+            {"id": h.id, "name": h.custom_name or h.host, "host": h.host, "online": h.is_online}
+            for h in winrm
+        ],
+        "ssh_hosts": [
+            {"id": h.id, "name": h.custom_name or h.host, "host": h.host, "online": h.is_online}
+            for h in ssh
+        ],
+        "note": (
+            "Configured REMOTE hosts. To recommend upgrading one, put it in set_plan as "
+            "type='winrm' or type='ssh' with the host id — that upgrades ALL pending updates "
+            "on that host (winget / apt|dnf). Exact pending counts need a live check and are "
+            "not shown here, so only recommend a remote upgrade when the user asks or it is "
+            "clearly warranted."
+        ),
+    }
+
+
 _TOOLS = [
     {
         "name": "list_devices",
@@ -186,14 +214,23 @@ _TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "list_remote_targets",
+        "description": (
+            "List configured REMOTE hosts (remote Windows over WinRM, and Linux over SSH) "
+            "that can be upgraded from here. Use their ids in set_plan with type 'winrm' or "
+            "'ssh' to upgrade all pending updates on a host."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "set_plan",
         "description": (
-            "Record the final prioritized, APPLICABLE update plan — the specific pending "
-            "updates the user should apply, most important first. Include ONLY items whose "
-            "exact `id` appeared in list_pending_updates output (local app/Windows updates). "
-            "Do NOT include remote Linux, remote-Windows, or Home Assistant items here — "
-            "mention those in your text summary only. Call this once, before the summary; "
-            "skip it entirely if there are no applicable local updates."
+            "Record the final prioritized, APPLICABLE update plan — the specific updates the "
+            "user should apply, most important first. Include ONLY items whose exact `id` "
+            "appeared in a tool result: type 'app'/'windows' from list_pending_updates (this "
+            "PC), or type 'winrm'/'ssh' from list_remote_targets (a whole remote host — this "
+            "upgrades ALL its pending updates). Home Assistant items go in the text only. Call "
+            "this once, before the summary; skip it if there is nothing applicable."
         ),
         "input_schema": {
             "type": "object",
@@ -203,10 +240,13 @@ _TOOLS = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "type": {"type": "string", "enum": ["app", "windows"]},
+                            "type": {
+                                "type": "string",
+                                "enum": ["app", "windows", "winrm", "ssh"],
+                            },
                             "id": {
                                 "type": "string",
-                                "description": "exact package_id (app) or update_id (windows) from list_pending_updates output",  # noqa: E501
+                                "description": "package_id (app) / update_id (windows) from list_pending_updates, or host id (winrm/ssh) from list_remote_targets",  # noqa: E501
                             },
                             "title": {"type": "string"},
                             "reason": {"type": "string"},
@@ -224,6 +264,7 @@ _DISPATCH = {
     "list_devices": _tool_list_devices,
     "check_vulnerabilities": _tool_check_vulnerabilities,
     "list_pending_updates": _tool_list_pending_updates,
+    "list_remote_targets": _tool_list_remote_targets,
 }
 
 _SYSTEM = """You are the AI Advisor inside HomeUpdater, a local app that keeps a home \
@@ -237,9 +278,10 @@ update. Be concrete and concise; prefer a short numbered list over prose. If the
 has not been scanned yet (no devices, or no data at all), say so plainly and tell the \
 user to run a network scan first.
 
-When there ARE pending local app or Windows updates, call set_plan once with the top \
-applicable items (most important first, using the exact ids from list_pending_updates) so \
-the user can apply them with one click — then write your text summary.
+When there are applicable updates, call set_plan once with the top items (most important \
+first): local app/Windows updates by their exact ids from list_pending_updates, and/or whole \
+remote hosts by id from list_remote_targets (type 'winrm'/'ssh'). Then write your text \
+summary. The user can apply the plan with one click.
 
 Reply in the SAME language the user writes in (Arabic or English)."""
 
@@ -373,7 +415,9 @@ async def chat(db: AsyncSession, history: list[dict]) -> dict:
         {"role": m["role"], "content": str(m["content"])}
         for m in history
         if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()
-    ][-20:]  # keep the last ~20 turns
+    ][
+        -20:
+    ]  # keep the last ~20 turns
     while messages and messages[0]["role"] != "user":
         messages.pop(0)  # the API requires the conversation to start on a user turn
     if not messages:
@@ -393,12 +437,15 @@ async def chat(db: AsyncSession, history: list[dict]) -> dict:
 async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
     """Apply the advisor's plan — but ONLY updates that are genuinely pending.
 
-    Safety gate: every requested id is validated against the pending rows in the
-    DB before anything runs, so the model can only ever trigger the install of an
-    update that is already pending on this machine (the same set the user could
-    apply from the Updates page). Unknown/stale ids are skipped, not installed.
+    Safety gate: every requested id is validated before anything runs. Local
+    app/Windows ids must match a still-pending DB row; remote winrm/ssh ids must
+    match a configured host. Unknown ids are skipped, never acted on. A remote
+    action upgrades ALL pending updates on that (already-configured) host — the
+    same thing the WinRM/Linux pages do.
     """
     from . import software_updates, windows_updates
+    from . import ssh as ssh_svc
+    from . import winrm_hosts as winrm_svc
 
     want_app = [str(a["id"]) for a in actions if a.get("type") == "app" and a.get("id")]
     want_win = [str(a["id"]) for a in actions if a.get("type") == "windows" and a.get("id")]
@@ -438,6 +485,81 @@ async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
     valid = set(valid_app) | set(valid_win)
     skipped = [i for i in (want_app + want_win) if i not in valid]
 
+    # --- remote hosts (WinRM / SSH): validate ids against configured hosts ---
+    def _int_ids(kind: str) -> list[int]:
+        """Integer host ids for one remote kind. Malformed/non-numeric ids are
+        recorded in ``skipped`` (never silently dropped), and we require
+        ``isascii()`` because ``str.isdigit()`` accepts Unicode digits such as
+        '²' that ``int()`` would then reject with a ValueError."""
+        ids: list[int] = []
+        for a in actions:
+            if a.get("type") != kind:
+                continue
+            raw = str(a.get("id", "")).strip()
+            if raw.isascii() and raw.isdigit():
+                ids.append(int(raw))
+            elif raw:
+                skipped.append(f"{kind}:{raw}")
+        return ids
+
+    want_winrm, want_ssh = _int_ids("winrm"), _int_ids("ssh")
+    winrm_rows = (
+        (await db.execute(select(WinRMHostORM).where(WinRMHostORM.id.in_(want_winrm))))
+        .scalars()
+        .all()
+        if want_winrm
+        else []
+    )
+    ssh_rows = (
+        (await db.execute(select(SSHHostORM).where(SSHHostORM.id.in_(want_ssh)))).scalars().all()
+        if want_ssh
+        else []
+    )
+    found_winrm = {r.id for r in winrm_rows}
+    found_ssh = {r.id for r in ssh_rows}
+    skipped += [f"winrm:{i}" for i in want_winrm if i not in found_winrm]
+    skipped += [f"ssh:{i}" for i in want_ssh if i not in found_ssh]
+
+    # Remote upgrades run FIRST — while the update slot is still genuinely held
+    # by the router's try_claim("install"). The local installers below call
+    # update_progress.finish() internally (which clears is_running), so if the
+    # possibly-minutes-long remote phase ran after them it would execute with the
+    # slot released and could race a concurrent Updates-page install. Each host
+    # is guarded so a remote failure is reported, never a 500.
+    remote: list[dict] = []
+    for row in winrm_rows:
+        try:
+            r = await winrm_svc.apply_updates(
+                row.host,
+                row.port,
+                row.username,
+                row.password,
+                row.use_https,
+                row.transport,
+                row.verify_tls,
+            )
+            remote.append({"type": "winrm", "host": row.host, "ok": True, "result": r})
+        except Exception as exc:
+            logger.error(f"Advisor apply (winrm {row.host}) failed: {exc}")
+            remote.append({"type": "winrm", "host": row.host, "ok": False, "error": str(exc)})
+    for row in ssh_rows:
+        try:
+            r = await ssh_svc.apply_updates(
+                row.host,
+                row.port,
+                row.username,
+                row.password,
+                row.pkg_manager,
+                row.host_key or None,
+            )
+            remote.append({"type": "ssh", "host": row.host, "ok": True, "result": r})
+        except Exception as exc:
+            logger.error(f"Advisor apply (ssh {row.host}) failed: {exc}")
+            remote.append({"type": "ssh", "host": row.host, "ok": False, "error": str(exc)})
+
+    # Local installs (winget / WUA) run LAST. Each internally begins+finishes the
+    # shared progress slot; running them last means the only post-finish() window
+    # is the trailing DB commit — the same negligible one the Updates page has.
     app_res = None
     if valid_app:
         try:
@@ -477,6 +599,16 @@ async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
     await _persist(WindowsUpdateORM, "update_id", (win_res or {}).get("results", []), "result_code")
     await db.commit()
 
-    # "applied" = updates that actually SUCCEEDED, not merely attempted.
-    applied = (app_res or {}).get("installed", 0) + (win_res or {}).get("installed", 0)
-    return {"applied": applied, "app": app_res, "windows": win_res, "skipped": skipped}
+    # "applied" = plan items that actually SUCCEEDED (local packages + remote hosts).
+    applied = (
+        (app_res or {}).get("installed", 0)
+        + (win_res or {}).get("installed", 0)
+        + sum(1 for x in remote if x["ok"])
+    )
+    return {
+        "applied": applied,
+        "app": app_res,
+        "windows": win_res,
+        "remote": remote,
+        "skipped": skipped,
+    }

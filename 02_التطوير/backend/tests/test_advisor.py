@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.models.orm import Base, DeviceORM, SoftwarePackageORM
+from app.models.orm import Base, DeviceORM, SoftwarePackageORM, WinRMHostORM
 from app.services import advisor
 
 CSRF = {"X-HomeUpdater": "1"}
@@ -224,3 +224,75 @@ def test_apply_plan_only_installs_pending(monkeypatch, tmp_path):
     assert result["applied"] == 1
     assert set(result["skipped"]) == {"Done.App", "Ghost.App"}
     assert installed_after is True  # DB write-back persisted
+
+
+def test_apply_plan_remote_only_configured_hosts(monkeypatch, tmp_path):
+    """Remote apply upgrades ONLY configured hosts; unknown host ids are skipped."""
+    from app.services import winrm_hosts as winrm_svc
+
+    called: dict = {}
+
+    async def fake_apply(host, *a, **k):
+        called.setdefault("hosts", []).append(host)
+        return {"succeeded": True, "output_tail": "ok"}
+
+    monkeypatch.setattr(winrm_svc, "apply_updates", fake_apply)
+
+    async def run():
+        db_url = f"sqlite+aiosqlite:///{(tmp_path / 'remote.db').as_posix()}"
+        engine = create_async_engine(db_url, poolclass=NullPool)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with Session() as db:
+            db.add(WinRMHostORM(host="10.0.0.5", username="Admin"))  # id=1
+            await db.commit()
+            res = await advisor.apply_plan(
+                db,
+                [
+                    {"type": "winrm", "id": "1", "title": "upgrade 10.0.0.5"},  # configured
+                    {"type": "winrm", "id": "999", "title": "ghost host"},  # unknown → skip
+                ],
+            )
+        await engine.dispose()
+        return res
+
+    result = asyncio.run(run())
+    assert called["hosts"] == ["10.0.0.5"]  # only the configured host was touched
+    assert result["applied"] == 1
+    assert "winrm:999" in result["skipped"]
+    assert result["remote"][0]["ok"] is True
+
+
+def test_apply_plan_malformed_remote_ids_are_skipped_not_500(monkeypatch, tmp_path):
+    """Malformed remote ids (non-numeric, or Unicode digits int() rejects) must be
+    reported as skipped — never crash apply_plan, never touch any host."""
+    from app.services import winrm_hosts as winrm_svc
+
+    async def fake_apply(host, *a, **k):  # pragma: no cover - must never run
+        raise AssertionError(f"no host should be contacted, got {host}")
+
+    monkeypatch.setattr(winrm_svc, "apply_updates", fake_apply)
+
+    async def run():
+        db_url = f"sqlite+aiosqlite:///{(tmp_path / 'malformed.db').as_posix()}"
+        engine = create_async_engine(db_url, poolclass=NullPool)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with Session() as db:
+            res = await advisor.apply_plan(
+                db,
+                [
+                    {"type": "winrm", "id": "living-room-pc", "title": "x"},  # non-numeric
+                    {"type": "ssh", "id": "²", "title": "y"},  # '²' — isdigit() but not int()
+                ],
+            )
+        await engine.dispose()
+        return res
+
+    result = asyncio.run(run())  # must not raise (no unhandled ValueError → no 500)
+    assert result["applied"] == 0
+    assert result["remote"] == []
+    assert "winrm:living-room-pc" in result["skipped"]
+    assert "ssh:²" in result["skipped"]
