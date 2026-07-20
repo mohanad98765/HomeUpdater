@@ -26,7 +26,11 @@ from .progress import scan_progress
 MAX_SWEEP_HOSTS = 1024
 PROBE_CONCURRENCY = 256
 PROBE_PORT = 80
-PROBE_TIMEOUT = 0.4  # seconds — enough for ARP to resolve on a LAN
+# 1.2s (was 0.4s): a phone in Wi-Fi power-save only wakes its radio at DTIM
+# intervals, so it misses a 0.4s single-shot window but answers within ~1.2s +
+# a second pass. This is the main reason phones dropped out of the pure-Python
+# scan vs. nmap (which retries with a ~1.5s RTT timeout).
+PROBE_TIMEOUT = 1.2
 
 # Dedicated pool for reverse-DNS: gethostbyaddr threads for PTR-less hosts run
 # the full ~3s and can't be cancelled, so they must NOT share the default
@@ -173,9 +177,19 @@ async def discover_python(target: str) -> list[dict[str, Any]]:
         scan_progress.set_phase("scanning", note)
     scan_progress.set_phase("scanning", f"مسح {len(hosts)} عنواناً (Python: TCP + ARP، بلا nmap)")
     await _sweep(hosts)
+    arp = _read_arp_table()
+
+    # Second pass over hosts that didn't answer the first (short) window —
+    # power-saving phones frequently miss the first probe and reply to a retry.
+    missing = [h for h in hosts if h not in arp]
+    if missing:
+        scan_progress.set_phase(
+            "scanning", f"تمريرة ثانية لـ {len(missing)} عنواناً لم يردّ (أجهزة قد تكون نائمة)"
+        )
+        await _sweep(missing)
+        arp = {**arp, **_read_arp_table()}
 
     scan_progress.set_phase("resolving", "قراءة جدول ARP وحلّ الأسماء")
-    arp = _read_arp_table()
 
     loop = asyncio.get_event_loop()
     devices: list[dict[str, Any]] = []

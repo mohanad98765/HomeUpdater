@@ -82,11 +82,12 @@ async def scan_network(
         raise DiscoveryError(str(exc)) from exc
 
     scan_progress.finish(len(devices))
-    logger.info(f"Scan complete on {target}: {len(devices)} device(s) found")
+    logger.info(f"Scan complete on {target}: {len(devices)} device(s) found (method={method})")
     return {
         "subnet": target,
         "devices": devices,
         "host_count": len(devices),
+        "method": method,  # 'python' (bundled, no nmap) or 'nmap' — surfaced in the UI
     }
 
 

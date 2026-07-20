@@ -204,7 +204,6 @@ _ROUTER_VENDORS = (
     "linksys",
     "d-link",
     "dlink",
-    "huawei tech",
     "zte",
     "fortinet",
     "fritzbox",
@@ -214,7 +213,10 @@ _ROUTER_VENDORS = (
 _PHONE_VENDORS = (
     "apple",
     "samsung",
-    "huawei device",
+    # "huawei" (broad) so BOTH "Huawei Device" and "Huawei Technologies" lean
+    # phone — in homes these OUIs are overwhelmingly phones, and a Huawei router
+    # is still caught by the router hostname hints below.
+    "huawei",
     "xiaomi",
     "oneplus",
     "oppo",
@@ -263,30 +265,41 @@ _IOT_VENDORS = (
 
 def classify_device(hostname: str, vendor: str) -> str:
     """Heuristic device-type guess. Returns one of:
-    router | phone | computer | smart_tv | iot | unknown."""
+    router | phone | computer | smart_tv | iot | unknown.
+
+    Order matters: the HOSTNAME is the most specific signal, so it is checked
+    before the vendor OUI. Among vendor hints, phone vendors are checked before
+    router vendors, because consumer OUIs from Apple/Samsung/Huawei/Xiaomi are
+    overwhelmingly phones in a home — a router from those vendors is still caught
+    by the router hostname hints above.
+    """
     h = (hostname or "").lower()
     v = (vendor or "").lower()
 
-    if any(k in v for k in _ROUTER_VENDORS):
+    # 1) Hostname hints (most specific) — all types, before any vendor guess.
+    if any(
+        k in h for k in ("router", "gateway", "modem", "openwrt", "fritz", "-ap", "access-point")
+    ):
         return "router"
-    if any(k in h for k in ("router", "gateway", "modem", "openwrt")):
-        return "router"
-
-    if any(k in v for k in _TV_VENDORS):
+    if any(
+        k in h
+        for k in ("iphone", "ipad", "android", "galaxy", "redmi", "pixel", "oneplus", "phone")
+    ):
+        return "phone"
+    if any(k in h for k in ("tv", "appletv", "chromecast", "firetv", "nvidia-shield", "roku")):
         return "smart_tv"
-    if any(k in h for k in ("tv", "appletv", "chromecast", "firetv", "nvidia-shield")):
-        return "smart_tv"
+    if any(k in h for k in ("desktop", "laptop", "macbook", "imac", "pc-", "-pc")):
+        return "computer"
 
+    # 2) Vendor hints — phones before routers (see docstring).
     if any(k in v for k in _PHONE_VENDORS):
         return "phone"
-    if any(k in h for k in ("iphone", "ipad", "android", "galaxy", "redmi")):
-        return "phone"
-
+    if any(k in v for k in _TV_VENDORS):
+        return "smart_tv"
+    if any(k in v for k in _ROUTER_VENDORS):
+        return "router"
     if any(k in v for k in _COMPUTER_VENDORS):
         return "computer"
-    if any(k in h for k in ("desktop", "laptop", "pc-", "-pc")):
-        return "computer"
-
     if any(k in v for k in _IOT_VENDORS):
         return "iot"
 
