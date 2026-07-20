@@ -10,6 +10,8 @@ isolated temp SQLite file via a dependency override instead.
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -28,6 +30,28 @@ ALLOWED_BASE = "http://127.0.0.1:8000"
 
 # Header the CSRF guard requires on state-changing requests.
 CSRF_HEADER = {"X-HomeUpdater": "1"}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_appdata():
+    """Point HOMEUPDATER_DATA_DIR at a throwaway dir for the whole session.
+
+    get_data_dir() is read live by things unrelated to the DB override — the
+    app-password gate (auth.json), the adaptive-timeout store, etc. Without this,
+    a developer who has actually set an app password would have a real auth.json
+    on disk, which trips the auth gate and 401s every protected endpoint in the
+    suite. Isolating the data dir keeps tests hermetic and matches CI.
+    """
+    with tempfile.TemporaryDirectory(prefix="homeupdater-tests-") as tmp:
+        prev = os.environ.get("HOMEUPDATER_DATA_DIR")
+        os.environ["HOMEUPDATER_DATA_DIR"] = tmp
+        try:
+            yield
+        finally:
+            if prev is None:
+                os.environ.pop("HOMEUPDATER_DATA_DIR", None)
+            else:
+                os.environ["HOMEUPDATER_DATA_DIR"] = prev
 
 
 @pytest.fixture
