@@ -24,13 +24,30 @@ from .mac_vendor import enrich_vendor
 from .network_utils import classify_device, get_local_subnet, normalize_mac
 from .progress import scan_progress
 
-# How long to give nmap to scan the whole subnet, end-to-end.
-# Set high because /16 networks can take several minutes.
-DEFAULT_SCAN_TIMEOUT_SECONDS = 600  # 10 minutes
+# Ceiling for the whole nmap scan. The actual budget is derived from the host
+# count (a /24 doesn't need the same wall clock as a /16), clamped to this.
+DEFAULT_SCAN_TIMEOUT_SECONDS = 600  # 10 minutes (ceiling)
+MIN_SCAN_BUDGET_SECONDS = 60
+PER_HOST_BUDGET_SECONDS = 0.8
+# Extra grace before we abandon a wedged nmap thread. nmap's own --host-timeout
+# should stop it first; this only guards a truly stuck process so the request
+# can't hang forever — the executor await used to be completely unbounded.
+SCAN_GRACE_SECONDS = 30
 
 
 class DiscoveryError(RuntimeError):
     """Raised when nmap fails to scan (e.g. nmap not installed, no admin)."""
+
+
+def _scan_budget(host_estimate: int, ceiling: int) -> int:
+    """Wall-clock budget for the whole scan, scaled by host count and clamped.
+
+    A /24 gets a tight budget; a capped /16 gets the ceiling. Replaces the flat
+    600s that a /24 and a /16 shared."""
+    if host_estimate <= 0:
+        return ceiling
+    budget = host_estimate * PER_HOST_BUDGET_SECONDS
+    return int(min(max(budget, MIN_SCAN_BUDGET_SECONDS), ceiling))
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +121,8 @@ async def _scan_with_nmap(target: str, timeout: int) -> list[dict[str, Any]]:
     except Exception:
         pass
 
+    budget = _scan_budget(host_estimate, timeout)
+
     if host_estimate >= 1024:
         scan_progress.set_phase(
             "scanning",
@@ -114,8 +133,12 @@ async def _scan_with_nmap(target: str, timeout: int) -> list[dict[str, Any]]:
     else:
         scan_progress.set_phase("scanning", "Probing addresses with nmap")
 
-    # Heartbeat — append a log line every 10s while nmap is running so the
-    # UI shows continuous activity even when nmap itself is silent for minutes.
+    # Heartbeat — append a log line every 10s while nmap is running so the UI
+    # shows continuous activity even when nmap itself is silent for minutes.
+    # It stays informational, NOT a stall-watchdog: nmap reports nothing until it
+    # returns (devices_count is 0 for the whole scan), so aborting on "no new
+    # device" would false-fire on every legitimately long scan. The real bound is
+    # the wall-clock ceiling on the await below.
     async def _heartbeat() -> None:
         ticks = 0
         while True:
@@ -129,11 +152,24 @@ async def _scan_with_nmap(target: str, timeout: int) -> list[dict[str, Any]]:
 
     heartbeat_task = asyncio.create_task(_heartbeat())
     loop = asyncio.get_event_loop()
+    fut = loop.run_in_executor(None, _do_scan, target, budget)
     try:
-        devices: list[dict[str, Any]] = await loop.run_in_executor(None, _do_scan, target, timeout)
+        # Total wall-clock bound. nmap's --host-timeout is PER HOST and can't
+        # bound the whole scan, and awaiting the executor directly was unbounded
+        # (a wedged nmap hung the request forever, like the WUA bug). asyncio.wait
+        # — not wait_for — never blocks on the uncancellable nmap thread: on
+        # overrun we abandon it (it stops on its own --host-timeout) and raise.
+        done, _pending = await asyncio.wait({fut}, timeout=budget + SCAN_GRACE_SECONDS)
     finally:
         heartbeat_task.cancel()
 
+    if not done:
+        raise DiscoveryError(
+            f"nmap scan exceeded {budget + SCAN_GRACE_SECONDS}s and was abandoned "
+            f"(the scan appears to be stuck)."
+        )
+
+    devices: list[dict[str, Any]] = fut.result()
     scan_progress.set_phase("classifying", "Classifying device types")
     return devices
 
@@ -141,8 +177,11 @@ async def _scan_with_nmap(target: str, timeout: int) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Internal — runs in executor (blocking)
 # ---------------------------------------------------------------------------
-def _do_scan(subnet: str, timeout: int) -> list[dict[str, Any]]:
-    """Synchronous nmap scan. Called from a thread by ``scan_network``."""
+def _do_scan(subnet: str, host_timeout: int) -> list[dict[str, Any]]:
+    """Synchronous nmap scan. Called from a thread by ``scan_network``.
+
+    ``host_timeout`` is the adaptive per-host cap (nmap ``--host-timeout``); the
+    whole-scan wall-clock bound is enforced by the caller's ``asyncio.wait``."""
     try:
         nm = nmap.PortScanner()
     except nmap.PortScannerError as e:
@@ -164,7 +203,7 @@ def _do_scan(subnet: str, timeout: int) -> list[dict[str, Any]]:
     # --min-hostgroup 64   : group hosts to keep nmap busy
     args = (
         f"-sn -T4 -n --max-retries 1 --max-rtt-timeout 1500ms "
-        f"--min-parallelism 64 --min-hostgroup 64 --host-timeout {timeout}s"
+        f"--min-parallelism 64 --min-hostgroup 64 --host-timeout {host_timeout}s"
     )
     try:
         nm.scan(hosts=subnet, arguments=args)
