@@ -17,7 +17,8 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
+from .. import crypto
+from ..config import get_data_dir, settings
 from ..models.orm import DeviceORM, SoftwarePackageORM, WindowsUpdateORM
 from ..services import cve
 
@@ -27,11 +28,40 @@ class AdvisorError(Exception):
 
 
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+_KEY_FILE = "advisor_key.enc"
+
+
+def get_api_key() -> str:
+    """Return the Anthropic API key: env/config first, else the encrypted file.
+
+    The UI-saved key is stored ENCRYPTED at rest (Fernet + DPAPI, same as SSH/
+    WinRM/HA credentials — see crypto.py), never in plaintext.
+    """
+    env = settings.anthropic_api_key.strip()
+    if env:
+        return env
+    path = get_data_dir() / _KEY_FILE
+    if path.exists():
+        try:
+            return crypto.decrypt(path.read_text(encoding="utf-8").strip())
+        except Exception as exc:  # noqa: BLE001 — bad/foreign key file → treat as unset
+            logger.warning(f"Advisor key could not be decrypted: {exc}")
+    return ""
+
+
+def set_api_key(key: str) -> None:
+    """Persist the API key encrypted (or clear it when ``key`` is blank)."""
+    path = get_data_dir() / _KEY_FILE
+    key = (key or "").strip()
+    if not key:
+        path.unlink(missing_ok=True)
+        return
+    path.write_text(crypto.encrypt(key), encoding="utf-8")
 
 
 def is_configured() -> bool:
-    """True when an Anthropic API key is set (feature is usable)."""
-    return bool(settings.anthropic_api_key.strip())
+    """True when an Anthropic API key is available (feature is usable)."""
+    return bool(get_api_key())
 
 
 # --------------------------------------------------------------------------- #
@@ -50,7 +80,8 @@ async def _tool_list_devices(db: AsyncSession) -> dict:
         }
         for d in rows
     ]
-    return {"total": len(devices), "devices": devices}
+    # Cap the payload so a very large network can't blow up the token budget.
+    return {"total": len(devices), "devices": devices[:80]}
 
 
 async def _tool_check_vulnerabilities(db: AsyncSession) -> dict:
@@ -60,7 +91,11 @@ async def _tool_check_vulnerabilities(db: AsyncSession) -> dict:
         vendor = (d.vendor or "").strip()
         if not vendor:
             continue
-        cached = await cve.get_cached(vendor, db)
+        try:
+            cached = await cve.get_cached(vendor, db)
+        except Exception as exc:  # one bad/corrupt cache row must not kill the whole tool
+            logger.warning(f"CVE cache read failed for {vendor!r}: {exc}")
+            continue
         if not cached or cached["total_results"] <= 0:
             continue
         top, best = "", 0
@@ -82,7 +117,7 @@ async def _tool_check_vulnerabilities(db: AsyncSession) -> dict:
     )
     return {
         "flagged_count": len(flagged),
-        "devices": flagged,
+        "devices": flagged[:60],
         "note": (
             "Matched by device vendor from cached NVD data. An empty list can mean "
             "the vendors are clean OR that no security scan has been run yet."
@@ -92,20 +127,28 @@ async def _tool_check_vulnerabilities(db: AsyncSession) -> dict:
 
 async def _tool_list_pending_updates(db: AsyncSession) -> dict:
     apps = (
-        await db.execute(
-            select(SoftwarePackageORM).where(SoftwarePackageORM.is_installed.is_(False))
+        (
+            await db.execute(
+                select(SoftwarePackageORM).where(SoftwarePackageORM.is_installed.is_(False))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     app_items = [
-        {"name": a.name or a.package_id, "current": a.current_version, "available": a.available_version}
+        {
+            "name": a.name or a.package_id,
+            "current": a.current_version,
+            "available": a.available_version,
+        }
         for a in apps
         if a.available_version
     ]
     win = (
-        await db.execute(
-            select(WindowsUpdateORM).where(WindowsUpdateORM.is_installed.is_(False))
-        )
-    ).scalars().all()
+        (await db.execute(select(WindowsUpdateORM).where(WindowsUpdateORM.is_installed.is_(False))))
+        .scalars()
+        .all()
+    )
     win_items = [{"title": w.title, "severity": w.severity, "kind": w.kind} for w in win]
     return {
         "app_updates": {"total": len(app_items), "items": app_items[:40]},
@@ -167,12 +210,13 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
     Returns ``{"recommendations": str, "trace": [{"tool": name}, ...], "model": str}``.
     Raises :class:`AdvisorError` if the key is missing or the API call fails.
     """
-    if not is_configured():
+    api_key = get_api_key()
+    if not api_key:
         raise AdvisorError("AI Advisor is not configured (no Anthropic API key).")
 
     import anthropic
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(api_key=api_key)
     ar = lang_hint.startswith("ar")
     user_msg = (
         "Review my home network's update posture and give me a prioritized action plan: "
@@ -186,7 +230,7 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
         for _ in range(8):  # cap the agentic loop
             resp = await client.messages.create(
                 model=settings.advisor_model,
-                max_tokens=4096,
+                max_tokens=8192,
                 thinking={"type": "adaptive"},
                 system=_SYSTEM,
                 tools=_TOOLS,
@@ -195,7 +239,18 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
 
             if resp.stop_reason != "tool_use":
                 text = "".join(b.text for b in resp.content if b.type == "text").strip()
-                return {"recommendations": text, "trace": trace, "model": resp.model}
+                # Distinguish a real answer from a safety refusal or a truncation —
+                # otherwise both would surface as a blank/half-written "success".
+                if resp.stop_reason == "refusal":
+                    raise AdvisorError("The model declined this request. Try rephrasing.")
+                if not text:
+                    raise AdvisorError("The model returned an empty answer; please try again.")
+                return {
+                    "recommendations": text,
+                    "trace": trace,
+                    "model": resp.model,
+                    "truncated": resp.stop_reason == "max_tokens",
+                }
 
             # Echo the assistant turn back verbatim (thinking + tool_use blocks),
             # then answer every tool_use with a tool_result in one user turn.

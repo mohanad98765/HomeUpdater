@@ -15,6 +15,7 @@ CSRF = {"X-HomeUpdater": "1"}
 
 def test_status_unconfigured(client, monkeypatch):
     monkeypatch.setattr(advisor.settings, "anthropic_api_key", "")
+    monkeypatch.setattr(advisor, "get_api_key", lambda: "")
     r = client.get("/api/advisor/status")
     assert r.status_code == 200
     assert r.json()["configured"] is False
@@ -22,8 +23,34 @@ def test_status_unconfigured(client, monkeypatch):
 
 def test_analyze_requires_key(client, monkeypatch):
     monkeypatch.setattr(advisor.settings, "anthropic_api_key", "")
+    monkeypatch.setattr(advisor, "get_api_key", lambda: "")
     r = client.post("/api/advisor/analyze", json={"lang": "en"}, headers=CSRF)
     assert r.status_code == 503
+
+
+def test_key_saved_encrypted_roundtrip(monkeypatch, tmp_path):
+    """A UI-saved key round-trips and is stored encrypted, not in plaintext."""
+    from cryptography.fernet import Fernet
+
+    from app import crypto
+
+    monkeypatch.setenv("HOMEUPDATER_SECRET_KEY", Fernet.generate_key().decode())
+    monkeypatch.setattr(advisor.settings, "anthropic_api_key", "")
+    monkeypatch.setattr(advisor, "get_data_dir", lambda: tmp_path)
+    crypto.reset_cache()
+
+    advisor.set_api_key("sk-ant-secret-123")
+    assert advisor.get_api_key() == "sk-ant-secret-123"
+    assert advisor.is_configured() is True
+
+    on_disk = (tmp_path / "advisor_key.enc").read_text(encoding="utf-8")
+    assert "sk-ant-secret-123" not in on_disk  # ciphertext, not plaintext
+    assert on_disk.startswith("gAAAAA")  # Fernet token
+
+    advisor.set_api_key("")  # clear
+    assert advisor.get_api_key() == ""
+    assert not (tmp_path / "advisor_key.enc").exists()
+    crypto.reset_cache()
 
 
 # --- the agentic loop, with a fake Claude client -------------------------- #

@@ -1,6 +1,7 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Loader2, Sparkles, Cpu, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Sparkles, Cpu, KeyRound } from "lucide-react";
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 
@@ -11,11 +12,13 @@ import { useLanguage } from "@/lib/language";
 interface AdvisorStatus {
   configured: boolean;
   model: string;
+  env: boolean;
 }
 interface AdvisorResult {
   recommendations: string;
   trace: { tool: string }[];
   model: string;
+  truncated?: boolean;
 }
 
 // map the agent's tool names to their i18n label keys
@@ -28,7 +31,9 @@ const TOOL_LABEL: Record<string, string> = {
 export function AdvisorPage({ onBack }: { onBack: () => void }) {
   const { t, i18n } = useTranslation();
   const { dir } = useLanguage();
+  const qc = useQueryClient();
   const BackIcon = dir === "rtl" ? ArrowRight : ArrowLeft;
+  const [keyInput, setKeyInput] = useState("");
 
   const status = useQuery<AdvisorStatus>({
     queryKey: ["advisor-status"],
@@ -41,6 +46,15 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
         method: "POST",
         body: JSON.stringify({ lang: i18n.language }),
       }),
+  });
+
+  const saveKey = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/advisor/key", { method: "POST", body: JSON.stringify({ key: keyInput.trim() }) }),
+    onSuccess: () => {
+      setKeyInput("");
+      qc.invalidateQueries({ queryKey: ["advisor-status"] });
+    },
   });
 
   const configured = !!status.data?.configured;
@@ -77,14 +91,34 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
             {analyze.isPending ? t("pages.advisor.analyzing") : t("pages.advisor.analyze")}
           </button>
         ) : (
-          <div className="flex items-start gap-3 text-sm border border-warning/30 bg-warning/10 rounded-lg p-3">
-            <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="font-semibold text-fg">{t("pages.advisor.notConfigured")}</div>
-              <div className="text-fg-muted mt-1" dir="ltr">
-                {t("pages.advisor.notConfiguredHow")}
-              </div>
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              <label className="text-sm font-medium">{t("pages.advisor.keyLabel")}</label>
             </div>
+            <p className="text-xs text-fg-muted mb-2">{t("pages.advisor.keyHint")}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="password"
+                dir="ltr"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder="sk-ant-…"
+                className="input flex-1 min-w-[220px]"
+              />
+              <button
+                type="button"
+                onClick={() => saveKey.mutate()}
+                disabled={saveKey.isPending || keyInput.trim().length < 8}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                {saveKey.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                {t("pages.advisor.saveKey")}
+              </button>
+            </div>
+            {saveKey.isError && (
+              <p className="mt-2 text-sm text-danger">{(saveKey.error as Error).message}</p>
+            )}
           </div>
         )}
       </div>
@@ -112,6 +146,9 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
       {/* recommendations */}
       {analyze.data && (
         <div className="card">
+          {analyze.data.truncated && (
+            <div className="mb-3 text-xs text-warning">⚠ {t("pages.advisor.truncated")}</div>
+          )}
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{analyze.data.recommendations}</div>
           <div className="mt-4 pt-3 border-t border-border text-xs text-fg-subtle inline-flex items-center gap-1">
             <Sparkles className="w-3 h-3" /> {t("pages.advisor.poweredBy")} · {analyze.data.model}
