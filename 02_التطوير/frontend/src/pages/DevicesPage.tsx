@@ -36,10 +36,9 @@ interface DeviceList {
   subnet: string;
 }
 
-interface ScanResponse extends DeviceList {
-  new: number;
-  duration_seconds: number;
-  timestamp: string;
+interface ScanResponse {
+  started: boolean;
+  subnet: string;
 }
 
 interface NetworkInfo {
@@ -113,30 +112,47 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
     refetchInterval: 30_000,
   });
 
+  // The scan runs in the BACKGROUND: the POST returns immediately, then we poll
+  // /scan/status until it finishes, and refetch the device list on completion.
+  const [scanning, setScanning] = useState(false);
+
   const scan = useMutation<ScanResponse>({
     mutationFn: () =>
       apiFetch<ScanResponse>("/api/devices/scan", {
         method: "POST",
         body: JSON.stringify({ subnet: scanSubnet || null }),
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["devices"] });
-      qc.invalidateQueries({ queryKey: ["device-stats"] });
-    },
+    onSuccess: () => setScanning(true),
   });
 
   const progress = useQuery<ProgressState>({
     queryKey: ["scan-status"],
     queryFn: () => apiFetch<ProgressState>("/api/devices/scan/status"),
-    enabled: scan.isPending,
+    enabled: scanning,
     refetchInterval: 1000,
   });
+
+  // When the background scan reaches a terminal phase, stop polling and (on
+  // success) refresh the device list + stats.
+  const phase = progress.data?.phase;
+  useEffect(() => {
+    if (!scanning) return;
+    if (phase === "done") {
+      setScanning(false);
+      qc.invalidateQueries({ queryKey: ["devices"] });
+      qc.invalidateQueries({ queryKey: ["device-stats"] });
+    } else if (phase === "error") {
+      setScanning(false);
+    }
+  }, [phase, scanning, qc]);
+
+  const isScanning = scanning || scan.isPending;
 
   // The refetchable `list` query is the source of truth (scan.onSuccess
   // invalidates ['devices'], so it already holds the fresh scan results). Reading
   // scan.data first would let the stale mutation result permanently shadow later
   // edits (e.g. a custom name set via the detail panel never appears).
-  const devices: Device[] = list.data?.devices ?? scan.data?.devices ?? [];
+  const devices: Device[] = list.data?.devices ?? [];
   useEffect(() => {
     if (selectedDevice) {
       const fresh = devices.find((d) => d.id === selectedDevice.id);
@@ -165,10 +181,10 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           onClick={() => scan.mutate()}
-          disabled={scan.isPending || !scanSubnet}
+          disabled={isScanning || !scanSubnet}
           className="btn-primary inline-flex items-center gap-2"
         >
-          {scan.isPending ? (
+          {isScanning ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               {t("devices.scanning")}
@@ -200,33 +216,32 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
       />
 
       {/* Live activity log (only while scanning) */}
-      {(scan.isPending || progress.data?.is_running) && (
+      {(isScanning || progress.data?.is_running) && (
         <ActivityLog progress={progress.data} subnet={scanSubnet} />
       )}
 
-      {/* Scan result summary */}
-      {scan.data && !scan.isPending && (
+      {/* Scan result summary (after a completed background scan) */}
+      {!isScanning && phase === "done" && progress.data && (
         <div className="mb-6 p-4 rounded-lg border border-success/30 bg-success/10 text-success flex items-center gap-3 flex-wrap text-sm">
           <Wifi className="w-5 h-5 flex-shrink-0" />
-          <span className="font-bold">{t("devices.total", { count: scan.data.total })}</span>
-          {scan.data.new > 0 && (
-            <span className="badge badge-info">
-              {t("devices.new", { count: scan.data.new })}
-            </span>
-          )}
+          <span className="font-bold">
+            {t("devices.total", { count: progress.data.devices_count })}
+          </span>
           <span className="text-fg-muted">
-            {t("devices.duration", { seconds: scan.data.duration_seconds.toFixed(1) })}
+            {t("devices.duration", { seconds: progress.data.elapsed_seconds.toFixed(1) })}
           </span>
         </div>
       )}
 
-      {/* Scan error */}
-      {scan.isError && (
+      {/* Scan error (POST rejected, or the background scan failed) */}
+      {(scan.isError || phase === "error") && (
         <div className="mb-6 p-4 rounded-lg border border-danger/30 bg-danger/10 text-danger flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="font-bold mb-1">{t("devices.scanFailed")}</p>
-            <p className="text-sm font-mono">{(scan.error as Error)?.message}</p>
+            <p className="text-sm font-mono">
+              {progress.data?.error || (scan.error as Error)?.message}
+            </p>
           </div>
         </div>
       )}
@@ -237,8 +252,8 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-fg-muted" />
           <p className="text-fg-muted">{t("status.loading")}</p>
         </div>
-      ) : devices.length === 0 && !scan.isPending ? (
-        <EmptyState onScan={() => scan.mutate()} disabled={scan.isPending || !scanSubnet} />
+      ) : devices.length === 0 && !isScanning ? (
+        <EmptyState onScan={() => scan.mutate()} disabled={isScanning || !scanSubnet} />
       ) : devices.length > 0 ? (
         <DeviceTable
           devices={devices}

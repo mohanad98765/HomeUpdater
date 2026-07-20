@@ -67,7 +67,10 @@ async def scan_network(
     target = subnet or get_local_subnet()
     method = _choose_method()
     logger.info(f"Starting host-discovery scan on {target} (method={method})")
-    scan_progress.begin(target)
+    # NOTE: the caller owns the progress lifecycle — it calls scan_progress.begin()
+    # synchronously (so the run is marked in-progress before this returns) and
+    # scan_progress.finish() only AFTER the results are persisted. This function
+    # just runs the scan and marks a failure.
 
     try:
         if method == "nmap":
@@ -81,7 +84,6 @@ async def scan_network(
         scan_progress.fail(str(exc))
         raise DiscoveryError(str(exc)) from exc
 
-    scan_progress.finish(len(devices))
     logger.info(f"Scan complete on {target}: {len(devices)} device(s) found (method={method})")
     return {
         "subnet": target,

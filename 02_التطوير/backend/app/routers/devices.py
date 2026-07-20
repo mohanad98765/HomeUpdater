@@ -15,6 +15,7 @@ Mounted in main.py with prefix /api/devices.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import UTC, datetime
 
@@ -24,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..models.orm import DeviceORM
 from ..services.discovery import DiscoveryError, scan_network
 from ..services.network_utils import (
@@ -131,38 +132,11 @@ async def scan_status() -> dict:
 # ===================================================================
 # POST /api/devices/scan  -> trigger scan, persist results
 # ===================================================================
-@router.post("/scan")
-async def trigger_scan(
-    req: ScanRequest = ScanRequest(),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Scan the network, upsert results, mark missing devices offline."""
-    # Reject overlapping scans: two concurrent scans corrupt the shared progress
-    # singleton and race on the upsert (duplicate inserts).
-    if scan_progress.is_running:
-        raise HTTPException(
-            status_code=409,
-            detail="مسح آخر قيد التنفيذ بالفعل / A scan is already running",
-        )
+async def _persist_scan(db: AsyncSession, result: dict, now: datetime) -> int:
+    """Upsert scan results; mark missing devices offline. Returns NEW-row count.
 
-    target_subnet = req.subnet
-    if target_subnet and not is_valid_cidr(target_subnet):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid CIDR: '{target_subnet}'. Example: 192.168.1.0/24",
-        )
-
-    logger.info(f"POST /api/devices/scan (override={target_subnet})")
-    started_at = time.time()
-    now = datetime.now(UTC)
-
-    try:
-        result = await scan_network(target_subnet)
-    except DiscoveryError as exc:
-        logger.error(f"Discovery failed: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    # ----- Upsert -------------------------------------------------
+    Handles the two ARP quirks: MAC-less hosts (mac=None so several coexist) and
+    two IPs sharing one MAC (collapsed to one row via the ``existing`` map)."""
     existing_q = await db.execute(select(DeviceORM))
     existing = {(d.mac or d.ip): d for d in existing_q.scalars().all()}
 
@@ -195,37 +169,77 @@ async def trigger_scan(
                 last_seen=now,
             )
             db.add(d)
-            # Track it in `existing` so a duplicate key later in THIS batch (e.g.
-            # two IPs sharing one MAC, common with ARP-based discovery) updates
-            # this row instead of inserting again and hitting the UNIQUE(mac).
             existing[key] = d
             new_count += 1
 
-    # Mark previously-known devices that didn't respond as offline
     for key, d in existing.items():
         if key not in found_keys:
             d.is_online = False
 
     await db.commit()
+    return new_count
 
-    # Re-query the merged list, sorted by IP
-    merged_q = await db.execute(select(DeviceORM))
-    devices = sorted(merged_q.scalars().all(), key=lambda d: _ip_sort_key(d.ip))
 
-    duration = round(time.time() - started_at, 2)
+async def _run_scan_bg(target: str) -> None:
+    """Run the (possibly slow) scan + persist in the background so the POST
+    returns immediately. Progress/completion are exposed via /scan/status."""
+    started_at = time.time()
+    now = datetime.now(UTC)
+    try:
+        result = await scan_network(target)
+    except DiscoveryError as exc:
+        logger.error(f"Discovery failed: {exc}")
+        return  # scan_network already marked scan_progress.fail()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Scan crashed")
+        scan_progress.fail(str(exc))
+        return
+
+    try:
+        async with SessionLocal() as db:
+            new_count = await _persist_scan(db, result, now)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Persisting scan results failed")
+        scan_progress.fail(f"تعذّر حفظ نتائج المسح: {exc}")
+        return
+
+    count = len(result["devices"])
+    scan_progress.finish(count)  # mark done only AFTER results are saved
     logger.info(
-        f"Scan finished in {duration}s - subnet={result['subnet']} "
-        f"total={len(devices)} new={new_count}"
+        f"Scan finished in {round(time.time() - started_at, 2)}s - "
+        f"subnet={result['subnet']} total={count} new={new_count}"
     )
 
-    return {
-        "subnet": result["subnet"],
-        "devices": [d.to_dict() for d in devices],
-        "total": len(devices),
-        "new": new_count,
-        "duration_seconds": duration,
-        "timestamp": now.isoformat(),
-    }
+
+@router.post("/scan")
+async def trigger_scan(req: ScanRequest = ScanRequest()) -> dict:
+    """Start a network scan in the BACKGROUND and return immediately.
+
+    A scan can take a while (a busy /24, or nmap on the user's machine), so
+    blocking the HTTP request would time out on the client — the exact symptom
+    where the scan "fails" even though devices were found. Instead we kick it off
+    and the UI polls GET /api/devices/scan/status for live progress + completion,
+    then refetches the device list."""
+    if scan_progress.is_running:
+        raise HTTPException(
+            status_code=409,
+            detail="مسح آخر قيد التنفيذ بالفعل / A scan is already running",
+        )
+
+    target_subnet = req.subnet
+    if target_subnet and not is_valid_cidr(target_subnet):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid CIDR: '{target_subnet}'. Example: 192.168.1.0/24",
+        )
+
+    target = target_subnet or get_local_subnet()
+    logger.info(f"POST /api/devices/scan -> background scan on {target}")
+    # Mark in-progress synchronously: rejects a second POST (409) and makes the
+    # UI's first /status poll already see the run.
+    scan_progress.begin(target)
+    asyncio.create_task(_run_scan_bg(target))
+    return {"started": True, "subnet": target}
 
 
 # ===================================================================
