@@ -18,12 +18,20 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
 from loguru import logger
 
+from .adaptive_timeout import DurationCeiling
 from .update_progress import update_progress
+
+# Adaptive wall-clock ceilings for the opaque WUA COM calls (no intra-call
+# progress signal exists, so a stall-watchdog can't help — only a bound can).
+# They start generous and tighten toward each machine's real search/install time.
+_CHECK_CEILING = DurationCeiling(floor=120.0, ceiling=900.0, safety=3.0)  # search
+_INSTALL_CEILING = DurationCeiling(floor=600.0, ceiling=3600.0, safety=3.0)  # download+install
 
 # Severity values returned by Microsoft Update — keep as strings for the UI.
 SEVERITY_LEVELS = ("Critical", "Important", "Moderate", "Low", "Unspecified")
@@ -252,12 +260,44 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
 # ===================================================================
 # Public async API
 # ===================================================================
+async def _run_bounded(fn, *args, ceiling: DurationCeiling, op: str):
+    """Run a blocking WUA COM call in a thread, bounded by an adaptive ceiling.
+
+    WUA's Search/Download/Install are opaque COM calls; if the Windows Update
+    service wedges they block forever. Previously the ``await`` then hung
+    indefinitely AND left ``update_progress.is_running`` set, so every later
+    update request returned 409 for the life of the process. We bound it with
+    ``DurationCeiling`` (EWMA of prior successful runs × safety, clamped) and use
+    ``asyncio.wait`` — NOT ``wait_for`` — so the timeout never blocks on the
+    uncancellable COM thread. On overrun we raise; the caller clears progress.
+    The orphaned thread finishes on its own later (COM has no cancellation) but
+    can no longer wedge the app.
+    """
+    loop = asyncio.get_event_loop()
+    deadline = ceiling.timeout()
+    started = time.monotonic()
+    fut = loop.run_in_executor(None, fn, *args)
+    done, _pending = await asyncio.wait({fut}, timeout=deadline)
+    if not done:
+        raise WindowsUpdateError(
+            f"{op} exceeded {int(deadline)}s and was abandoned — the Windows "
+            f"Update service may be stuck. Reboot and retry if this recurs."
+        )
+    result = fut.result()  # re-raises the thread's own exception if it failed
+    ceiling.observe(time.monotonic() - started)
+    return result
+
+
 async def check_for_updates(kind: str = "Software") -> list[UpdateInfo]:
     """Search Windows Update for pending updates of the given kind."""
     update_progress.begin(f"check-{kind.lower()}")
-    loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(None, _check_blocking, kind)
+        result = await _run_bounded(
+            _check_blocking,
+            kind,
+            ceiling=_CHECK_CEILING,
+            op=f"Windows Update {kind.lower()} search",
+        )
     except WindowsUpdateError as exc:
         update_progress.fail(str(exc))
         raise
@@ -271,9 +311,10 @@ async def check_for_updates(kind: str = "Software") -> list[UpdateInfo]:
 async def install_updates(update_ids: list[str]) -> dict[str, Any]:
     """Download + install the given updates (runs in executor)."""
     update_progress.begin("install", total=len(update_ids))
-    loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(None, _install_blocking, update_ids)
+        result = await _run_bounded(
+            _install_blocking, update_ids, ceiling=_INSTALL_CEILING, op="Windows Update install"
+        )
     except WindowsUpdateError as exc:
         update_progress.fail(str(exc))
         raise
