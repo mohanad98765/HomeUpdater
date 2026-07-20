@@ -27,6 +27,10 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 ; The backend drives Windows Update / winget / nmap — it needs elevation.
 PrivilegesRequired=admin
+; We close the running app ourselves (a custom page below): the built-in Restart
+; Manager closes HomeUpdater.exe but not its msedgewebview2.exe child processes,
+; which keep the _internal DLLs locked -> "unable to close all applications".
+CloseApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=Output
@@ -68,8 +72,120 @@ Name: "{commonstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startupi
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; Stop a running instance before removing files.
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM {#AppExe} /F"; Flags: runhidden; RunOnceId: "StopHomeUpdater"
+; Stop the running instance (and its WebView2 children, via /T) before removing files.
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#AppExe}"; Flags: runhidden; RunOnceId: "StopHomeUpdater"
 
 ; NOTE: user data in %APPDATA%\HomeUpdater (DB, config, logs) is intentionally
 ; left in place on uninstall. A future "remove my data?" prompt can clear it.
+
+[Code]
+{ ---- Close the running HomeUpdater (incl. its msedgewebview2 children) before update ---- }
+var
+  ClosePage: TWizardPage;
+  CloseCheck: TNewCheckBox;
+  AppMemo: TNewMemo;
+
+function AppIsRunning(): Boolean;
+var
+  RC: Integer;
+begin
+  { `find` exits 0 only when HomeUpdater.exe appears in the tasklist output }
+  Result := Exec(ExpandConstant('{cmd}'),
+    '/C tasklist /FI "IMAGENAME eq {#AppExe}" | find /I "{#AppExe}"',
+    '', SW_HIDE, ewWaitUntilTerminated, RC) and (RC = 0);
+end;
+
+procedure KillAppTree();
+var
+  RC: Integer;
+  I: Integer;
+begin
+  { /T kills the process tree so the msedgewebview2 children die too and release
+    the locked _internal DLLs. Then wait until the handles are actually gone. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '',
+       SW_HIDE, ewWaitUntilTerminated, RC);
+  for I := 1 to 12 do
+  begin
+    if not AppIsRunning() then Break;
+    Sleep(500);
+  end;
+end;
+
+procedure InitializeWizard();
+var
+  Lbl: TNewStaticText;
+begin
+  ClosePage := CreateCustomPage(wpReady,
+    'إغلاق التطبيقات قيد التشغيل / Close running applications',
+    'HomeUpdater يعمل حالياً ويستخدم ملفات يجب تحديثها.');
+
+  Lbl := TNewStaticText.Create(ClosePage);
+  Lbl.Parent := ClosePage.Surface;
+  Lbl.Top := 0;
+  Lbl.Width := ClosePage.SurfaceWidth;
+  Lbl.Caption := 'التطبيقات التي يجب إغلاقها قبل المتابعة:';
+
+  AppMemo := TNewMemo.Create(ClosePage);
+  AppMemo.Parent := ClosePage.Surface;
+  AppMemo.Left := 0;
+  AppMemo.Top := ScaleY(20);
+  AppMemo.Width := ClosePage.SurfaceWidth;
+  AppMemo.Height := ScaleY(70);
+  AppMemo.ReadOnly := True;
+  AppMemo.ScrollBars := ssVertical;
+  AppMemo.Lines.Add('• HomeUpdater.exe');
+  AppMemo.Lines.Add('• msedgewebview2.exe (نوافذ التطبيق التابعة)');
+
+  CloseCheck := TNewCheckBox.Create(ClosePage);
+  CloseCheck.Parent := ClosePage.Surface;
+  CloseCheck.Left := 0;
+  CloseCheck.Top := ScaleY(100);
+  CloseCheck.Width := ClosePage.SurfaceWidth;
+  CloseCheck.Height := ScaleY(24);
+  CloseCheck.Caption := 'أغلق HomeUpdater تلقائياً ثم تابع التحديث (مُوصى به)';
+  CloseCheck.Checked := True;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  { Only show the close page when the app is actually running. }
+  Result := (PageID = ClosePage.ID) and (not AppIsRunning());
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = ClosePage.ID then
+  begin
+    if AppIsRunning() then
+    begin
+      if CloseCheck.Checked then
+      begin
+        KillAppTree();
+        if AppIsRunning() then
+        begin
+          MsgBox('تعذّر إغلاق HomeUpdater تلقائياً. أغلقه يدوياً ثم اضغط «التالي».',
+                 mbError, MB_OK);
+          Result := False;
+        end;
+      end
+      else
+      begin
+        if MsgBox('HomeUpdater ما زال يعمل؛ قد يفشل التحديث بدون إغلاقه. المتابعة؟',
+                  mbConfirmation, MB_YESNO) = IDNO then
+          Result := False;
+      end;
+    end;
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  { Backstop right before files are copied — guarantees the tree is down even if
+    the app was launched between the page and the copy. }
+  Result := '';
+  if AppIsRunning() then
+    KillAppTree();
+  if AppIsRunning() then
+    Result := 'HomeUpdater ما زال قيد التشغيل ولا يمكن تحديث ملفاته. أغلقه ثم أعد المحاولة.';
+end;
