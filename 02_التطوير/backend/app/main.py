@@ -8,6 +8,7 @@ This is the main application file. It:
 4. Provides a healthy /api/health endpoint
 """
 
+import hmac
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -123,6 +124,20 @@ def _hostname_only(host: str) -> str:
 # request being rejected. Derived from the configured allowlist.
 _ALLOWED_HOSTNAMES = {_hostname_only(h.lower()) for h in settings.allowed_hosts}
 
+# /api/* paths exempt from the session-token requirement: liveness only, no
+# sensitive data and no side effects — so the connection indicator works even
+# before the SPA has read its token.
+_TOKEN_EXEMPT_PATHS = {"/api/system/health", "/api/system/version"}
+# Also gate the API root (welcome payload) and the interactive API docs (they
+# expose app metadata / the full endpoint surface).
+_TOKEN_GATED_EXACT = {"/api", "/docs", "/redoc", "/openapi.json"}
+
+
+def _needs_token(path: str) -> bool:
+    if path in _TOKEN_EXEMPT_PATHS:
+        return False
+    return path.startswith("/api/") or path in _TOKEN_GATED_EXACT
+
 
 @app.middleware("http")
 async def security_guard(request: Request, call_next):
@@ -137,6 +152,24 @@ async def security_guard(request: Request, call_next):
                 "detail": "Host header rejected (DNS-rebinding protection)",
             },
         )
+    # Session-token auth: the loopback API runs ELEVATED, and loopback TCP is
+    # reachable by any local user/process — the Host/CSRF checks only stop
+    # browsers. Require a per-launch secret (which only the legitimate UI got, via
+    # its launch URL) on every /api/* call, so another local account or a curl/
+    # malware process can't drive install/reboot. Not enforced when unset (dev).
+    token = settings.session_token
+    if token and _needs_token(request.url.path):
+        provided = request.headers.get("x-homeupdater-token", "")
+        if not hmac.compare_digest(provided, token):
+            logger.warning(f"Rejected {request.method} {request.url.path}: bad/missing token")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "غير مُصرَّح",
+                    "error_en": "Unauthorized",
+                    "detail": "Missing or invalid session token",
+                },
+            )
     if request.method in _MUTATING_METHODS and request.headers.get("x-homeupdater") is None:
         logger.warning(
             f"Rejected {request.method} {request.url.path}: missing X-HomeUpdater header"

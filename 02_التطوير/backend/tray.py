@@ -84,7 +84,13 @@ class _BackgroundServer:
 def main() -> None:
     _ensure_std_streams()  # must run before uvicorn/loguru touch the streams
 
+    import secrets
+
     import pystray
+
+    # Per-launch API token, set before the config import; delivered via the URL.
+    token = os.environ.get("HOMEUPDATER_SESSION_TOKEN") or secrets.token_urlsafe(32)
+    os.environ["HOMEUPDATER_SESSION_TOKEN"] = token
 
     from app.config import find_free_port, settings
     from app.services import notifications
@@ -92,7 +98,8 @@ def main() -> None:
     # Move to the next free port if the default is taken, so the app still loads.
     port = find_free_port(settings.port, settings.host)
     ui_host = "127.0.0.1" if settings.host in ("0.0.0.0", "::") else settings.host
-    url = f"http://{ui_host}:{port}/"
+    # Token in the URL fragment (never sent to the server / in Referer).
+    url = f"http://{ui_host}:{port}/#t={token}"
     server = _BackgroundServer(settings.host, port, settings.log_level.lower())
     server.start()
 

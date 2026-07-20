@@ -51,3 +51,40 @@ def test_loopback_host_allowed_on_any_port(client):
 def test_nonloopback_host_still_rejected_regardless_of_port(client):
     r = client.get("/api/system/health", headers={"host": "evil.com:8000"})
     assert r.status_code == 400
+
+
+# --- session-token auth (elevated-API EoP protection) ---
+def test_no_token_enforcement_when_unset(client):
+    # Default (dev/tests): session_token is "" -> the API is not token-gated.
+    assert client.get("/api/winrm/hosts").status_code == 200
+
+
+def test_api_requires_token_when_configured(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "session_token", "s3ssion-secret")
+    # Liveness stays exempt (connection indicator works pre-token).
+    assert client.get("/api/system/health").status_code == 200
+    assert client.get("/api/system/version").status_code == 200
+    # A real endpoint now needs the token — a local curl/other user without it fails.
+    assert client.get("/api/winrm/hosts").status_code == 401
+    # The API root (welcome payload) and docs are gated too — no metadata leak.
+    assert client.get("/api").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
+
+
+def test_correct_token_accepted(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "session_token", "s3ssion-secret")
+    ok = client.get("/api/winrm/hosts", headers={"X-HomeUpdater-Token": "s3ssion-secret"})
+    assert ok.status_code == 200
+
+
+def test_wrong_token_rejected(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "session_token", "s3ssion-secret")
+    assert (
+        client.get("/api/winrm/hosts", headers={"X-HomeUpdater-Token": "nope"}).status_code == 401
+    )

@@ -1,9 +1,16 @@
 """
-Production launcher for the bundled HomeUpdater backend.
+Console/browser launcher for the bundled HomeUpdater backend (diagnostic).
 
-This is the PyInstaller entry point. Unlike `run.bat` (which starts the Vite dev
-server separately), the packaged app is a single process: the backend serves the
-built frontend from "/" and the API from "/api/*". On start it opens the browser.
+NOTE: the shipped PyInstaller entry point is `app_window.py` (native window). This
+console launcher is kept for troubleshooting. Unlike `run.bat` (which starts the
+Vite dev server separately), the packaged app is a single process: the backend
+serves the built frontend from "/" and the API from "/api/*". On start it opens
+the browser.
+
+Security: this launcher does NOT set HOMEUPDATER_SESSION_TOKEN, so the API's
+session-token auth is not enforced when started this way — it is a same-user
+diagnostic path only. The shipped elevated app runs through app_window.py, which
+generates and enforces the token.
 """
 
 from __future__ import annotations

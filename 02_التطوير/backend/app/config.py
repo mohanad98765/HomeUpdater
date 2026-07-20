@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,14 +45,15 @@ def get_data_dir() -> Path:
     return data
 
 
-def find_free_port(preferred: int, host: str = "127.0.0.1", span: int = 50) -> int:
+def find_free_port(preferred: int, host: str = "127.0.0.1", span: int = 64) -> int:
     """Return ``preferred`` if it's bindable, else the next free port after it.
 
     Prevents the "app fails to load" failure when the default port (8000) is
     already taken by a leftover/old instance or another program — the app just
-    moves to 8001, 8002, ... instead of shutting down. Falls back to
-    ``preferred`` (and lets uvicorn surface the bind error) only if the whole
-    span is busy.
+    moves to 8001, 8002, ... instead of shutting down. If the whole span is busy
+    (e.g. a hostile local user squatting the range — availability-only), it logs
+    and falls back to ``preferred`` so the caller's normal "backend failed to
+    start" path surfaces a clear message rather than a raw bind traceback.
     """
     import socket
 
@@ -64,6 +66,9 @@ def find_free_port(preferred: int, host: str = "127.0.0.1", span: int = 50) -> i
                 return candidate
             except OSError:
                 continue
+    logger.warning(
+        f"No free port in {preferred}-{preferred + span - 1}; falling back to {preferred}"
+    )
     return preferred
 
 
@@ -117,6 +122,12 @@ class Settings(BaseSettings):
     # the Fernet key is derived from it (PBKDF2); if blank, a machine-bound key
     # file is used instead (DPAPI-wrapped on Windows). Set HOMEUPDATER_ENCRYPTION_PASSPHRASE.
     encryption_passphrase: str = ""
+
+    # Per-launch session token (set by the launcher via HOMEUPDATER_SESSION_TOKEN).
+    # When non-empty, /api/* requires header X-HomeUpdater-Token == this value, so a
+    # different local user / non-browser process can't drive the elevated API. The
+    # legitimate UI receives it in its launch URL. Empty (dev/tests) = not enforced.
+    session_token: str = ""
 
     # === Network scan ===
     scan_interval_minutes: int = 30
