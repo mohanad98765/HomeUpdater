@@ -368,8 +368,6 @@ function AddDeviceDialog({
             </button>
           </div>
 
-          <p className="text-sm text-fg-muted mb-3">{t("android.addDialog.hint")}</p>
-
           <div className="mb-4 p-3 rounded-md bg-info/10 border border-info/30 text-xs text-fg-muted space-y-2">
             <div className="font-bold text-info">{t("android.addDialog.howToConnect")}</div>
             <div>{t("android.addDialog.wirelessHint")}</div>
