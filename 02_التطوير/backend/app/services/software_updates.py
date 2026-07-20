@@ -22,6 +22,7 @@ from typing import Any
 
 from loguru import logger
 
+from .adaptive_timeout import StallWatchdog
 from .update_progress import update_progress
 
 
@@ -52,30 +53,78 @@ def _ensure_windows() -> None:
         raise SoftwareUpdateError("winget is only available on Windows")
 
 
-async def _run(*args: str, timeout: float = 600.0) -> tuple[int, str, str]:
-    """Run a command and return (returncode, stdout, stderr)."""
+async def _run(
+    *args: str,
+    idle_timeout: float = 180.0,
+    hard_ceiling: float = 1800.0,
+) -> tuple[int, str, str]:
+    """Run a command, bounded by a STALL WATCHDOG on its output, not a fixed clock.
+
+    winget emits download/percent progress as it works, so we keep it alive while
+    output keeps arriving and abort only after ``idle_timeout`` seconds of total
+    silence (a genuinely stuck process) or ``hard_ceiling`` seconds overall. A
+    single fixed timeout can't bound a multi-minute install correctly — it either
+    cuts a slow-but-live install short or waits far too long on a wedged one.
+    """
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdin=asyncio.subprocess.DEVNULL,  # windowed builds have no valid stdin handle
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
+    watchdog = StallWatchdog(stall_window=idle_timeout, hard_ceiling=hard_ceiling)
+    out: list[bytes] = []
+    err: list[bytes] = []
+
+    async def _pump(stream: asyncio.StreamReader, sink: list[bytes]) -> None:
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            sink.append(chunk)
+            watchdog.progress(len(chunk))  # any output resets the silence clock
+
+    pumps = [
+        asyncio.create_task(_pump(proc.stdout, out)),
+        asyncio.create_task(_pump(proc.stderr, err)),
+    ]
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError:
-        proc.kill()
-        # Bound the drain: a spawned installer may inherit the pipe and keep it
-        # open, making an unbounded communicate() block forever (which would
-        # wedge update_progress.is_running=True -> every later op returns 409).
+        while True:
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=1.0)
+                break  # process exited on its own
+            except TimeoutError:
+                if watchdog.stalled():
+                    proc.kill()
+                    # Bound the drain: a spawned installer may inherit the pipe
+                    # and hold it open, which would otherwise block forever and
+                    # wedge update_progress.is_running=True (409 on every later op).
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=10.0)
+                    except TimeoutError:
+                        pass
+                    reason = (
+                        f"no output for {int(idle_timeout)}s"
+                        if watchdog.idle_seconds() >= idle_timeout
+                        else f"exceeded {int(hard_ceiling)}s"
+                    )
+                    raise SoftwareUpdateError(
+                        f"Command stalled ({reason}): {' '.join(args)}"
+                    ) from None
+        # Exited on its own: let the pumps drain buffered output, but bound it in
+        # case a child inherited the pipe and holds it open past process exit.
         try:
-            await asyncio.wait_for(proc.communicate(), timeout=10.0)
+            await asyncio.wait_for(asyncio.gather(*pumps), timeout=10.0)
         except TimeoutError:
             pass
-        raise SoftwareUpdateError(f"Command timed out: {' '.join(args)}") from None
+    finally:
+        for pump in pumps:
+            if not pump.done():
+                pump.cancel()
     return (
         proc.returncode or 0,
-        stdout.decode("utf-8", errors="replace"),
-        stderr.decode("utf-8", errors="replace"),
+        b"".join(out).decode("utf-8", errors="replace"),
+        b"".join(err).decode("utf-8", errors="replace"),
     )
 
 
@@ -177,7 +226,8 @@ async def list_software_updates() -> tuple[list[SoftwarePackageInfo], bool]:
             "upgrade",
             "--include-unknown",
             "--accept-source-agreements",
-            timeout=120.0,
+            idle_timeout=60.0,  # a listing should never sit silent this long
+            hard_ceiling=180.0,
         )
         if rc != 0 and not stdout.strip():
             raise SoftwareUpdateError(
@@ -213,7 +263,10 @@ async def install_software_update(package_id: str) -> dict[str, Any]:
         "--silent",
         "--accept-source-agreements",
         "--accept-package-agreements",
-        timeout=1200.0,  # 20 minutes per package — some are big
+        # Kill only on 5 min of TOTAL silence (a stuck installer) or 30 min
+        # overall — never mid-progress, so a big-but-live install isn't cut short.
+        idle_timeout=300.0,
+        hard_ceiling=1800.0,
     )
     return {
         "package_id": package_id,
