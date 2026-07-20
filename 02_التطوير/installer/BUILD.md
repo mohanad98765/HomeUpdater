@@ -29,6 +29,13 @@ cd 02_التطوير\backend
 Win11) يفتح المتصفّح تلقائياً كبديل. المجلَّد onedir يحوي كل شيء: الواجهة المبنيّة،
 migrations، والاعتماديات. (`tray.py` يبقى نقطة دخول بديلة بأيقونة شريط النظام + متصفّح.)
 
+> **أداة adb مُضمَّنة:** يحزم البناء أيضاً `vendor/platform-tools` — أداة **adb.exe**
+> الرسمية من Google (مع `AdbWinApi.dll` و`AdbWinUsbApi.dll`) — أُضيفت في **v1.3.1**
+> لدعم إقران التصحيح اللاسلكي في Android 11+ (مصافحة ADB-over-TLS التي لا تُنفّذها
+> مكتبة ADB بلغة Python الخالصة). ملاحظة: `adb.exe` **مُلتزَم عمداً في المستودع** رغم
+> قاعدة تجاهل `*.exe` العامّة — عبر استثناء (negation) في `02_التطوير/.gitignore`
+> (`!backend/vendor/platform-tools/adb.exe`).
+
 **تحقُّق سريع** (نقرة مزدوجة = تظهر نافذة التطبيق الأصلية):
 ```powershell
 .\dist\HomeUpdater\HomeUpdater.exe

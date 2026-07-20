@@ -30,8 +30,7 @@
 │   │   ├── logging_setup.py
 │   │   ├── routers/     ← API endpoints
 │   │   ├── services/    ← Business logic
-│   │   ├── models/      ← Database models
-│   │   └── modules/     ← Update modules (Plugin architecture)
+│   │   └── models/      ← Database models
 │   ├── requirements.txt
 │   ├── pyproject.toml
 │   └── VERSION

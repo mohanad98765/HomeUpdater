@@ -25,7 +25,10 @@
 | الملف | الحالة |
 |------|--------|
 | `backend/dist/HomeUpdater/HomeUpdater.exe` | موقَّع SHA-256 + طابع زمني DigiCert |
-| `installer/Output/HomeUpdater-Setup-0.1.0.exe` | يحوي الـ exe الموقَّع، والغلاف نفسه موقَّع |
+| `installer/Output/HomeUpdater-Setup-<version>.exe` | يحوي الـ exe الموقَّع، والغلاف نفسه موقَّع |
+
+> **اسم ملفّ المثبِّت** يتتبَّع الإصدار في `backend/VERSION` تلقائياً
+> (الحالي: `1.3.2`)، فاستبدل `<version>` بالرقم الفعلي عند التنفيذ.
 
 > **الطابع الزمني (Timestamp):** كل توقيع يحمل طابعاً زمنياً من
 > `timestamp.digicert.com`، فيبقى التوقيع صالحاً حتى بعد انتهاء صلاحية الشهادة.
@@ -54,7 +57,7 @@
 .\sign.ps1
 
 # توقيع ملفّات محدَّدة
-.\sign.ps1 -Files ".\Output\HomeUpdater-Setup-0.1.0.exe"
+.\sign.ps1 -Files ".\Output\HomeUpdater-Setup-<version>.exe"
 ```
 
 > يجب ألّا يكون التطبيق قيد التشغيل عند توقيع `HomeUpdater.exe` (الملف يُقفَل
@@ -64,7 +67,7 @@
 1. ابنِ الـ exe (PyInstaller — انظر [BUILD.md](BUILD.md)).
 2. وقِّع الـ exe: `.\sign.ps1`.
 3. أعد بناء المثبِّت (ISCC) — ليحزم الـ exe الموقَّع.
-4. وقِّع المثبِّت: `.\sign.ps1 -Files ".\Output\HomeUpdater-Setup-0.1.0.exe"`.
+4. وقِّع المثبِّت: `.\sign.ps1 -Files ".\Output\HomeUpdater-Setup-<version>.exe"`.
 
 ---
 

@@ -67,6 +67,9 @@ installer-output/
 *.p12
 *.snk
 *.key
+# App-level encrypted key files (crypto.py / DPAPI-wrapped key) — defense-in-depth
+*.enc
+secret.key
 # public certificate (.cer) is safe to keep for verification
 
 # Claude Code runtime artifacts
