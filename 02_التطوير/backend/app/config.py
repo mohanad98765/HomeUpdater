@@ -92,8 +92,9 @@ class Settings(BaseSettings):
 
     # === Build mode ===
     # 'test' = development build (visible TEST MODE banner in UI, verbose logs)
-    # 'release' = v1+ build (set this when the user signs off on v1)
-    build_mode: Literal["test", "release"] = "test"
+    # 'release' = v1+ build (no test banner). Override with HOMEUPDATER_BUILD_MODE=test
+    # for a dev run.
+    build_mode: Literal["test", "release"] = "release"
 
     # === Server ===
     host: str = "127.0.0.1"

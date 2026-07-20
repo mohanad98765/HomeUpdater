@@ -71,14 +71,19 @@ function App() {
     queryFn: () => apiFetch<VersionResponse>("/api/system/version"),
   });
 
+  // Only development builds carry the test banner; a release build hides it.
+  const isTest = health.data?.build_mode === "test";
+
   return (
     <div className="min-h-screen bg-bg text-fg flex flex-col">
-      {/* شارة وضع الاختبار */}
-      <div className="bg-warning text-white px-4 py-2 text-center text-sm font-bold flex items-center justify-center gap-2 shadow-md">
-        <FlaskConical className="w-4 h-4" />
-        <span>{t("banner.testMode")}</span>
-        <FlaskConical className="w-4 h-4" />
-      </div>
+      {/* شارة وضع الاختبار — للبناءات التطويرية فقط */}
+      {isTest && (
+        <div className="bg-warning text-white px-4 py-2 text-center text-sm font-bold flex items-center justify-center gap-2 shadow-md">
+          <FlaskConical className="w-4 h-4" />
+          <span>{t("banner.testMode")}</span>
+          <FlaskConical className="w-4 h-4" />
+        </div>
+      )}
 
       {/* الرأس */}
       <header className="bg-surface border-b border-border shadow-sm sticky top-0 z-30">
@@ -181,8 +186,8 @@ function App() {
 
       {/* التذييل */}
       <footer className="max-w-6xl mx-auto w-full px-6 py-6 text-center text-xs text-fg-subtle">
-        {t("info.footer")} · HomeUpdater {version.data?.version} ·
-        <span className="text-warning font-bold ms-1">TEST BUILD</span>
+        {t("info.footer")} · HomeUpdater {version.data?.version}
+        {isTest && <span className="text-warning font-bold ms-1">· TEST BUILD</span>}
       </footer>
     </div>
   );

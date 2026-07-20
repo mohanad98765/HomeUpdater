@@ -26,9 +26,11 @@ def test_health(client):
 
 
 def test_version(client):
+    from app import __version__
+
     r = client.get("/api/system/version")
     assert r.status_code == 200
-    assert r.json()["version"] == "0.1.0"
+    assert r.json()["version"] == __version__  # tracks backend/VERSION
 
 
 def test_devices_list_empty(client):

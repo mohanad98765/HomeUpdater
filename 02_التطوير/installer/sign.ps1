@@ -61,7 +61,8 @@ function Write-Note($m) { Write-Host "    $m" -ForegroundColor Yellow }
 if (-not $Files -or $Files.Count -eq 0) {
     $candidates = @(
         (Join-Path $PSScriptRoot "..\backend\dist\HomeUpdater\HomeUpdater.exe"),
-        (Join-Path $PSScriptRoot "Output\HomeUpdater-Setup-0.1.0.exe")
+        (Get-ChildItem (Join-Path $PSScriptRoot "Output\HomeUpdater-Setup-*.exe") -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName)
     )
     $Files = $candidates | Where-Object { Test-Path $_ } | ForEach-Object { (Resolve-Path $_).Path }
     if ($Files.Count -eq 0) {
