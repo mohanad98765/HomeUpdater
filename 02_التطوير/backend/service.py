@@ -1,16 +1,22 @@
 """
-Windows Service wrapper (pywin32) for the HomeUpdater backend.
+Optional Windows Service wrapper (pywin32) for the HomeUpdater backend.
 
 Runs uvicorn headless so the hub keeps working without an interactive login.
-Must be run elevated:
 
-    python service.py install     # register the service
-    python service.py start       # start it
-    python service.py stop        # stop it
-    python service.py remove      # unregister it
+NOTE (see SERVICE.md): for most users the recommended "start with Windows" is the
+installer's Scheduled-Task option (elevated GUI at logon, no UAC prompt), NOT this
+service. If you DO want a headless service, run it **as the interactive user** and
+point it at that user's data with HOMEUPDATER_DATA_DIR so the per-user DPAPI
+credential key still decrypts — a LocalSystem service writes to the SYSTEM profile
+and cannot read the user's encrypted secrets.
 
-When frozen, PyInstaller produces a service exe; install it the same way with
-the built executable instead of `python service.py`.
+Dev usage (elevated):
+    python service.py install --username .\\<you> --password <pw>   # run as you
+    python service.py start / stop / remove
+
+Frozen: the shipped HomeUpdater.exe is the GUI, not a service host. To run this as
+a service from a frozen build, build a SEPARATE console exe whose entry point is
+this file; the SCM then starts it through the dispatcher branch in __main__ below.
 """
 
 from __future__ import annotations
@@ -85,4 +91,14 @@ class HomeUpdaterService(win32serviceutil.ServiceFramework):
 
 
 if __name__ == "__main__":
-    win32serviceutil.HandleCommandLine(HomeUpdaterService)
+    import sys
+
+    if len(sys.argv) == 1 and getattr(sys, "frozen", False):
+        # Started by the Windows Service Control Manager as a frozen service exe:
+        # hand control to the service dispatcher (HandleCommandLine can't do this).
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(HomeUpdaterService)
+        servicemanager.StartServiceCtrlDispatcher()
+    else:
+        # CLI: install / start / stop / remove (and dev `python service.py <cmd>`).
+        win32serviceutil.HandleCommandLine(HomeUpdaterService)

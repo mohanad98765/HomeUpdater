@@ -5,7 +5,18 @@ from __future__ import annotations
 
 import socket
 
+from app import config
 from app.config import find_free_port
+
+
+def test_data_dir_override(monkeypatch, tmp_path):
+    # HOMEUPDATER_DATA_DIR lets a service + the GUI share ONE data root.
+    shared = tmp_path / "shared_store"
+    monkeypatch.setenv("HOMEUPDATER_DATA_DIR", str(shared))
+    root = config.get_appdata_dir()
+    assert root == shared and root.exists()
+    assert config.get_data_dir() == shared / "data"
+    assert config.get_logs_dir() == shared / "logs"
 
 
 def test_returns_preferred_when_free():

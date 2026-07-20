@@ -52,7 +52,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "startupicon"; Description: "Run {#AppName} automatically at sign-in"; GroupDescription: "Startup:"; Flags: unchecked
+; Auto-start via a Scheduled Task with 'Run with highest privileges' — the app
+; needs elevation, and a plain Startup-folder shortcut can't elevate (it would
+; UAC-prompt or fail every logon). A logon task runs it elevated with NO prompt.
+Name: "startuptask"; Description: "تشغيل {#AppName} تلقائياً عند تسجيل الدخول / Start at sign-in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
 ; The entire PyInstaller onedir output.
@@ -66,12 +69,17 @@ Source: "..\backend\dist\{#AppName}\*"; DestDir: "{app}"; Flags: recursesubdirs 
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
-Name: "{commonstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startupicon
 
 [Run]
+; Create the elevated logon Scheduled Task (only pass the exe path — no args — so
+; single-level quoting handles the space in "Program Files"). /RL HIGHEST = run
+; elevated without a UAC prompt at logon.
+Filename: "{sys}\schtasks.exe"; Parameters: "/Create /TN ""HomeUpdater"" /TR ""{app}\{#AppExe}"" /SC ONLOGON /RL HIGHEST /F"; Flags: runhidden; Tasks: startuptask
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
+; Remove the logon Scheduled Task (ignore the error if it was never created).
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""HomeUpdater"" /F"; Flags: runhidden; RunOnceId: "DelHomeUpdaterTask"
 ; Stop the running instance (and its WebView2 children, via /T) before removing files.
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#AppExe}"; Flags: runhidden; RunOnceId: "StopHomeUpdater"
 

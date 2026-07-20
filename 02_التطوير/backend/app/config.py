@@ -21,12 +21,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def get_appdata_dir() -> Path:
-    """Get the per-user AppData directory for HomeUpdater."""
-    if os.name == "nt":  # Windows
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    """The HomeUpdater data root (DB, config, key, logs live under it).
+
+    ``HOMEUPDATER_DATA_DIR`` overrides the location so an optional headless
+    service and the interactive GUI can share ONE store instead of splitting
+    across per-user profiles. (Run such a service as the SAME interactive user so
+    the per-user DPAPI credential key still decrypts — a LocalSystem service would
+    write to the SYSTEM profile and couldn't read the user's encrypted secrets.)
+    """
+    override = os.environ.get("HOMEUPDATER_DATA_DIR")
+    if override:
+        appdir = Path(override)
+    elif os.name == "nt":  # Windows
+        appdir = (
+            Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "HomeUpdater"
+        )
     else:  # Linux/Mac fallback
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    appdir = base / "HomeUpdater"
+        appdir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "HomeUpdater"
     appdir.mkdir(parents=True, exist_ok=True)
     return appdir
 
