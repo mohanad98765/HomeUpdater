@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Loader2, Sparkles, Cpu, KeyRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Sparkles, Cpu, KeyRound, Download, CheckCircle2 } from "lucide-react";
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 
@@ -14,11 +14,24 @@ interface AdvisorStatus {
   model: string;
   env: boolean;
 }
+interface AdvisorAction {
+  type: "app" | "windows";
+  id: string;
+  title: string;
+  reason?: string;
+}
 interface AdvisorResult {
   recommendations: string;
   trace: { tool: string }[];
   model: string;
   truncated?: boolean;
+  actions?: AdvisorAction[];
+}
+interface ApplyResult {
+  applied: number;
+  skipped: string[];
+  app?: { installed: number; total: number } | null;
+  windows?: { installed: number; total: number } | null;
 }
 
 // map the agent's tool names to their i18n label keys
@@ -26,6 +39,7 @@ const TOOL_LABEL: Record<string, string> = {
   list_devices: "toolListDevices",
   check_vulnerabilities: "toolCheckVulns",
   list_pending_updates: "toolPendingUpdates",
+  set_plan: "toolSetPlan",
 };
 
 export function AdvisorPage({ onBack }: { onBack: () => void }) {
@@ -40,12 +54,24 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
     queryFn: () => apiFetch<AdvisorStatus>("/api/advisor/status"),
   });
 
+  // Defined before `analyze` so a new analysis can reset its stale result.
+  const apply = useMutation<ApplyResult, Error, AdvisorAction[]>({
+    mutationFn: (actions) =>
+      apiFetch<ApplyResult>("/api/advisor/apply", {
+        method: "POST",
+        body: JSON.stringify({ actions }),
+      }),
+  });
+
   const analyze = useMutation<AdvisorResult, Error>({
     mutationFn: () =>
       apiFetch<AdvisorResult>("/api/advisor/analyze", {
         method: "POST",
         body: JSON.stringify({ lang: i18n.language }),
       }),
+    // A fresh analysis produces a new plan — clear the previous apply result so
+    // the old "Applied N" line + hidden button don't stick to the new plan.
+    onMutate: () => apply.reset(),
   });
 
   const saveKey = useMutation({
@@ -56,6 +82,13 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
       qc.invalidateQueries({ queryKey: ["advisor-status"] });
     },
   });
+
+  const topActions = (analyze.data?.actions ?? []).slice(0, 3);
+  const applyTop = () => {
+    if (topActions.length === 0) return;
+    const list = topActions.map((a, i) => `${i + 1}. ${a.title}`).join("\n");
+    if (window.confirm(`${t("pages.advisor.applyConfirm")}\n\n${list}`)) apply.mutate(topActions);
+  };
 
   const configured = !!status.data?.configured;
 
@@ -153,6 +186,54 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
           <div className="mt-4 pt-3 border-t border-border text-xs text-fg-subtle inline-flex items-center gap-1">
             <Sparkles className="w-3 h-3" /> {t("pages.advisor.poweredBy")} · {analyze.data.model}
           </div>
+        </div>
+      )}
+
+      {/* one-click apply of the top prioritized (local, pending) updates */}
+      {topActions.length > 0 && (
+        <div className="card mt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Download className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-sm">{t("pages.advisor.planTitle")}</h3>
+          </div>
+          <ol className="text-sm space-y-1 mb-3 ps-5 list-decimal">
+            {topActions.map((a, i) => (
+              <li key={i}>
+                <span className="font-medium">{a.title}</span>
+                {a.reason && <span className="text-fg-muted"> — {a.reason}</span>}
+              </li>
+            ))}
+          </ol>
+          {!apply.data ? (
+            <button
+              type="button"
+              onClick={applyTop}
+              disabled={apply.isPending}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              {apply.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              {apply.isPending ? t("pages.advisor.applying") : t("pages.advisor.applyTop3")}
+            </button>
+          ) : (
+            <div className="text-sm inline-flex items-center gap-2 text-success flex-wrap">
+              <CheckCircle2 className="w-4 h-4" />
+              {t("pages.advisor.applied", { count: apply.data.applied })}
+              {apply.data.skipped.length > 0 && (
+                <span className="text-fg-muted">
+                  · {t("pages.advisor.applySkipped", { count: apply.data.skipped.length })}
+                </span>
+              )}
+            </div>
+          )}
+          {apply.isError && (
+            <p className="mt-2 text-sm text-danger">
+              {t("pages.advisor.applyFailed")} {apply.error.message}
+            </p>
+          )}
         </div>
       )}
     </div>

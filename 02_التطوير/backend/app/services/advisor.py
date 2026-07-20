@@ -137,6 +137,7 @@ async def _tool_list_pending_updates(db: AsyncSession) -> dict:
     )
     app_items = [
         {
+            "id": a.package_id,  # exact id to cite in set_plan (type="app")
             "name": a.name or a.package_id,
             "current": a.current_version,
             "available": a.available_version,
@@ -149,7 +150,9 @@ async def _tool_list_pending_updates(db: AsyncSession) -> dict:
         .scalars()
         .all()
     )
-    win_items = [{"title": w.title, "severity": w.severity, "kind": w.kind} for w in win]
+    win_items = [
+        {"id": w.update_id, "title": w.title, "severity": w.severity, "kind": w.kind} for w in win
+    ]
     return {
         "app_updates": {"total": len(app_items), "items": app_items[:40]},
         "windows_updates": {"total": len(win_items), "items": win_items[:40]},
@@ -178,9 +181,42 @@ _TOOLS = [
         "name": "list_pending_updates",
         "description": (
             "List pending software/app updates (winget) and pending Windows updates on "
-            "this PC, with versions and severity."
+            "this PC, each with an exact `id`, versions and severity."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "set_plan",
+        "description": (
+            "Record the final prioritized, APPLICABLE update plan — the specific pending "
+            "updates the user should apply, most important first. Include ONLY items whose "
+            "exact `id` appeared in list_pending_updates output (local app/Windows updates). "
+            "Do NOT include remote Linux, remote-Windows, or Home Assistant items here — "
+            "mention those in your text summary only. Call this once, before the summary; "
+            "skip it entirely if there are no applicable local updates."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["app", "windows"]},
+                            "id": {
+                                "type": "string",
+                                "description": "exact package_id (app) or update_id (windows) from list_pending_updates output",  # noqa: E501
+                            },
+                            "title": {"type": "string"},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["type", "id", "title"],
+                    },
+                }
+            },
+            "required": ["actions"],
+        },
     },
 ]
 
@@ -200,6 +236,10 @@ why, ordered by risk: a router or PC carrying a CRITICAL/HIGH CVE outranks a low
 update. Be concrete and concise; prefer a short numbered list over prose. If the network \
 has not been scanned yet (no devices, or no data at all), say so plainly and tell the \
 user to run a network scan first.
+
+When there ARE pending local app or Windows updates, call set_plan once with the top \
+applicable items (most important first, using the exact ids from list_pending_updates) so \
+the user can apply them with one click — then write your text summary.
 
 Reply in the SAME language the user writes in (Arabic or English)."""
 
@@ -225,6 +265,7 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
     )
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_msg}]
     trace: list[dict] = []
+    plan: list[dict] = []  # structured applicable actions from the set_plan tool
 
     try:
         for _ in range(8):  # cap the agentic loop
@@ -250,6 +291,7 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
                     "trace": trace,
                     "model": resp.model,
                     "truncated": resp.stop_reason == "max_tokens",
+                    "actions": plan[:10],
                 }
 
             # Echo the assistant turn back verbatim (thinking + tool_use blocks),
@@ -259,12 +301,20 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
             for block in resp.content:
                 if block.type == "tool_use":
                     trace.append({"tool": block.name})
-                    fn = _DISPATCH.get(block.name)
-                    try:
-                        data = await fn(db) if fn else {"error": f"unknown tool {block.name}"}
-                    except Exception as exc:  # surface tool failure to the model
-                        logger.warning(f"Advisor tool {block.name} failed: {exc}")
-                        data = {"error": str(exc)}
+                    if block.name == "set_plan":
+                        # Terminal tool: capture the applicable plan; don't hit the DB.
+                        raw = (
+                            block.input.get("actions", []) if isinstance(block.input, dict) else []
+                        )
+                        plan = [a for a in raw if isinstance(a, dict) and a.get("id")]
+                        data = {"recorded": len(plan)}
+                    else:
+                        fn = _DISPATCH.get(block.name)
+                        try:
+                            data = await fn(db) if fn else {"error": f"unknown tool {block.name}"}
+                        except Exception as exc:  # surface tool failure to the model
+                            logger.warning(f"Advisor tool {block.name} failed: {exc}")
+                            data = {"error": str(exc)}
                     results.append(
                         {
                             "type": "tool_result",
@@ -278,3 +328,95 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
     except anthropic.APIError as exc:
         logger.error(f"Advisor API error: {exc}")
         raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
+
+
+async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
+    """Apply the advisor's plan — but ONLY updates that are genuinely pending.
+
+    Safety gate: every requested id is validated against the pending rows in the
+    DB before anything runs, so the model can only ever trigger the install of an
+    update that is already pending on this machine (the same set the user could
+    apply from the Updates page). Unknown/stale ids are skipped, not installed.
+    """
+    from . import software_updates, windows_updates
+
+    want_app = [str(a["id"]) for a in actions if a.get("type") == "app" and a.get("id")]
+    want_win = [str(a["id"]) for a in actions if a.get("type") == "windows" and a.get("id")]
+
+    valid_app: list[str] = []
+    if want_app:
+        rows = (
+            (
+                await db.execute(
+                    select(SoftwarePackageORM).where(
+                        SoftwarePackageORM.package_id.in_(want_app),
+                        SoftwarePackageORM.is_installed.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        valid_app = [r.package_id for r in rows]
+
+    valid_win: list[str] = []
+    if want_win:
+        rows = (
+            (
+                await db.execute(
+                    select(WindowsUpdateORM).where(
+                        WindowsUpdateORM.update_id.in_(want_win),
+                        WindowsUpdateORM.is_installed.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        valid_win = [r.update_id for r in rows]
+
+    valid = set(valid_app) | set(valid_win)
+    skipped = [i for i in (want_app + want_win) if i not in valid]
+
+    app_res = None
+    if valid_app:
+        try:
+            app_res = await software_updates.install_many(valid_app)
+        except Exception as exc:  # e.g. winget unavailable — report, don't 500
+            logger.error(f"Advisor apply (apps) failed: {exc}")
+            app_res = {"installed": 0, "total": len(valid_app), "error": str(exc)}
+
+    win_res = None
+    if valid_win:
+        try:
+            win_res = await windows_updates.install_updates(valid_win)
+        except Exception as exc:  # WUA can raise on hard failure
+            logger.error(f"Advisor apply (windows) failed: {exc}")
+            win_res = {"installed": 0, "total": len(valid_win), "error": str(exc)}
+
+    # Persist installed=True for succeeded items (mirrors the Updates endpoints),
+    # so applied updates stop showing as pending and can't be re-triggered.
+    async def _persist(model, id_field: str, results: list[dict], code_field: str) -> None:
+        by_id = {r[id_field]: r for r in results if isinstance(r, dict) and r.get(id_field)}
+        if not by_id:
+            return
+        rows = (
+            (await db.execute(select(model).where(getattr(model, id_field).in_(list(by_id)))))
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            r = by_id.get(getattr(row, id_field))
+            if r:
+                row.install_result = r.get(code_field, 0)
+                row.is_installed = bool(r.get("succeeded"))
+
+    await _persist(
+        SoftwarePackageORM, "package_id", (app_res or {}).get("results", []), "exit_code"
+    )
+    await _persist(WindowsUpdateORM, "update_id", (win_res or {}).get("results", []), "result_code")
+    await db.commit()
+
+    # "applied" = updates that actually SUCCEEDED, not merely attempted.
+    applied = (app_res or {}).get("installed", 0) + (win_res or {}).get("installed", 0)
+    return {"applied": applied, "app": app_res, "windows": win_res, "skipped": skipped}
