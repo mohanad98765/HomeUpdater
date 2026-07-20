@@ -9,11 +9,45 @@ Token (Settings -> Profile -> Long-lived access tokens in Home Assistant).
 
 from __future__ import annotations
 
+import time
+
 import httpx
+
+from .adaptive_timeout import AdaptiveNetworkTimeout
+
+# A HA instance is on the LAN and usually fast; the read timeout for the quick
+# check/get_updates calls is a per-instance RTO learned from response latency
+# instead of a fixed 10s/15s. The connect leg stays tight.
+_HA_FLOOR = 3.0
+_HA_CEIL = 30.0
+_HA_INITIAL = 15.0
+_CONNECT_TIMEOUT = 5.0
+# update.install can block while the device actually updates — give the read leg
+# real room rather than the old flat 60s.
+_INSTALL_READ_TIMEOUT = 120.0
+_INSTANCE_ESTIMATORS: dict[str, AdaptiveNetworkTimeout] = {}
 
 
 class HAError(RuntimeError):
     """Raised when Home Assistant is unreachable or rejects the request."""
+
+
+def _instance_estimator(base: str) -> AdaptiveNetworkTimeout:
+    est = _INSTANCE_ESTIMATORS.get(base)
+    if est is None:
+        est = AdaptiveNetworkTimeout(rto_min=_HA_FLOOR, rto_max=_HA_CEIL, rto_initial=_HA_INITIAL)
+        _INSTANCE_ESTIMATORS[base] = est
+    return est
+
+
+def _quick_timeout(base: str) -> httpx.Timeout:
+    """Tight connect, adaptive read (the per-instance RTO) for the quick calls."""
+    return httpx.Timeout(
+        connect=_CONNECT_TIMEOUT,
+        read=_instance_estimator(base).current(),
+        write=_CONNECT_TIMEOUT,
+        pool=_CONNECT_TIMEOUT,
+    )
 
 
 def _base(url: str) -> str:
@@ -32,8 +66,10 @@ async def check(base_url: str, token: str) -> dict:
     base = _base(base_url)
     if not base or not token:
         raise HAError("Home Assistant URL and token are required")
+    est = _instance_estimator(base)
+    start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=_quick_timeout(base)) as client:
             api = await client.get(f"{base}/api/", headers=_headers(token))
             if api.status_code == 401:
                 raise HAError("Invalid token (401)")
@@ -45,6 +81,7 @@ async def check(base_url: str, token: str) -> dict:
         raise
     except Exception as exc:
         raise HAError(f"Could not reach Home Assistant: {exc}") from exc
+    est.on_sample(time.monotonic() - start)  # learn this instance's latency
     return {
         "connected": True,
         "version": data.get("version", ""),
@@ -70,8 +107,10 @@ def parse_update_entity(state: dict) -> dict:
 async def get_updates(base_url: str, token: str) -> dict:
     """Return HA ``update.*`` entities, split into available vs up-to-date."""
     base = _base(base_url)
+    est = _instance_estimator(base)
+    start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_quick_timeout(base)) as client:
             resp = await client.get(f"{base}/api/states", headers=_headers(token))
             if resp.status_code == 401:
                 raise HAError("Invalid token (401)")
@@ -81,6 +120,7 @@ async def get_updates(base_url: str, token: str) -> dict:
         raise
     except Exception as exc:
         raise HAError(f"Could not reach Home Assistant: {exc}") from exc
+    est.on_sample(time.monotonic() - start)
 
     entities = [
         parse_update_entity(s) for s in states if str(s.get("entity_id", "")).startswith("update.")
@@ -98,8 +138,16 @@ async def install_update(base_url: str, token: str, entity_id: str) -> dict:
     base = _base(base_url)
     if not entity_id.startswith("update."):
         raise HAError("Not an update entity")
+    # The service call can block while the device installs; give the read leg
+    # real room (connect stays tight).
+    install_timeout = httpx.Timeout(
+        connect=_CONNECT_TIMEOUT,
+        read=_INSTALL_READ_TIMEOUT,
+        write=_CONNECT_TIMEOUT,
+        pool=_CONNECT_TIMEOUT,
+    )
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=install_timeout) as client:
             resp = await client.post(
                 f"{base}/api/services/update/install",
                 headers=_headers(token),
