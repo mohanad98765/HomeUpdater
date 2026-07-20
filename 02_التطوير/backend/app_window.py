@@ -148,9 +148,9 @@ def _run_browser_fallback(
     left bound to the LAN port. (In no-browser/headless mode we skip the modal
     and just stop, so tests never block.)
     """
+    _close_splash()  # first — the always-on-top splash would hide the modal below
     _msgbox(reason + f"\n\nWebView2:\n{WEBVIEW2_DOWNLOAD}")
     ready = _wait_for_port(ui_host, port)
-    _close_splash()
     if os.environ.get("HOMEUPDATER_NO_BROWSER"):
         server.stop()
         server.join(timeout=5)
