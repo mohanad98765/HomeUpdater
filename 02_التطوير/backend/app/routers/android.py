@@ -25,6 +25,7 @@ from ..db import get_db
 from ..models.orm import AndroidDeviceORM
 from ..services.android import (
     AndroidError,
+    discover_connect_port,
     list_apps,
     open_play_store,
     pair,
@@ -46,6 +47,10 @@ class PairRequest(BaseModel):
     host: str = Field(..., description="Phone IP address (from the pairing dialog)")
     port: int = Field(..., ge=1, le=65535, description="Pairing port (changes each time)")
     code: str = Field(..., description="Six-digit pairing code shown on the phone")
+
+
+class DiscoverRequest(BaseModel):
+    host: str = Field(..., description="Phone IP address")
 
 
 class UpdateDeviceRequest(BaseModel):
@@ -79,7 +84,28 @@ async def pair_device(payload: PairRequest) -> dict:
         await pair(payload.host, payload.port, payload.code)
     except AndroidError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"paired": True, "host": payload.host}
+    # Best-effort: auto-discover the (different, random) connect port so the UI
+    # can fill it in — pairing succeeding must not depend on this.
+    connect_port = await discover_connect_port(payload.host)
+    return {"paired": True, "host": payload.host, "connect_port": connect_port}
+
+
+# ==================================================================
+# POST /discover  -> find the current Wireless-debugging connect port
+# ==================================================================
+@router.post("/discover")
+async def discover(payload: DiscoverRequest) -> dict:
+    """Auto-detect a phone's connect port via adb mDNS (it changes each time)."""
+    port = await discover_connect_port(payload.host)
+    if port is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "لم يُعثر على منفذ الاتصال — تأكّد أن «التصحيح اللاسلكي» "
+                "مُفعّل والجوّال على نفس الشبكة."
+            ),
+        )
+    return {"host": payload.host, "connect_port": port}
 
 
 # ==================================================================

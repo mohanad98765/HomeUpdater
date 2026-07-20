@@ -15,6 +15,7 @@ import {
   Pencil,
   Link2,
   Check,
+  Search,
 } from "lucide-react";
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -312,9 +313,9 @@ function AddDeviceDialog({
 
   const ipOk = /^\d{1,3}(\.\d{1,3}){3}$/.test(host.trim());
 
-  const pairMut = useMutation<{ paired: boolean }, Error>({
+  const pairMut = useMutation<{ paired: boolean; connect_port: number | null }, Error>({
     mutationFn: () =>
-      apiFetch<{ paired: boolean }>("/api/android/pair", {
+      apiFetch<{ paired: boolean; connect_port: number | null }>("/api/android/pair", {
         method: "POST",
         body: JSON.stringify({
           host: host.trim(),
@@ -322,6 +323,21 @@ function AddDeviceDialog({
           code: code.trim(),
         }),
       }),
+    onSuccess: (data) => {
+      // Auto-fill the (different, random) connect port when mDNS found it.
+      if (data.connect_port) setPort(data.connect_port);
+    },
+  });
+
+  const discoverMut = useMutation<{ connect_port: number }, Error>({
+    mutationFn: () =>
+      apiFetch<{ connect_port: number }>("/api/android/discover", {
+        method: "POST",
+        body: JSON.stringify({ host: host.trim() }),
+      }),
+    onSuccess: (data) => {
+      if (data.connect_port) setPort(data.connect_port);
+    },
   });
 
   const add = useMutation<AndroidDevice, Error>({
@@ -440,7 +456,10 @@ function AddDeviceDialog({
             </button>
             {pairMut.isSuccess && (
               <div className="text-xs text-success inline-flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" /> تمّ الإقران — الآن أدخل منفذ الاتصال وأضِف الهاتف.
+                <Check className="w-3.5 h-3.5" />
+                {pairMut.data?.connect_port
+                  ? `تمّ الإقران واكتُشف منفذ الاتصال (${pairMut.data.connect_port}) — اضغط «إضافة هاتف».`
+                  : "تمّ الإقران — الآن اكتشف منفذ الاتصال أو أدخله يدوياً، ثم أضِف الهاتف."}
               </div>
             )}
             {pairMut.isError && (
@@ -450,18 +469,37 @@ function AddDeviceDialog({
             )}
           </div>
 
-          {/* Connect port + add */}
+          {/* Connect port + auto-discover + add */}
           <div className="mb-2">
             <label className="text-xs font-bold text-fg-muted mb-1 block">
               {t("android.addDialog.portLabel")}
             </label>
-            <input
-              type="number"
-              dir="ltr"
-              value={port}
-              onChange={(e) => setPort(parseInt(e.target.value) || 5555)}
-              className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
-            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                dir="ltr"
+                value={port}
+                onChange={(e) => setPort(parseInt(e.target.value) || 5555)}
+                className="flex-1 px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => discoverMut.mutate()}
+                disabled={!ipOk || discoverMut.isPending}
+                title="اكتشف منفذ الاتصال تلقائياً (mDNS)"
+                className="btn-secondary inline-flex items-center gap-1 whitespace-nowrap text-sm"
+              >
+                {discoverMut.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Search className="w-4 h-4" />
+                )}
+                اكتشف المنفذ
+              </button>
+            </div>
+            {discoverMut.isError && (
+              <div className="mt-1 text-xs text-danger">{(discoverMut.error as Error).message}</div>
+            )}
           </div>
 
           <div className="mt-4 p-3 rounded-md bg-info/10 border border-info/30 text-info text-xs">

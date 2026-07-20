@@ -16,6 +16,7 @@ from app.services.android import (
     _check_connect_result,
     _check_pair_result,
     _parse_getprop,
+    _parse_mdns_connect,
     _validate_host,
     open_play_store,
     pair,
@@ -118,3 +119,24 @@ def test_adb_exe_is_bundled_on_windows():
 
     if sys.platform == "win32":
         assert _adb_exe() is not None  # vendored platform-tools\adb.exe
+
+
+# --- mDNS connect-port discovery ------------------------------------------- #
+_MDNS_SAMPLE = (
+    "List of discovered mdns services\n"
+    "adb-RFCW70YDHHB-hqcfQV\t_adb-tls-pairing._tcp\t192.168.3.30:34887\n"
+    "adb-RFCW70YDHHB-hqcfQV\t_adb-tls-connect._tcp\t192.168.3.30:34677\n"
+)
+
+
+def test_parse_mdns_connect_finds_port():
+    # Must pick the connect service's port, not the pairing one.
+    assert _parse_mdns_connect(_MDNS_SAMPLE, "192.168.3.30") == 34677
+
+
+def test_parse_mdns_connect_other_host_is_none():
+    assert _parse_mdns_connect(_MDNS_SAMPLE, "192.168.3.99") is None
+
+
+def test_parse_mdns_connect_empty_is_none():
+    assert _parse_mdns_connect("List of discovered mdns services\n", "192.168.3.30") is None

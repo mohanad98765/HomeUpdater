@@ -34,6 +34,8 @@ from loguru import logger
 # list_apps() spawns one dumpsys per app to read its version; bound that work.
 _APP_VERSION_CAP = 120  # enrich at most this many apps
 _APP_ENRICH_BUDGET_S = 25.0  # ...and stop enriching after this wall-clock budget
+# How long to poll `adb mdns services` for a freshly-advertised connect port.
+_MDNS_DISCOVER_BUDGET_S = 6.0
 
 # A valid Android package name is dot-separated alphanumerics/underscores only.
 # Enforced before it is ever passed to `am start`, to block injection through
@@ -45,6 +47,9 @@ _PACKAGE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.]*$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]*$")
 # Wireless-debugging pairing codes are exactly six digits.
 _CODE_RE = re.compile(r"^\d{6}$")
+# `adb mdns services` row for the connect endpoint:
+#   adb-XXXX-YYYY\t_adb-tls-connect._tcp\t192.168.3.30:34677
+_MDNS_CONNECT_RE = re.compile(r"_adb-tls-connect\._tcp\s+([0-9.]+):(\d+)")
 
 # Avoid flashing a console window from the windowed (WebView2) app.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
@@ -177,6 +182,15 @@ def _parse_getprop(output: str) -> dict[str, str]:
         if m:
             props[m.group(1)] = m.group(2)
     return props
+
+
+def _parse_mdns_connect(output: str, host: str) -> int | None:
+    """Find the Wireless-debugging connect port for ``host`` in the output of
+    ``adb mdns services``. Returns None if this host isn't advertising."""
+    for m in _MDNS_CONNECT_RE.finditer(output):
+        if m.group(1) == host:
+            return int(m.group(2))
+    return None
 
 
 def _clean_adb_msg(out: str, err: str) -> str:
@@ -326,6 +340,20 @@ def _open_store_blocking(host: str, port: int, package_name: str) -> None:
     )
 
 
+def _discover_connect_blocking(host: str) -> int | None:
+    """Poll ``adb mdns services`` for ``host``'s connect port. The service can
+    take a moment to appear (adb's background mDNS discovery), so retry briefly."""
+    deadline = time.monotonic() + _MDNS_DISCOVER_BUDGET_S
+    while True:
+        _, out, _ = _run_adb_blocking(["mdns", "services"], timeout=10)
+        port = _parse_mdns_connect(out, host)
+        if port is not None:
+            return port
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.8)
+
+
 # ==================================================================
 # Public async API
 # ==================================================================
@@ -347,6 +375,23 @@ async def pair(host: str, port: int, code: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.exception(f"adb pair {host}:{port} failed")
         raise AndroidError(f"فشل الإقران: {exc}") from exc
+
+
+async def discover_connect_port(host: str) -> int | None:
+    """Best-effort: find ``host``'s Wireless-debugging connect port via adb mDNS.
+
+    The connect port is random and changes whenever Wireless debugging restarts,
+    so the UI uses this to auto-fill it instead of making the user hunt for it.
+    Returns None (never raises) when discovery isn't possible.
+    """
+    try:
+        _validate_host(host)
+        if not _have_adb():
+            return None
+        return await _in_executor(_discover_connect_blocking, host)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"mDNS discover for {host} failed: {exc}")
+        return None
 
 
 async def probe(host: str, port: int = 5555) -> DeviceInfo:
