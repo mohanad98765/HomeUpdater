@@ -58,6 +58,20 @@ def _probe_estimator(target: str) -> AdaptiveNetworkTimeout:
     return est
 
 
+def capture_estimators() -> dict:
+    """Snapshot the per-CIDR probe estimators for persistence."""
+    return {cidr: est.to_dict() for cidr, est in _PROBE_ESTIMATORS.items()}
+
+
+def restore_estimators(data: dict) -> None:
+    """Warm-start the per-CIDR probe estimators from a persisted snapshot."""
+    for cidr, snap in (data or {}).items():
+        try:
+            _probe_estimator(cidr).load_dict(snap)
+        except (ValueError, TypeError):
+            continue  # a bad key/snapshot just stays cold
+
+
 # Dedicated pool for reverse-DNS: gethostbyaddr threads for PTR-less hosts run
 # the full ~3s and can't be cancelled, so they must NOT share the default
 # executor with the WUA/winget/ADB blocking calls (which also use

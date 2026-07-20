@@ -156,6 +156,10 @@ class Settings(BaseSettings):
     # 'python' = always use the pure-Python scanner (no nmap/Npcap needed)
     # 'nmap'   = always use nmap (requires nmap + Npcap installed)
     scan_method: Literal["auto", "python", "nmap"] = "auto"
+    # Warm-start the adaptive network timeouts from disk across restarts so the
+    # first scan/connect after a restart starts from the measured value, not the
+    # cold guess. Purely a convenience — off just means everything starts cold.
+    adaptive_timeout_persistence: bool = True
 
     model_config = SettingsConfigDict(
         env_prefix="HOMEUPDATER_",

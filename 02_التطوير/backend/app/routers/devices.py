@@ -25,8 +25,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..db import SessionLocal, get_db
 from ..models.orm import DeviceORM
+from ..services import adaptive_persistence
 from ..services.discovery import DiscoveryError, scan_network
 from ..services.network_utils import (
     get_local_subnet,
@@ -209,6 +211,8 @@ async def _run_scan_bg(target: str) -> None:
         f"Scan finished in {round(time.time() - started_at, 2)}s - "
         f"subnet={result['subnet']} total={count} new={new_count}"
     )
+    if settings.adaptive_timeout_persistence:
+        adaptive_persistence.save_to_disk()  # best-effort: warm-start the next scan
 
 
 @router.post("/scan")

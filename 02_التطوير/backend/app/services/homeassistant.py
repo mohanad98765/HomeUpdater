@@ -40,6 +40,20 @@ def _instance_estimator(base: str) -> AdaptiveNetworkTimeout:
     return est
 
 
+def capture_estimators() -> dict:
+    """Snapshot the per-instance HA estimators for persistence."""
+    return {base: est.to_dict() for base, est in _INSTANCE_ESTIMATORS.items()}
+
+
+def restore_estimators(data: dict) -> None:
+    """Warm-start the per-instance HA estimators from a persisted snapshot."""
+    for base, snap in (data or {}).items():
+        try:
+            _instance_estimator(base).load_dict(snap)
+        except (ValueError, TypeError):
+            continue
+
+
 def _quick_timeout(base: str) -> httpx.Timeout:
     """Tight connect, adaptive read (the per-instance RTO) for the quick calls."""
     return httpx.Timeout(

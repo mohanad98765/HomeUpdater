@@ -35,6 +35,23 @@ def _connect_estimator(host: str, port: int) -> AdaptiveNetworkTimeout:
     return est
 
 
+def capture_estimators() -> dict:
+    """Snapshot the per host:port connect estimators for persistence."""
+    return {key: est.to_dict() for key, est in _CONNECT_ESTIMATORS.items()}
+
+
+def restore_estimators(data: dict) -> None:
+    """Warm-start the connect estimators from a persisted snapshot."""
+    for key, snap in (data or {}).items():
+        host, sep, port = key.rpartition(":")
+        if not sep:
+            continue
+        try:
+            _connect_estimator(host, int(port)).load_dict(snap)
+        except (ValueError, TypeError):
+            continue
+
+
 # os-release ID / ID_LIKE -> package manager
 _APT_IDS = {"debian", "ubuntu", "raspbian", "linuxmint", "pop", "kali", "devuan"}
 _DNF_IDS = {"fedora", "rhel", "centos", "rocky", "almalinux", "ol", "amzn"}

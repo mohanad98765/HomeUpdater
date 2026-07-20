@@ -77,6 +77,12 @@ async def lifespan(app: FastAPI):
     # Phase 1.3: create tables on first run
     await init_db()
 
+    # Warm-start the adaptive network timeouts from disk (best-effort).
+    if settings.adaptive_timeout_persistence:
+        from .services import adaptive_persistence
+
+        adaptive_persistence.load_from_disk()
+
     yield  # ──── application runs here ────
 
     logger.info(f"Shutting down {settings.app_name}")

@@ -33,6 +33,20 @@ from .update_progress import update_progress
 _CHECK_CEILING = DurationCeiling(floor=120.0, ceiling=900.0, safety=3.0)  # search
 _INSTALL_CEILING = DurationCeiling(floor=600.0, ceiling=3600.0, safety=3.0)  # download+install
 
+
+def capture_ceilings() -> dict:
+    """Snapshot the adaptive WUA ceilings for persistence."""
+    return {"check": _CHECK_CEILING.to_dict(), "install": _INSTALL_CEILING.to_dict()}
+
+
+def restore_ceilings(data: dict) -> None:
+    """Warm-start the WUA ceilings from a persisted snapshot."""
+    if not data:
+        return
+    _CHECK_CEILING.load_dict(data.get("check", {}))
+    _INSTALL_CEILING.load_dict(data.get("install", {}))
+
+
 # Severity values returned by Microsoft Update — keep as strings for the UI.
 SEVERITY_LEVELS = ("Critical", "Important", "Moderate", "Low", "Unspecified")
 
