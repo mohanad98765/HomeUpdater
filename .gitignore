@@ -54,6 +54,8 @@ desktop.ini
 
 # --- Installer / build outputs ---
 installer-output/
+# Signed installer copied to the project root for convenience (not tracked)
+/HomeUpdater-Setup-*.exe
 *.exe
 *.msi
 !setup.exe
