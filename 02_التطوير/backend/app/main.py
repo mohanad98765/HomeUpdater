@@ -26,6 +26,7 @@ from .logging_setup import setup_logging
 from .routers import (
     advisor,
     android,
+    auth,
     devices,
     homeassistant,
     security,
@@ -34,6 +35,7 @@ from .routers import (
     updates,
     winrm_hosts,
 )
+from .services import auth as auth_svc
 
 
 def _get_frontend_dist() -> Path | None:
@@ -140,6 +142,23 @@ def _needs_token(path: str) -> bool:
     return path.startswith("/api/") or path in _TOKEN_GATED_EXACT
 
 
+# App-level login gate (user password). Once a password is configured, every
+# sensitive /api/* route requires a valid login session (X-HomeUpdater-Auth).
+# The auth endpoints themselves + liveness are exempt so the UI can render the
+# setup/login screen before the user is authenticated.
+_AUTH_EXEMPT_PATHS = {
+    "/api/system/health",
+    "/api/system/version",
+    "/api/auth/status",
+    "/api/auth/login",
+    "/api/auth/setup",
+}
+
+
+def _needs_app_auth(path: str) -> bool:
+    return path.startswith("/api/") and path not in _AUTH_EXEMPT_PATHS
+
+
 @app.middleware("http")
 async def security_guard(request: Request, call_next):
     host = (request.headers.get("host") or "").lower()
@@ -183,6 +202,20 @@ async def security_guard(request: Request, call_next):
                 "detail": "Missing X-HomeUpdater header (CSRF protection)",
             },
         )
+    # App-level login gate: once the user has SET a password, sensitive routes
+    # require a valid login session. Before any password is set the gate is off
+    # (the UI forces first-run setup), so a fresh install behaves as before.
+    if auth_svc.is_password_set() and _needs_app_auth(request.url.path):
+        if not auth_svc.is_session_valid(request.headers.get("x-homeupdater-auth", "")):
+            logger.warning(f"Rejected {request.method} {request.url.path}: login required")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "يلزم تسجيل الدخول",
+                    "error_en": "Login required",
+                    "detail": "Missing or invalid login session",
+                },
+            )
     return await call_next(request)
 
 
@@ -203,6 +236,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # ─── Routers ──────────────────────────────────────────────────────
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(devices.router, prefix="/api/devices", tags=["Devices"])
 app.include_router(updates.router, prefix="/api/updates", tags=["Updates"])

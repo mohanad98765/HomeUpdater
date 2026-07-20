@@ -6,6 +6,7 @@ import "./index.css";
 import "./i18n";
 import { ThemeProvider } from "./lib/theme";
 import { LanguageProvider } from "./lib/language";
+import { AuthGate } from "./components/AuthGate";
 
 // QueryClient — يدير طلبات الـ API والتخزين المؤقت
 const queryClient = new QueryClient({
@@ -23,7 +24,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <LanguageProvider>
         <QueryClientProvider client={queryClient}>
-          <App />
+          <AuthGate>
+            <App />
+          </AuthGate>
         </QueryClientProvider>
       </LanguageProvider>
     </ThemeProvider>

@@ -53,11 +53,34 @@ function sessionToken(): string {
   }
 }
 
+// --- App login token (user password gate; see services/auth.py) -----------
+// Issued by /api/auth/login|setup, sent as X-HomeUpdater-Auth. Kept in
+// sessionStorage so it survives a reload but clears when the app closes.
+const AUTH_KEY = "hu_auth_token";
+
+export function authToken(): string {
+  try {
+    return sessionStorage.getItem(AUTH_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAuthToken(token: string): void {
+  try {
+    if (token) sessionStorage.setItem(AUTH_KEY, token);
+    else sessionStorage.removeItem(AUTH_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * طلب API مع التعامل مع الأخطاء بشكل موحَّد
  */
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = sessionToken();
+  const auth = authToken();
   const res = await fetch(path, {
     ...init,
     headers: {
@@ -68,10 +91,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       "X-HomeUpdater": "1",
       // Session auth: proves this is the legitimate UI, not another local process.
       ...(token ? { "X-HomeUpdater-Token": token } : {}),
+      // App login token (user password gate).
+      ...(auth ? { "X-HomeUpdater-Auth": auth } : {}),
       ...(init?.headers || {}),
     },
   });
   if (!res.ok) {
+    // The login session expired / is missing — drop it and ask the AuthGate to
+    // show the login screen again (unless this WAS an auth call).
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      setAuthToken("");
+      try {
+        window.dispatchEvent(new Event("hu:unauthorized"));
+      } catch {
+        /* no window */
+      }
+    }
     const errorBody = await res.json().catch(() => ({}));
     // Backend HTTPException serializes as {"detail": ...}; the global handler
     // uses {"error": ...}. Read both so the user sees the real message.
