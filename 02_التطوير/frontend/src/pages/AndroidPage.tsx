@@ -371,21 +371,9 @@ function AddDeviceDialog({
           <p className="text-sm text-fg-muted mb-3">{t("android.addDialog.hint")}</p>
 
           <div className="mb-4 p-3 rounded-md bg-info/10 border border-info/30 text-xs text-fg-muted space-y-2">
-            <div className="font-bold text-info">كيف أربط جوّالي؟</div>
-            <div>
-              <b>Android 11 فأحدث (لاسلكي):</b> الإعدادات ← خيارات المطوّر ←{" "}
-              <span dir="ltr">Wireless debugging</span> (فعّله). للربط أوّل مرّة اضغط{" "}
-              <b>«إقران جهاز برمز الإقران»</b> — انسخ <span dir="ltr">IP:المنفذ</span> والرمز
-              (٦ أرقام) إلى قسم «الإقران» أدناه واضغط <b>«إقران»</b>. ثم من الشاشة الرئيسية للتصحيح
-              اللاسلكي خذ <span dir="ltr">IP:المنفذ</span> (
-              <span className="text-warning">منفذ مختلف عن الإقران، ويتغيّر كل مرّة</span>) وأدخله في
-              «منفذ الاتصال» واضغط «إضافة هاتف».
-            </div>
-            <div>
-              <b>أقدم أو عبر USB:</b> شغّل <span dir="ltr" className="font-mono">adb tcpip 5555</span>{" "}
-              مرّة، ثم استخدم IP الهاتف مع المنفذ{" "}
-              <span dir="ltr" className="font-mono">5555</span> مباشرةً (بلا إقران).
-            </div>
+            <div className="font-bold text-info">{t("android.addDialog.howToConnect")}</div>
+            <div>{t("android.addDialog.wirelessHint")}</div>
+            <div>{t("android.addDialog.usbHint")}</div>
           </div>
 
           {/* Phone IP (shared by pairing + connecting) */}
@@ -407,11 +395,11 @@ function AddDeviceDialog({
           <div className="mb-3 p-3 rounded-md border border-border bg-surface-2/40 space-y-2">
             <div className="flex items-center gap-2 text-xs font-bold text-fg">
               <Link2 className="w-4 h-4 text-primary" />
-              الإقران (لاسلكي · Android 11+ · مرّة واحدة)
+              {t("android.addDialog.pairSectionTitle")}
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="text-[11px] text-fg-muted mb-1 block">منفذ الإقران</label>
+                <label className="text-[11px] text-fg-muted mb-1 block">{t("android.addDialog.pairPortLabel")}</label>
                 <input
                   type="text"
                   dir="ltr"
@@ -423,7 +411,7 @@ function AddDeviceDialog({
                 />
               </div>
               <div className="flex-1">
-                <label className="text-[11px] text-fg-muted mb-1 block">رمز الإقران (٦ أرقام)</label>
+                <label className="text-[11px] text-fg-muted mb-1 block">{t("android.addDialog.pairCodeLabel")}</label>
                 <input
                   type="text"
                   dir="ltr"
@@ -445,12 +433,12 @@ function AddDeviceDialog({
               {pairMut.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  جارٍ الإقران…
+                  {t("android.addDialog.pairing")}
                 </>
               ) : (
                 <>
                   <Link2 className="w-4 h-4" />
-                  إقران
+                  {t("android.addDialog.pairBtn")}
                 </>
               )}
             </button>
@@ -458,8 +446,8 @@ function AddDeviceDialog({
               <div className="text-xs text-success inline-flex items-center gap-1">
                 <Check className="w-3.5 h-3.5" />
                 {pairMut.data?.connect_port
-                  ? `تمّ الإقران واكتُشف منفذ الاتصال (${pairMut.data.connect_port}) — اضغط «إضافة هاتف».`
-                  : "تمّ الإقران — الآن اكتشف منفذ الاتصال أو أدخله يدوياً، ثم أضِف الهاتف."}
+                  ? t("android.addDialog.pairedWithPort", { port: pairMut.data.connect_port })
+                  : t("android.addDialog.pairedNoPort")}
               </div>
             )}
             {pairMut.isError && (
@@ -486,7 +474,7 @@ function AddDeviceDialog({
                 type="button"
                 onClick={() => discoverMut.mutate()}
                 disabled={!ipOk || discoverMut.isPending}
-                title="اكتشف منفذ الاتصال تلقائياً (mDNS)"
+                title={t("android.addDialog.discoverTitle")}
                 className="btn-secondary inline-flex items-center gap-1 whitespace-nowrap text-sm"
               >
                 {discoverMut.isPending ? (
@@ -494,7 +482,7 @@ function AddDeviceDialog({
                 ) : (
                   <Search className="w-4 h-4" />
                 )}
-                اكتشف المنفذ
+                {t("android.addDialog.discoverBtn")}
               </button>
             </div>
             {discoverMut.isError && (
