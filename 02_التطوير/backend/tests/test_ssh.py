@@ -51,8 +51,13 @@ def test_parse_dnf_updates():
 
 
 def test_add_host_verifies_and_hides_password(client, monkeypatch):
-    async def fake_probe(host, port, username, password):
-        return {"os_name": "Ubuntu 22.04", "os_id": "ubuntu", "pkg_manager": "apt"}
+    async def fake_probe(host, port, username, password, known_host_key=None):
+        return {
+            "os_name": "Ubuntu 22.04",
+            "os_id": "ubuntu",
+            "pkg_manager": "apt",
+            "host_key": "ssh-ed25519 AAAATESTKEY",
+        }
 
     monkeypatch.setattr(ssh, "probe", fake_probe)
     r = client.post(
@@ -64,12 +69,14 @@ def test_add_host_verifies_and_hides_password(client, monkeypatch):
     body = r.json()
     assert body["pkg_manager"] == "apt"
     assert body["has_password"] is True
+    assert body["host_key_verified"] is True  # TOFU captured the key
     assert "password" not in body
+    assert "host_key" not in body  # the key line itself is not exposed
     assert client.get("/api/ssh/hosts").json()["total"] == 1
 
 
 def test_add_host_rejects_bad_connection(client, monkeypatch):
-    async def bad_probe(host, port, username, password):
+    async def bad_probe(host, port, username, password, known_host_key=None):
         raise ssh.SSHError("Authentication failed")
 
     monkeypatch.setattr(ssh, "probe", bad_probe)
@@ -82,10 +89,10 @@ def test_add_host_rejects_bad_connection(client, monkeypatch):
 
 
 def test_check_updates(client, monkeypatch):
-    async def fake_probe(host, port, username, password):
-        return {"os_name": "Ubuntu", "os_id": "ubuntu", "pkg_manager": "apt"}
+    async def fake_probe(host, port, username, password, known_host_key=None):
+        return {"os_name": "Ubuntu", "os_id": "ubuntu", "pkg_manager": "apt", "host_key": "k"}
 
-    async def fake_check(host, port, username, password, pkg_manager):
+    async def fake_check(host, port, username, password, pkg_manager, known_host_key=None):
         return {"total": 2, "packages": [{"name": "nginx", "current": "1", "available": "2"}]}
 
     monkeypatch.setattr(ssh, "probe", fake_probe)
@@ -98,3 +105,25 @@ def test_check_updates(client, monkeypatch):
     r = client.post(f"/api/ssh/hosts/{add['id']}/check", json={}, headers=CSRF_HEADER)
     assert r.status_code == 200
     assert r.json()["total"] == 2
+
+
+def test_check_verifies_against_stored_host_key(client, monkeypatch):
+    """The stored TOFU host key is passed to check_updates for verification."""
+    seen = {}
+
+    async def fake_probe(host, port, username, password, known_host_key=None):
+        return {"os_name": "Ubuntu", "os_id": "ubuntu", "pkg_manager": "apt", "host_key": "KEY-1"}
+
+    async def fake_check(host, port, username, password, pkg_manager, known_host_key=None):
+        seen["key"] = known_host_key
+        return {"total": 0, "packages": []}
+
+    monkeypatch.setattr(ssh, "probe", fake_probe)
+    monkeypatch.setattr(ssh, "check_updates", fake_check)
+    add = client.post(
+        "/api/ssh/hosts",
+        json={"host": "10.0.0.9", "username": "pi", "password": "x"},
+        headers=CSRF_HEADER,
+    ).json()
+    client.post(f"/api/ssh/hosts/{add['id']}/check", json={}, headers=CSRF_HEADER)
+    assert seen["key"] == "KEY-1"  # the captured key is used to verify later connects

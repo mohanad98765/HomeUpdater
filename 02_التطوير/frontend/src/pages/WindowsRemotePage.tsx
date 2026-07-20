@@ -28,6 +28,7 @@ interface WinRMHost {
   port: number;
   username: string;
   use_https: boolean;
+  verify_tls: boolean;
   transport: string;
   custom_name: string;
   os_name: string;
@@ -60,6 +61,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
     username: "",
     password: "",
     use_https: false,
+    verify_tls: false,
     custom_name: "",
   });
   const [checks, setChecks] = useState<Record<number, UpdateCheck>>({});
@@ -71,7 +73,15 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
     mutationFn: () => apiFetch("/api/winrm/hosts", { method: "POST", body: JSON.stringify(form) }),
     onSuccess: () => {
       setShowForm(false);
-      setForm({ host: "", port: 5985, username: "", password: "", use_https: false, custom_name: "" });
+      setForm({
+        host: "",
+        port: 5985,
+        username: "",
+        password: "",
+        use_https: false,
+        verify_tls: false,
+        custom_name: "",
+      });
       qc.invalidateQueries({ queryKey: ["winrm-hosts"] });
     },
   });
@@ -186,11 +196,21 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                         ? 5986
                         : 5985
                       : form.port;
-                  setForm({ ...form, use_https: https, port });
+                  setForm({ ...form, use_https: https, port, verify_tls: https && form.verify_tls });
                 }}
               />
               استخدام HTTPS (المنفذ 5986)
             </label>
+            {form.use_https && (
+              <label className="md:col-span-2 flex items-center gap-2 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={form.verify_tls}
+                  onChange={(e) => setForm({ ...form, verify_tls: e.target.checked })}
+                />
+                التحقّق من شهادة TLS (حماية من MITM؛ أوقفه إن كانت شهادة الجهاز موقَّعة ذاتياً)
+              </label>
+            )}
           </div>
           <div className="mt-3 flex items-center gap-3">
             <button

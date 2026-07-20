@@ -72,25 +72,60 @@ def parse_dnf_updates(text: str) -> list[dict]:
     return out
 
 
-async def _connect(host: str, port: int, username: str, password: str):
+async def _connect(
+    host: str, port: int, username: str, password: str, known_host_key: str | None = None
+):
+    """Open an SSH connection.
+
+    Trust-on-first-use host-key verification: when ``known_host_key`` (an OpenSSH
+    public-key line captured on the first connect) is given, asyncssh verifies the
+    server presents that exact key during the handshake — **before** the password
+    is sent — and raises on mismatch, defeating an on-path MITM. When it is None
+    (first connect / a host added before this feature) we accept the key and the
+    caller captures it.
+    """
+    if known_host_key:
+        known_hosts = asyncssh.import_known_hosts(f"{host} {known_host_key}\n")
+    else:
+        known_hosts = None
     try:
         return await asyncssh.connect(
             host,
             port=port,
             username=username,
             password=password,
-            known_hosts=None,
+            known_hosts=known_hosts,
             connect_timeout=CONNECT_TIMEOUT,
         )
     except asyncssh.PermissionDenied as exc:
         raise SSHError("Authentication failed — check the username/password") from exc
+    except asyncssh.HostKeyNotVerifiable as exc:
+        raise SSHError(
+            "مفتاح مضيف SSH تغيّر عمّا كان محفوظاً — احتمال هجوم MITM. "
+            "إن كان التغيير مقصوداً (أُعيد تثبيت الخادم) احذف الجهاز وأضِفه من جديد."
+        ) from exc
     except Exception as exc:
         raise SSHError(f"Could not connect to {host}:{port}: {exc}") from exc
 
 
-async def probe(host: str, port: int, username: str, password: str) -> dict:
-    """Connect and detect the OS + package manager."""
-    async with await _connect(host, port, username, password) as conn:
+def _capture_host_key(conn) -> str:
+    """The server's public host key as an OpenSSH line (keytype + base64)."""
+    try:
+        return conn.get_server_host_key().export_public_key("openssh").decode().strip()
+    except Exception:
+        return ""
+
+
+async def probe(
+    host: str, port: int, username: str, password: str, known_host_key: str | None = None
+) -> dict:
+    """Connect and detect the OS + package manager, and capture the host key.
+
+    Returns ``host_key`` (the OpenSSH line) so the caller can persist it for TOFU
+    verification on later connects. If ``known_host_key`` is given it is verified.
+    """
+    async with await _connect(host, port, username, password, known_host_key) as conn:
+        host_key = _capture_host_key(conn)
         result = await conn.run("cat /etc/os-release", check=False)
         kv = parse_os_release(result.stdout or "")
     os_id = (kv.get("ID") or "").lower()
@@ -98,13 +133,19 @@ async def probe(host: str, port: int, username: str, password: str) -> dict:
         "os_name": kv.get("PRETTY_NAME") or kv.get("NAME") or "Linux",
         "os_id": os_id,
         "pkg_manager": pkg_manager_for(os_id, kv.get("ID_LIKE", "")),
+        "host_key": host_key,
     }
 
 
 async def check_updates(
-    host: str, port: int, username: str, password: str, pkg_manager: str
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    pkg_manager: str,
+    known_host_key: str | None = None,
 ) -> dict:
-    async with await _connect(host, port, username, password) as conn:
+    async with await _connect(host, port, username, password, known_host_key) as conn:
         if pkg_manager == "apt":
             result = await conn.run("apt list --upgradable 2>/dev/null", check=False)
             packages = parse_apt_upgradable(result.stdout or "")
@@ -117,7 +158,12 @@ async def check_updates(
 
 
 async def apply_updates(
-    host: str, port: int, username: str, password: str, pkg_manager: str
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    pkg_manager: str,
+    known_host_key: str | None = None,
 ) -> dict:
     if pkg_manager == "apt":
         cmd = "sudo -S -p '' DEBIAN_FRONTEND=noninteractive apt-get -y upgrade"
@@ -125,7 +171,7 @@ async def apply_updates(
         cmd = "sudo -S -p '' dnf -y upgrade"
     else:
         raise SSHError("Unknown package manager")
-    async with await _connect(host, port, username, password) as conn:
+    async with await _connect(host, port, username, password, known_host_key) as conn:
         result = await conn.run(cmd, input=(password or "") + "\n", check=False)
     return {
         "exit_status": result.exit_status,

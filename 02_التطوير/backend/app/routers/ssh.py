@@ -41,12 +41,6 @@ async def list_hosts(db: AsyncSession = Depends(get_db)) -> dict:
 
 @router.post("/hosts")
 async def add_host(payload: AddHost, db: AsyncSession = Depends(get_db)) -> dict:
-    # Verify the connection (and detect the OS) before saving.
-    try:
-        info = await ssh.probe(payload.host, payload.port, payload.username, payload.password)
-    except ssh.SSHError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     now = datetime.now(UTC)
     row = (
         await db.execute(
@@ -57,6 +51,20 @@ async def add_host(payload: AddHost, db: AsyncSession = Depends(get_db)) -> dict
             )
         )
     ).scalar_one_or_none()
+
+    # Verify the connection (and detect the OS) before saving. If we already trust
+    # a host key for this host, verify it (TOFU); otherwise capture it.
+    try:
+        info = await ssh.probe(
+            payload.host,
+            payload.port,
+            payload.username,
+            payload.password,
+            (row.host_key or None) if row else None,
+        )
+    except ssh.SSHError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if row is None:
         row = SSHHostORM(
             host=payload.host, port=payload.port, username=payload.username, first_seen=now
@@ -66,6 +74,8 @@ async def add_host(payload: AddHost, db: AsyncSession = Depends(get_db)) -> dict
         row.password = payload.password
     if payload.custom_name:
         row.custom_name = payload.custom_name
+    if info.get("host_key"):
+        row.host_key = info["host_key"]  # trust-on-first-use / re-confirm
     row.os_name = info["os_name"]
     row.os_id = info["os_id"]
     row.pkg_manager = info["pkg_manager"]
@@ -89,7 +99,7 @@ async def check(host_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     row = await _get_host(host_id, db)
     try:
         result = await ssh.check_updates(
-            row.host, row.port, row.username, row.password, row.pkg_manager
+            row.host, row.port, row.username, row.password, row.pkg_manager, row.host_key or None
         )
     except ssh.SSHError as exc:
         row.is_online = False
@@ -106,7 +116,7 @@ async def upgrade(host_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     row = await _get_host(host_id, db)
     try:
         return await ssh.apply_updates(
-            row.host, row.port, row.username, row.password, row.pkg_manager
+            row.host, row.port, row.username, row.password, row.pkg_manager, row.host_key or None
         )
     except ssh.SSHError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

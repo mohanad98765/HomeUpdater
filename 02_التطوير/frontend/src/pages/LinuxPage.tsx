@@ -29,6 +29,7 @@ interface SSHHost {
   os_name: string;
   pkg_manager: string;
   is_online: boolean;
+  host_key_verified: boolean;
   display_name: string;
 }
 interface UpdateCheck {
@@ -132,6 +133,11 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                     <div className="font-bold truncate">{h.display_name}</div>
                     <div className="text-xs text-fg-muted" dir="ltr">
                       {h.os_name || "Linux"} · {h.username}@{h.host}:{h.port} · {h.pkg_manager || "?"}
+                      {h.host_key_verified && (
+                        <span className="text-success" title="مفتاح المضيف موثَّق (TOFU)">
+                          {" "}· 🔒
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">

@@ -25,6 +25,7 @@ class AddHost(BaseModel):
     use_https: bool = Field(default=False)
     # Whitelisted at the API boundary so a caller can't pick an unsafe transport.
     transport: Literal["ntlm", "kerberos", "basic"] = Field(default="ntlm")
+    verify_tls: bool = Field(default=False)
     custom_name: str = Field(default="")
 
 
@@ -63,6 +64,7 @@ async def add_host(payload: AddHost, db: AsyncSession = Depends(get_db)) -> dict
             payload.password,
             payload.use_https,
             payload.transport,
+            payload.verify_tls,
         )
     except winrm.WinRMHostError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -88,6 +90,7 @@ async def add_host(payload: AddHost, db: AsyncSession = Depends(get_db)) -> dict
         row.custom_name = payload.custom_name
     row.use_https = payload.use_https
     row.transport = payload.transport
+    row.verify_tls = payload.verify_tls
     row.os_name = info["os_name"]
     row.os_version = info["os_version"]
     row.hostname = info["hostname"]
@@ -112,7 +115,13 @@ async def check(host_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     row = await _get_host(host_id, db)
     try:
         result = await winrm.check_updates(
-            row.host, row.port, row.username, row.password, row.use_https, row.transport
+            row.host,
+            row.port,
+            row.username,
+            row.password,
+            row.use_https,
+            row.transport,
+            row.verify_tls,
         )
     except winrm.WinRMHostError as exc:
         row.is_online = False
@@ -129,7 +138,13 @@ async def upgrade(host_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     row = await _get_host(host_id, db)
     try:
         return await winrm.apply_updates(
-            row.host, row.port, row.username, row.password, row.use_https, row.transport
+            row.host,
+            row.port,
+            row.username,
+            row.password,
+            row.use_https,
+            row.transport,
+            row.verify_tls,
         )
     except winrm.WinRMHostError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

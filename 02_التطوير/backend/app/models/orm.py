@@ -287,6 +287,9 @@ class SSHHostORM(Base):
     username: Mapped[str] = mapped_column(String(64), default="")
     password: Mapped[str] = mapped_column(EncryptedString, default="")  # encrypted at rest (O.5)
     custom_name: Mapped[str] = mapped_column(String(255), default="")
+    # OpenSSH host-key line captured on first connect (TOFU); verified on later
+    # connects to detect a MITM / changed host key.
+    host_key: Mapped[str] = mapped_column(Text, default="")
 
     # Filled by probe
     os_name: Mapped[str] = mapped_column(String(128), default="")
@@ -309,6 +312,7 @@ class SSHHostORM(Base):
             "pkg_manager": self.pkg_manager,
             "is_online": self.is_online,
             "has_password": bool(self.password),
+            "host_key_verified": bool(self.host_key),
             "first_seen": self.first_seen.isoformat() if self.first_seen else None,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "display_name": self.custom_name or f"{self.username}@{self.host}",
@@ -327,6 +331,9 @@ class WinRMHostORM(Base):
     password: Mapped[str] = mapped_column(EncryptedString, default="")  # encrypted at rest (O.5)
     use_https: Mapped[bool] = mapped_column(Boolean, default=False)
     transport: Mapped[str] = mapped_column(String(16), default="ntlm")  # ntlm | kerberos | basic
+    # Validate the target's TLS certificate over HTTPS (off by default for LAN
+    # self-signed WinRM listeners; on = real MITM protection).
+    verify_tls: Mapped[bool] = mapped_column(Boolean, default=False)
     custom_name: Mapped[str] = mapped_column(String(255), default="")
 
     # Filled by probe
@@ -347,6 +354,7 @@ class WinRMHostORM(Base):
             "username": self.username,
             "use_https": self.use_https,
             "transport": self.transport,
+            "verify_tls": self.verify_tls,
             "custom_name": self.custom_name,
             "os_name": self.os_name,
             "os_version": self.os_version,

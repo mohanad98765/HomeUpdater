@@ -140,16 +140,24 @@ def _run_ps_sync(
     use_https: bool,
     transport: str,
     script: str,
+    verify_tls: bool = False,
 ) -> tuple[int, str, str]:
-    """Open a WinRM session and run a PowerShell script (blocking)."""
+    """Open a WinRM session and run a PowerShell script (blocking).
+
+    Over HTTPS, ``verify_tls`` enables real certificate validation (MITM
+    protection). It's off by default because home WinRM listeners usually present
+    a self-signed cert; NTLM/Kerberos still message-encrypt the payload even when
+    the transport cert isn't validated.
+    """
     import winrm  # imported lazily so non-Windows/test envs load the module fine
 
+    cert_validation = "validate" if (use_https and verify_tls) else "ignore"
     try:
         session = winrm.Session(
             _endpoint(host, port, use_https),
             auth=(username, password),
             transport=transport,
-            server_cert_validation="ignore",
+            server_cert_validation=cert_validation,
             operation_timeout_sec=OP_TIMEOUT,
             read_timeout_sec=OP_TIMEOUT + 10,
         )
@@ -169,9 +177,10 @@ async def _run_ps(
     use_https: bool,
     transport: str,
     script: str,
+    verify_tls: bool = False,
 ) -> tuple[int, str, str]:
     return await asyncio.to_thread(
-        _run_ps_sync, host, port, username, password, use_https, transport, script
+        _run_ps_sync, host, port, username, password, use_https, transport, script, verify_tls
     )
 
 
@@ -182,9 +191,12 @@ async def probe(
     password: str,
     use_https: bool = False,
     transport: str = "ntlm",
+    verify_tls: bool = False,
 ) -> dict:
     """Connect and detect the OS + winget availability (verifies credentials)."""
-    rc, out, err = await _run_ps(host, port, username, password, use_https, transport, _PROBE_PS)
+    rc, out, err = await _run_ps(
+        host, port, username, password, use_https, transport, _PROBE_PS, verify_tls
+    )
     if not out.strip():
         raise WinRMHostError(err.strip() or f"فشل الفحص الأولي (رمز {rc}).")
     return parse_probe(out)
@@ -197,9 +209,12 @@ async def check_updates(
     password: str,
     use_https: bool = False,
     transport: str = "ntlm",
+    verify_tls: bool = False,
 ) -> dict:
     """List app upgrades available on the remote host via winget."""
-    rc, out, err = await _run_ps(host, port, username, password, use_https, transport, _CHECK_PS)
+    rc, out, err = await _run_ps(
+        host, port, username, password, use_https, transport, _CHECK_PS, verify_tls
+    )
     if "WINGET_NOT_FOUND" in out or "WINGET_NOT_FOUND" in err:
         raise WinRMHostError(
             "winget غير متوفّر على الجهاز الهدف (أو غير قابل للوصول من جلسة WinRM). "
@@ -224,9 +239,12 @@ async def apply_updates(
     password: str,
     use_https: bool = False,
     transport: str = "ntlm",
+    verify_tls: bool = False,
 ) -> dict:
     """Upgrade all packages on the remote host via winget (silent)."""
-    rc, out, err = await _run_ps(host, port, username, password, use_https, transport, _UPGRADE_PS)
+    rc, out, err = await _run_ps(
+        host, port, username, password, use_https, transport, _UPGRADE_PS, verify_tls
+    )
     if "WINGET_NOT_FOUND" in out or "WINGET_NOT_FOUND" in err:
         raise WinRMHostError("winget غير متوفّر على الجهاز الهدف.")
     logger.info(f"WinRM upgrade on {host}: exit={rc}")

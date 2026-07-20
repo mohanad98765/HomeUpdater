@@ -73,7 +73,7 @@ def test_friendly_error_connection():
 
 # --------------------------------------------------------------- probe flow
 async def test_probe_success(monkeypatch):
-    async def fake_run_ps(host, port, user, pw, https, transport, script):
+    async def fake_run_ps(host, port, user, pw, https, transport, script, verify_tls=False):
         assert script == winrm._PROBE_PS
         return 0, "CAPTION=Windows 11\nVERSION=10.0.26100\nHOSTNAME=H1\nWINGET=True\n", ""
 
@@ -165,6 +165,39 @@ async def test_apply_updates_winget_missing_raises(monkeypatch):
         await winrm.apply_updates("10.0.0.5", 5985, "admin", "pw")
 
 
+# --------------------------------------------------------------- TLS validation
+def test_verify_tls_selects_cert_validation(monkeypatch):
+    """Over HTTPS, verify_tls=True validates the cert; otherwise it's ignored."""
+    import winrm as winrm_mod
+
+    captured: dict = {}
+
+    class _Result:
+        status_code = 0
+        std_out = b"CAPTION=Windows 11\n"
+        std_err = b""
+
+    class _FakeSession:
+        def __init__(self, endpoint, **kw):
+            captured.clear()
+            captured.update(kw)
+
+        def run_ps(self, script):
+            return _Result()
+
+    monkeypatch.setattr(winrm_mod, "Session", _FakeSession)
+
+    winrm._run_ps_sync("h", 5986, "u", "p", True, "basic", "echo", verify_tls=True)
+    assert captured["server_cert_validation"] == "validate"
+
+    winrm._run_ps_sync("h", 5986, "u", "p", True, "ntlm", "echo", verify_tls=False)
+    assert captured["server_cert_validation"] == "ignore"
+
+    # verify_tls only applies over HTTPS; plain HTTP is always "ignore".
+    winrm._run_ps_sync("h", 5985, "u", "p", False, "ntlm", "echo", verify_tls=True)
+    assert captured["server_cert_validation"] == "ignore"
+
+
 # --------------------------------------------------------------- endpoint smoke
 def test_winrm_hosts_list_empty(client):
     """The /api/winrm/hosts endpoint returns an empty list on a fresh DB."""
@@ -173,7 +206,9 @@ def test_winrm_hosts_list_empty(client):
 
 
 def test_add_host_verifies_and_hides_password(client, monkeypatch):
-    async def fake_probe(host, port, username, password, use_https=False, transport="ntlm"):
+    async def fake_probe(
+        host, port, username, password, use_https=False, transport="ntlm", verify_tls=False
+    ):
         return {
             "os_name": "Windows 11 Pro",
             "os_version": "10.0.26100",
