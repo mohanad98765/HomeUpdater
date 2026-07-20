@@ -117,39 +117,31 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
         </button>
         <div className="flex items-center gap-2">
           <MonitorSmartphone className="w-5 h-5 text-primary" />
-          <h2 className="text-xl font-display font-bold">حواسيب Windows البعيدة</h2>
+          <h2 className="text-xl font-display font-bold">{t("pages.winrm.title")}</h2>
         </div>
         <button
           type="button"
           onClick={() => setShowForm((s) => !s)}
           className="btn-primary inline-flex items-center gap-2"
         >
-          <Plus className="w-4 h-4" /> إضافة جهاز
+          <Plus className="w-4 h-4" /> {t("pages.remote.addDevice")}
         </button>
       </div>
 
       {/* شرح + متطلّبات WinRM */}
       <div className="card mb-6 flex items-start gap-3 text-sm border-info/30 bg-info/5">
         <Info className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
-        <div className="text-fg-muted">
-          حدِّث أجهزة <span className="font-semibold text-fg">Windows الأخرى</span> على شبكتك عن بُعد عبر{" "}
-          <span dir="ltr">WinRM</span> (تُشغَّل <span dir="ltr">winget</span> على الجهاز الهدف). لتفعيل ذلك، شغّل
-          على الجهاز الهدف كمسؤول:{" "}
-          <code dir="ltr" className="px-1 rounded bg-surface-2 font-mono text-xs">Enable-PSRemoting -Force</code>
-          ، ثم أضِفه هنا ببيانات حساب مسؤول. المنفذ الافتراضي{" "}
-          <span dir="ltr" className="font-mono">5985</span> (أو{" "}
-          <span dir="ltr" className="font-mono">5986</span> لـ HTTPS). كلمة المرور لا تُعرَض أبداً.
-        </div>
+        <div className="text-fg-muted">{t("pages.winrm.hint")}</div>
       </div>
 
       {showForm && (
         <div className="card mb-6">
-          <h3 className="font-bold mb-3">جهاز Windows بعيد جديد (WinRM)</h3>
+          <h3 className="font-bold mb-3">{t("pages.winrm.newDevice")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               className="input"
               dir="ltr"
-              placeholder="عنوان IP (مثال 192.168.1.60)"
+              placeholder={t("pages.winrm.ipPlaceholder")}
               value={form.host}
               onChange={(e) => setForm({ ...form, host: e.target.value })}
             />
@@ -157,14 +149,14 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
               className="input"
               dir="ltr"
               type="number"
-              placeholder="المنفذ (5985)"
+              placeholder={t("pages.winrm.portPlaceholder")}
               value={form.port}
               onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
             />
             <input
               className="input"
               dir="ltr"
-              placeholder="اسم المستخدم (مسؤول)"
+              placeholder={t("pages.winrm.usernameAdmin")}
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
             />
@@ -172,13 +164,13 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
               className="input"
               dir="ltr"
               type="password"
-              placeholder="كلمة المرور"
+              placeholder={t("pages.remote.password")}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
             <input
               className="input md:col-span-2"
-              placeholder="اسم مخصّص (اختياري)"
+              placeholder={t("pages.remote.customName")}
               value={form.custom_name}
               onChange={(e) => setForm({ ...form, custom_name: e.target.value })}
             />
@@ -199,7 +191,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                   setForm({ ...form, use_https: https, port, verify_tls: https && form.verify_tls });
                 }}
               />
-              استخدام HTTPS (المنفذ 5986)
+              {t("pages.winrm.useHttps")}
             </label>
             {form.use_https && (
               <label className="md:col-span-2 flex items-center gap-2 text-sm text-fg-muted">
@@ -208,7 +200,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                   checked={form.verify_tls}
                   onChange={(e) => setForm({ ...form, verify_tls: e.target.checked })}
                 />
-                التحقّق من شهادة TLS (حماية من MITM؛ أوقفه إن كانت شهادة الجهاز موقَّعة ذاتياً)
+                {t("pages.winrm.verifyTls")}
               </label>
             )}
           </div>
@@ -220,9 +212,9 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
               className="btn-primary inline-flex items-center gap-2"
             >
               {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
-              اتصال وحفظ
+              {t("pages.remote.connectSave")}
             </button>
-            <span className="text-xs text-fg-muted">يتحقّق من الاتصال ويكتشف النظام قبل الحفظ</span>
+            <span className="text-xs text-fg-muted">{t("pages.remote.verifyHint")}</span>
           </div>
           {add.isError && <p className="mt-3 text-sm text-danger">{add.error.message}</p>}
         </div>
@@ -235,7 +227,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
       ) : list.length === 0 ? (
         <div className="card text-center py-16 text-fg-muted">
           <MonitorSmartphone className="w-12 h-12 text-fg-subtle mx-auto mb-3" />
-          لا توجد أجهزة Windows بعيدة. أضف جهازاً عبر WinRM لإدارة تحديثاته من هنا.
+          {t("pages.winrm.empty")}
         </div>
       ) : (
         <div className="space-y-4">
@@ -264,13 +256,17 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                       ) : (
                         <RefreshCw className="w-4 h-4" />
                       )}
-                      فحص التحديثات
+                      {t("pages.remote.checkUpdates")}
                     </button>
                     {c && c.total > 0 && (
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(`ترقية ${c.total} حزمة على ${h.display_name}؟`))
+                          if (
+                            window.confirm(
+                              t("pages.remote.upgradeConfirm", { count: c.total, name: h.display_name })
+                            )
+                          )
                             upgrade.mutate(h.id);
                         }}
                         disabled={upgrade.isPending && upgrade.variables === h.id}
@@ -281,14 +277,14 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                         ) : (
                           <Download className="w-4 h-4" />
                         )}
-                        ترقية الكل ({c.total})
+                        {t("pages.remote.upgradeAll", { count: c.total })}
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => remove.mutate(h.id)}
                       className="btn-secondary text-sm text-danger"
-                      title="حذف"
+                      title={t("pages.remote.delete")}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -299,14 +295,18 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                   <p className="mt-3 text-sm text-danger">{check.error.message}</p>
                 )}
                 {upgrade.isError && upgrade.variables === h.id && (
-                  <p className="mt-3 text-sm text-danger">تعذّرت الترقية: {upgrade.error.message}</p>
+                  <p className="mt-3 text-sm text-danger">
+                    {t("pages.winrm.upgradeFailed")} {upgrade.error.message}
+                  </p>
                 )}
                 {remove.isError && remove.variables === h.id && (
-                  <p className="mt-3 text-sm text-danger">تعذّر الحذف: {remove.error.message}</p>
+                  <p className="mt-3 text-sm text-danger">
+                    {t("pages.remote.deleteFailed")} {remove.error.message}
+                  </p>
                 )}
                 {upgradeResults[h.id] && !upgradeResults[h.id].succeeded && (
                   <div className="mt-3 p-3 rounded-md border border-danger/30 bg-danger/10 text-danger text-xs">
-                    لم تكتمل الترقية بنجاح (winget أرجع رمز خطأ). آخر المخرجات:
+                    {t("pages.winrm.upgradeIncomplete")}
                     <pre dir="ltr" className="mt-1 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">
                       {upgradeResults[h.id].output_tail.slice(-500)}
                     </pre>
@@ -315,11 +315,11 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                 {c &&
                   (c.total === 0 ? (
                     <p className="mt-3 text-sm text-success inline-flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" /> كل البرامج محدَّثة ✓
+                      <CheckCircle2 className="w-4 h-4" /> {t("pages.winrm.allUpToDate")}
                     </p>
                   ) : (
                     <div className="mt-3 bg-surface-2 rounded-lg p-3">
-                      <div className="text-sm font-medium mb-2">{c.total} حزمة قابلة للترقية:</div>
+                      <div className="text-sm font-medium mb-2">{t("pages.linux.upgradable", { count: c.total })}</div>
                       <ul className="text-xs font-mono divide-y divide-border max-h-48 overflow-y-auto" dir="ltr">
                         {c.packages.slice(0, 50).map((p) => (
                           <li key={p.id} className="py-1 flex justify-between gap-2">
@@ -341,7 +341,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
       )}
 
       <div className="mt-6 text-center text-xs text-fg-subtle inline-flex items-center gap-1 w-full justify-center">
-        <ShieldCheck className="w-3 h-3" /> النقل عبر NTLM مُشفَّر حتى على HTTP؛ لا تُسجَّل بيانات الاعتماد.
+        <ShieldCheck className="w-3 h-3" /> {t("pages.winrm.tlsNote")}
       </div>
     </div>
   );

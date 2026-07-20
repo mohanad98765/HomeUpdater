@@ -87,29 +87,29 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
         </button>
         <div className="flex items-center gap-2">
           <Terminal className="w-5 h-5 text-primary" />
-          <h2 className="text-xl font-display font-bold">لينكس / SSH</h2>
+          <h2 className="text-xl font-display font-bold">{t("pages.linux.title")}</h2>
         </div>
         <button type="button" onClick={() => setShowForm((s) => !s)} className="btn-primary inline-flex items-center gap-2">
-          <Plus className="w-4 h-4" /> إضافة جهاز
+          <Plus className="w-4 h-4" /> {t("pages.remote.addDevice")}
         </button>
       </div>
 
       {showForm && (
         <div className="card mb-6">
-          <h3 className="font-bold mb-3">جهاز لينكس جديد (SSH)</h3>
+          <h3 className="font-bold mb-3">{t("pages.linux.newDevice")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input className="input" dir="ltr" placeholder="عنوان IP (مثال 192.168.1.50)" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
-            <input className="input" dir="ltr" type="number" placeholder="المنفذ (22)" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
-            <input className="input" dir="ltr" placeholder="اسم المستخدم" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-            <input className="input" dir="ltr" type="password" placeholder="كلمة المرور" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-            <input className="input md:col-span-2" placeholder="اسم مخصّص (اختياري)" value={form.custom_name} onChange={(e) => setForm({ ...form, custom_name: e.target.value })} />
+            <input className="input" dir="ltr" placeholder={t("pages.linux.ipPlaceholder")} value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
+            <input className="input" dir="ltr" type="number" placeholder={t("pages.linux.portPlaceholder")} value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
+            <input className="input" dir="ltr" placeholder={t("pages.remote.username")} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <input className="input" dir="ltr" type="password" placeholder={t("pages.remote.password")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <input className="input md:col-span-2" placeholder={t("pages.remote.customName")} value={form.custom_name} onChange={(e) => setForm({ ...form, custom_name: e.target.value })} />
           </div>
           <div className="mt-3 flex items-center gap-3">
             <button type="button" onClick={() => add.mutate()} disabled={add.isPending || !form.host || !form.username} className="btn-primary inline-flex items-center gap-2">
               {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
-              اتصال وحفظ
+              {t("pages.remote.connectSave")}
             </button>
-            <span className="text-xs text-fg-muted">يتحقّق من الاتصال ويكتشف النظام قبل الحفظ</span>
+            <span className="text-xs text-fg-muted">{t("pages.remote.verifyHint")}</span>
           </div>
           {add.isError && <p className="mt-3 text-sm text-danger">{add.error.message}</p>}
         </div>
@@ -120,7 +120,7 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
       ) : list.length === 0 ? (
         <div className="card text-center py-16 text-fg-muted">
           <Terminal className="w-12 h-12 text-fg-subtle mx-auto mb-3" />
-          لا توجد أجهزة لينكس. أضف جهازاً عبر SSH لإدارة تحديثاته.
+          {t("pages.linux.empty")}
         </div>
       ) : (
         <div className="space-y-4">
@@ -134,7 +134,7 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                     <div className="text-xs text-fg-muted" dir="ltr">
                       {h.os_name || "Linux"} · {h.username}@{h.host}:{h.port} · {h.pkg_manager || "?"}
                       {h.host_key_verified && (
-                        <span className="text-success" title="مفتاح المضيف موثَّق (TOFU)">
+                        <span className="text-success" title={t("pages.linux.hostKeyVerified")}>
                           {" "}· 🔒
                         </span>
                       )}
@@ -143,22 +143,22 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <button type="button" onClick={() => check.mutate(h.id)} disabled={check.isPending && check.variables === h.id} className="btn-secondary text-sm inline-flex items-center gap-2">
                       {check.isPending && check.variables === h.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                      فحص التحديثات
+                      {t("pages.remote.checkUpdates")}
                     </button>
                     {c && c.total > 0 && (
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(`ترقية ${c.total} حزمة على ${h.display_name}؟`)) upgrade.mutate(h.id);
+                          if (window.confirm(t("pages.remote.upgradeConfirm", { count: c.total, name: h.display_name }))) upgrade.mutate(h.id);
                         }}
                         disabled={upgrade.isPending && upgrade.variables === h.id}
                         className="btn-primary text-sm inline-flex items-center gap-2"
                       >
                         {upgrade.isPending && upgrade.variables === h.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                        ترقية الكل ({c.total})
+                        {t("pages.remote.upgradeAll", { count: c.total })}
                       </button>
                     )}
-                    <button type="button" onClick={() => remove.mutate(h.id)} className="btn-secondary text-sm text-danger" title="حذف">
+                    <button type="button" onClick={() => remove.mutate(h.id)} className="btn-secondary text-sm text-danger" title={t("pages.remote.delete")}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -170,11 +170,11 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                 {c &&
                   (c.total === 0 ? (
                     <p className="mt-3 text-sm text-success inline-flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" /> النظام محدَّث ✓
+                      <CheckCircle2 className="w-4 h-4" /> {t("pages.linux.upToDate")}
                     </p>
                   ) : (
                     <div className="mt-3 bg-surface-2 rounded-lg p-3">
-                      <div className="text-sm font-medium mb-2">{c.total} حزمة قابلة للترقية:</div>
+                      <div className="text-sm font-medium mb-2">{t("pages.linux.upgradable", { count: c.total })}</div>
                       <ul className="text-xs font-mono divide-y divide-border max-h-48 overflow-y-auto" dir="ltr">
                         {c.packages.slice(0, 50).map((p) => (
                           <li key={p.name} className="py-1 flex justify-between gap-2">

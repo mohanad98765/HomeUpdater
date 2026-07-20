@@ -127,25 +127,25 @@ function App() {
               active={page === "security"}
               onClick={() => setPage("security")}
               icon={ShieldAlert}
-              label="الأمان"
+              label={t("nav.security")}
             />
             <NavTab
               active={page === "homeassistant"}
               onClick={() => setPage("homeassistant")}
               icon={House}
-              label="المنزل الذكي"
+              label={t("nav.homeassistant")}
             />
             <NavTab
               active={page === "linux"}
               onClick={() => setPage("linux")}
               icon={Terminal}
-              label="لينكس"
+              label={t("nav.linux")}
             />
             <NavTab
               active={page === "winrm"}
               onClick={() => setPage("winrm")}
               icon={MonitorDown}
-              label="Windows بعيد"
+              label={t("nav.winrm")}
             />
           </nav>
 

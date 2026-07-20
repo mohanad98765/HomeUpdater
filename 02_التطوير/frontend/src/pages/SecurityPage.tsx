@@ -58,13 +58,6 @@ const sevBadge = (s: string | null) =>
         ? "badge-info"
         : "";
 
-const sevLabel: Record<string, string> = {
-  CRITICAL: "حرجة",
-  HIGH: "عالية",
-  MEDIUM: "متوسطة",
-  LOW: "منخفضة",
-};
-
 export function SecurityPage({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
   const { dir } = useLanguage();
@@ -106,29 +99,25 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
           <span className="hidden sm:inline">{t("nav.dashboard")}</span>
         </button>
         <div>
-          <h2 className="text-xl font-display font-bold">الأمان — الثغرات المعروفة</h2>
-          <p className="text-xs text-fg-muted">Security · known vulnerabilities (NVD)</p>
+          <h2 className="text-xl font-display font-bold">{t("pages.sec.title")}</h2>
+          <p className="text-xs text-fg-muted">{t("pages.sec.subtitle")}</p>
         </div>
         <button
           type="button"
           onClick={() => refresh.mutate()}
           disabled={refresh.isPending || withVendor.length === 0}
-          title={
-            withVendor.length === 0
-              ? "افحص الشبكة أولاً من صفحة «الأجهزة» ليظهر مصنّعو الأجهزة، أو استخدم «الفحص اليدوي» بالأسفل"
-              : "فحص ثغرات كل مصنّعي الأجهزة المكتشفة"
-          }
+          title={withVendor.length === 0 ? t("pages.sec.scanDisabledHint") : t("pages.sec.scanHint")}
           className="btn-primary inline-flex items-center gap-2"
         >
           {refresh.isPending ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              جارٍ الفحص…
+              {t("pages.sec.scanning")}
             </>
           ) : (
             <>
               <RefreshCw className="w-4 h-4" />
-              فحص الثغرات
+              {t("pages.sec.scan")}
             </>
           )}
         </button>
@@ -137,25 +126,16 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
       {/* Explanation */}
       <div className="card mb-6 flex items-start gap-3 text-sm border-info/30 bg-info/5">
         <Info className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
-        <div className="text-fg-muted">
-          تُطابَق الثغرات حسب <span className="font-semibold text-fg">مصنّع</span> الجهاز (لا الإصدار
-          الدقيق)، من قاعدة <span dir="ltr">NVD</span> الرسمية. الأرقام إرشادية للتوعية الأمنية —
-          افتح رابط <span dir="ltr">NVD</span> لتفاصيل كل ثغرة. أوّل فحص قد يستغرق دقيقة (حدود معدّل NVD)،
-          ثم يُخزَّن مؤقتاً 24 ساعة.
-        </div>
+        <div className="text-fg-muted">{t("pages.sec.explain")}</div>
       </div>
 
       {/* فحص يدوي — يعمل دائماً بلا حاجة لمسح الشبكة */}
       <div className="card mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Search className="w-4 h-4 text-primary" />
-          <h3 className="font-bold">فحص يدوي لأي مصنّع</h3>
+          <h3 className="font-bold">{t("pages.sec.manualTitle")}</h3>
         </div>
-        <p className="text-xs text-fg-muted mb-3">
-          اكتب اسم أي مصنّع أو منتج (مثل <span dir="ltr">TP-Link</span>، <span dir="ltr">Cisco</span>،{" "}
-          <span dir="ltr">Samsung</span>، <span dir="ltr">iPhone</span>) وافحص ثغراته مباشرة من{" "}
-          <span dir="ltr">NVD</span> — دون الحاجة لمسح الشبكة.
-        </p>
+        <p className="text-xs text-fg-muted mb-3">{t("pages.sec.manualHint")}</p>
         <div className="flex items-center gap-2 flex-wrap">
           <input
             type="text"
@@ -163,7 +143,7 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runManual()}
-            placeholder="TP-Link، Cisco، Samsung…"
+            placeholder={t("pages.sec.manualPlaceholder")}
             className="flex-1 min-w-[200px] px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
           />
           <button
@@ -174,11 +154,11 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
           >
             {manual.isPending ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" /> جارٍ الفحص…
+                <Loader2 className="w-4 h-4 animate-spin" /> {t("pages.sec.scanning")}
               </>
             ) : (
               <>
-                <Search className="w-4 h-4" /> فحص
+                <Search className="w-4 h-4" /> {t("pages.sec.check")}
               </>
             )}
           </button>
@@ -186,23 +166,24 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
 
         {manual.isError && (
           <div className="mt-3 p-3 rounded-md border border-danger/30 bg-danger/10 text-danger text-sm">
-            تعذّر الفحص: {manual.error.message}
+            {t("pages.sec.checkFailed")} {manual.error.message}
           </div>
         )}
 
         {manual.data && (
           <div className="mt-4">
             <div className="text-sm mb-2">
-              نتائج <span className="font-bold" dir="ltr">{manual.data.keyword}</span>:{" "}
+              {t("pages.sec.resultsFor")}{" "}
+              <span className="font-bold" dir="ltr">{manual.data.keyword}</span>:{" "}
               <span className="font-mono font-bold text-warning">
                 {manual.data.total_results.toLocaleString()}
               </span>{" "}
-              ثغرة معروفة إجمالاً
-              {manual.data.cached && <span className="text-fg-subtle text-xs"> (من الكاش)</span>}
+              {t("pages.sec.totalKnown")}
+              {manual.data.cached && <span className="text-fg-subtle text-xs"> {t("pages.sec.cached")}</span>}
             </div>
             {manual.data.cves.length === 0 ? (
               <p className="text-sm text-success inline-flex items-center gap-1">
-                <ShieldCheck className="w-4 h-4" /> لا نتائج مطابقة.
+                <ShieldCheck className="w-4 h-4" /> {t("pages.sec.noMatches")}
               </p>
             ) : (
               <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
@@ -221,7 +202,7 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
                       <div className="flex items-center gap-2">
                         {c.severity && (
                           <span className={cn("badge", sevBadge(c.severity))}>
-                            {sevLabel[c.severity] || c.severity}
+                            {t(`pages.sec.sev${c.severity}`, { defaultValue: c.severity })}
                             {c.score > 0 && ` · ${c.score.toFixed(1)}`}
                           </span>
                         )}
@@ -243,16 +224,16 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-        <Stat icon={ShieldCheck} label="أجهزة لها مصنّع معروف" value={withVendor.length} accent="info" />
+        <Stat icon={ShieldCheck} label={t("pages.sec.statKnownVendor")} value={withVendor.length} accent="info" />
         <Stat
           icon={ShieldAlert}
-          label="أجهزة عليها ثغرات معروفة"
+          label={t("pages.sec.statFlagged")}
           value={flagged.length}
           accent={flagged.length > 0 ? "warning" : "success"}
         />
         <Stat
           icon={RefreshCw}
-          label="مصنّعون مفحوصون"
+          label={t("pages.sec.statVendorsChecked")}
           value={`${overview.data?.vendors_checked ?? 0}/${overview.data?.vendors_total ?? 0}`}
           accent="primary"
         />
@@ -260,8 +241,8 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
 
       {refresh.isError && (
         <div className="mb-6 p-4 rounded-lg border border-danger/30 bg-danger/10 text-danger text-sm">
-          تعذّر الفحص:{" "}
-          {refresh.error instanceof Error ? refresh.error.message : "خطأ غير معروف"}
+          {t("pages.sec.checkFailed")}{" "}
+          {refresh.error instanceof Error ? refresh.error.message : t("pages.sec.unknownError")}
         </div>
       )}
 
@@ -273,9 +254,7 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
       ) : withVendor.length === 0 ? (
         <div className="card text-center py-16">
           <ShieldCheck className="w-12 h-12 text-fg-subtle mx-auto mb-3" />
-          <p className="text-fg-muted">
-            لا توجد أجهزة بمصنّع معروف بعد. افحص الشبكة أولاً من صفحة «الأجهزة».
-          </p>
+          <p className="text-fg-muted">{t("pages.sec.emptyDevices")}</p>
         </div>
       ) : (
         <div className="card !p-0 overflow-hidden">
@@ -283,10 +262,10 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
             <table className="w-full text-sm">
               <thead className="bg-surface-2 text-xs font-bold text-fg-muted">
                 <tr>
-                  <th className="px-4 py-3 text-start">الجهاز</th>
-                  <th className="px-4 py-3 text-start">المصنّع</th>
-                  <th className="px-4 py-3 text-start">أعلى خطورة</th>
-                  <th className="px-4 py-3 text-start">ثغرات معروفة</th>
+                  <th className="px-4 py-3 text-start">{t("pages.sec.thDevice")}</th>
+                  <th className="px-4 py-3 text-start">{t("pages.sec.thVendor")}</th>
+                  <th className="px-4 py-3 text-start">{t("pages.sec.thSeverity")}</th>
+                  <th className="px-4 py-3 text-start">{t("pages.sec.thVulns")}</th>
                   <th className="px-4 py-3 text-start">NVD</th>
                 </tr>
               </thead>
@@ -305,12 +284,12 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
                     <td className="px-4 py-3">
                       {d.checked && d.top_severity ? (
                         <span className={cn("badge", sevBadge(d.top_severity))}>
-                          {sevLabel[d.top_severity] || d.top_severity}
+                          {t(`pages.sec.sev${d.top_severity}`, { defaultValue: d.top_severity })}
                         </span>
                       ) : d.checked ? (
-                        <span className="text-success text-xs">— نظيف</span>
+                        <span className="text-success text-xs">{t("pages.sec.clean")}</span>
                       ) : (
-                        <span className="text-fg-subtle text-xs">لم يُفحص</span>
+                        <span className="text-fg-subtle text-xs">{t("pages.sec.notChecked")}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono tabular-nums">
@@ -323,7 +302,7 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
                         rel="noreferrer noopener"
                         className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
                       >
-                        فتح <ExternalLink className="w-3 h-3" />
+                        {t("pages.sec.open")} <ExternalLink className="w-3 h-3" />
                       </a>
                     </td>
                   </tr>

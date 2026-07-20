@@ -107,24 +107,24 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
       {/* Connection card */}
       <div className="card mb-6">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h3 className="font-bold">الاتصال</h3>
+          <h3 className="font-bold">{t("pages.ha.connection")}</h3>
           {status.data &&
             (connected ? (
               <span className="badge badge-success inline-flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" />
-                متصل {status.data.version && `· ${status.data.version}`}
+                {t("pages.ha.connected")} {status.data.version && `· ${status.data.version}`}
                 {status.data.location_name && ` · ${status.data.location_name}`}
               </span>
             ) : status.data.configured ? (
               <span className="badge badge-danger inline-flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> غير متصل
+                <AlertTriangle className="w-3 h-3" /> {t("pages.ha.disconnected")}
               </span>
             ) : (
-              <span className="badge">غير مُهيّأ</span>
+              <span className="badge">{t("pages.ha.notConfigured")}</span>
             ))}
         </div>
 
-        <label className="block text-sm text-fg-muted mb-1">عنوان Home Assistant</label>
+        <label className="block text-sm text-fg-muted mb-1">{t("pages.ha.urlLabel")}</label>
         <input
           type="text"
           dir="ltr"
@@ -133,15 +133,13 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
           placeholder="http://homeassistant.local:8123"
           className="input w-full mb-3"
         />
-        <label className="block text-sm text-fg-muted mb-1">
-          رمز الوصول طويل الأمد (Long-Lived Access Token)
-        </label>
+        <label className="block text-sm text-fg-muted mb-1">{t("pages.ha.tokenLabel")}</label>
         <input
           type="password"
           dir="ltr"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder={status.data?.has_token ? "••••••••  (محفوظ — اترك فارغاً للإبقاء عليه)" : "الصق الرمز هنا"}
+          placeholder={status.data?.has_token ? t("pages.ha.tokenSaved") : t("pages.ha.tokenPlaceholder")}
           className="input w-full mb-3"
         />
 
@@ -153,7 +151,7 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
             className="btn-primary inline-flex items-center gap-2"
           >
             {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-            حفظ واتصال
+            {t("pages.ha.saveConnect")}
           </button>
           <a
             href="https://www.home-assistant.io/docs/authentication/#your-account-profile"
@@ -161,13 +159,13 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
             rel="noreferrer noopener"
             className="text-xs text-primary hover:underline"
           >
-            كيف أحصل على الرمز؟
+            {t("pages.ha.howToken")}
           </a>
         </div>
 
         {save.isError && (
           <p className="mt-3 text-sm text-danger">
-            {save.error instanceof Error ? save.error.message : "تعذّر الاتصال"}
+            {save.error instanceof Error ? save.error.message : t("pages.ha.connectFailed")}
           </p>
         )}
         {status.data?.error && !save.isPending && (
@@ -180,10 +178,11 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
         <div className="card !p-0 overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border flex-wrap gap-2">
             <h3 className="font-bold">
-              تحديثات أجهزة المنزل{" "}
+              {t("pages.ha.updatesTitle")}{" "}
               {updates.data && (
                 <span className="text-fg-muted font-normal text-sm">
-                  ({updates.data.available.length} متاح · {updates.data.up_to_date} محدَّث)
+                  ({updates.data.available.length} {t("pages.ha.available")} · {updates.data.up_to_date}{" "}
+                  {t("pages.ha.upToDateCount")})
                 </span>
               )}
             </h3>
@@ -193,7 +192,7 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
               className="btn-secondary text-sm inline-flex items-center gap-2"
             >
               <RefreshCw className={cn("w-4 h-4", updates.isFetching && "animate-spin")} />
-              تحديث
+              {t("pages.ha.refresh")}
             </button>
           </div>
 
@@ -203,12 +202,12 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
             </div>
           ) : updates.isError ? (
             <div className="p-8 text-center text-danger text-sm">
-              تعذّر جلب التحديثات: {(updates.error as Error).message}
+              {t("pages.ha.fetchFailed")} {(updates.error as Error).message}
             </div>
           ) : (updates.data?.available.length ?? 0) === 0 ? (
             <div className="p-8 text-center text-success">
               <CheckCircle2 className="w-10 h-10 mx-auto mb-2" />
-              كل أجهزة Home Assistant محدَّثة ✓
+              {t("pages.ha.allUpToDate")}
             </div>
           ) : (
             <ul className="divide-y divide-border">
@@ -231,7 +230,7 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
                     ) : (
                       <Download className="w-4 h-4" />
                     )}
-                    تحديث
+                    {t("pages.ha.update")}
                   </button>
                 </li>
               ))}
