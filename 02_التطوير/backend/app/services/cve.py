@@ -23,12 +23,65 @@ from ..models.orm import CVECacheORM
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 _SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
-# NVD anonymous limit is ~5 requests / 30s; stay comfortably under it.
+# NVD anonymous limit is ~5 requests / 30s; the floor stays comfortably under it.
 _THROTTLE_SECONDS = 6.5
+_THROTTLE_CEILING = 120.0
 
 
 class CVEError(RuntimeError):
     """Raised when NVD cannot be reached and there is no cached result."""
+
+
+class CVERateLimited(CVEError):
+    """NVD returned 429/403 (rate limited). Carries Retry-After if present."""
+
+    def __init__(self, retry_after: float | None = None) -> None:
+        super().__init__("NVD rate limit reached")
+        self.retry_after = retry_after
+
+
+class _NvdThrottle:
+    """AIMD pacing for anonymous NVD calls.
+
+    The floor is the safe anonymous rate (~6.5s); we never go below it because
+    anonymous callers have no headroom to speed up. On a 429/403 we back off
+    multiplicatively (honoring Retry-After), then narrow additively back toward
+    the floor after sustained success — so transient pushback widens the gap
+    instead of hammering the limit, and it recovers on its own.
+    """
+
+    def __init__(
+        self, floor: float = _THROTTLE_SECONDS, ceiling: float = _THROTTLE_CEILING
+    ) -> None:
+        self.floor = floor
+        self.ceiling = ceiling
+        self.delay = floor
+
+    def current(self) -> float:
+        return self.delay
+
+    def on_success(self) -> None:
+        self.delay = max(self.floor, self.delay - 1.0)  # additive decrease toward the floor
+
+    def on_rate_limited(self, retry_after: float | None = None) -> None:
+        backed = min(self.ceiling, self.delay * 2)  # multiplicative increase
+        if retry_after and retry_after > 0:
+            backed = max(backed, min(self.ceiling, float(retry_after)))
+        self.delay = backed
+
+
+_throttle = _NvdThrottle()
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    """NVD sends Retry-After in seconds when it throttles; parse it defensively."""
+    val = resp.headers.get("Retry-After")
+    if not val:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -82,8 +135,13 @@ def parse_cves(data: dict, limit: int) -> list[dict]:
 
 async def _fetch_nvd(keyword: str, results_per_page: int = 100) -> dict:
     params = {"keywordSearch": keyword, "resultsPerPage": results_per_page}
-    async with httpx.AsyncClient(timeout=25.0) as client:
+    # Split connect vs read: NVD's server processing can be slow, so give the read
+    # leg room while keeping the connect leg tight instead of one blunt 25s bound.
+    timeout = httpx.Timeout(connect=10.0, read=25.0, write=10.0, pool=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(NVD_URL, params=params, headers={"User-Agent": "HomeUpdater/0.1"})
+    if resp.status_code in (429, 403):  # rate limited — surface it so the throttle backs off
+        raise CVERateLimited(_retry_after_seconds(resp))
     resp.raise_for_status()
     return resp.json()
 
@@ -115,6 +173,14 @@ async def lookup_cves(
 
     try:
         data = await _fetch_nvd(keyword)
+    except CVERateLimited as exc:
+        _throttle.on_rate_limited(exc.retry_after)
+        logger.warning(
+            f"NVD rate-limited for {keyword!r}; backing off to {_throttle.current():.0f}s"
+        )
+        if row is not None:  # serve stale cache while we back off
+            return {**row.to_dict(), "cached": True, "stale": True}
+        raise
     except Exception as exc:
         logger.warning(f"NVD lookup for {keyword!r} failed: {exc}")
         if row is not None:  # serve stale cache on network error
@@ -131,6 +197,7 @@ async def lookup_cves(
     row.data = json.dumps(cves, ensure_ascii=False)
     row.fetched_at = now
     await db.commit()
+    _throttle.on_success()  # a clean fetch narrows the gap back toward the floor
 
     return {
         "keyword": keyword,
@@ -173,7 +240,7 @@ async def refresh_vendors(vendors: list[str], db: AsyncSession, ttl_hours: int =
             result = await lookup_cves(vendor, db, ttl_hours=ttl_hours)
             if not result.get("cached"):
                 refreshed += 1
-                await asyncio.sleep(_THROTTLE_SECONDS)  # rate-limit only real fetches
+                await asyncio.sleep(_throttle.current())  # adaptive: widens if NVD pushed back
         except CVEError:
             errors += 1
     return {"refreshed": refreshed, "errors": errors, "total_vendors": len(vendors)}
