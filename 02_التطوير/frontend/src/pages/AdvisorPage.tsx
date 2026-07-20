@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   MessageSquare,
   Send,
+  FileText,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -111,6 +112,49 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
     setChatMsgs(next);
     setChatInput("");
     chat.mutate(next);
+  };
+
+  // Export the AI's analysis as a printable/Save-as-PDF report. Uses a hidden
+  // iframe so ONLY the report prints (not the app), and the browser renders
+  // Arabic/RTL natively — no backend PDF library or font bundling needed.
+  const exportReport = () => {
+    const data = analyze.data;
+    if (!data) return;
+    const isAr = i18n.language.startsWith("ar");
+    const now = new Date().toLocaleString(isAr ? "ar-EG" : "en-US");
+    const esc = (s: string) =>
+      (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const html = `<!doctype html><html dir="${isAr ? "rtl" : "ltr"}" lang="${isAr ? "ar" : "en"}"><head>
+<meta charset="utf-8"><title>${esc(t("pages.advisor.reportTitle"))}</title><style>
+body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1a1a1a;line-height:1.7;padding:32px;margin:0}
+.brand{color:#4f46e5;font-weight:bold;font-size:12px;letter-spacing:.5px}
+h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20px}
+.rec{white-space:pre-wrap;font-size:14px}
+.meta{margin-top:28px;padding-top:12px;border-top:1px solid #ddd;color:#999;font-size:11px}
+@page{margin:16mm}</style></head><body>
+<div class="brand">HomeUpdater · محدِّث المنزل</div>
+<h1>${esc(t("pages.advisor.reportTitle"))}</h1>
+<p class="sub">${esc(t("pages.advisor.reportSub"))} · ${esc(now)}</p>
+<div class="rec">${esc(data.recommendations)}</div>
+<p class="meta">${esc(t("pages.advisor.poweredBy"))} · Claude ${esc(data.model)}</p>
+</body></html>`;
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      return;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+    const cleanup = () => setTimeout(() => iframe.remove(), 1500);
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      cleanup();
+    }, 400);
   };
 
   const topActions = (analyze.data?.actions ?? []).slice(0, 3);
@@ -213,8 +257,17 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
             <div className="mb-3 text-xs text-warning">⚠ {t("pages.advisor.truncated")}</div>
           )}
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{analyze.data.recommendations}</div>
-          <div className="mt-4 pt-3 border-t border-border text-xs text-fg-subtle inline-flex items-center gap-1">
-            <Sparkles className="w-3 h-3" /> {t("pages.advisor.poweredBy")} · {analyze.data.model}
+          <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs text-fg-subtle inline-flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> {t("pages.advisor.poweredBy")} · {analyze.data.model}
+            </span>
+            <button
+              type="button"
+              onClick={exportReport}
+              className="btn-secondary text-xs inline-flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" /> {t("pages.advisor.exportReport")}
+            </button>
           </div>
         </div>
       )}
