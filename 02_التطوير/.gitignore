@@ -47,3 +47,5 @@ installer-output/
 *.exe
 *.msi
 !setup.exe
+# Bundled Android platform-tools (deliberate vendored runtime dependency).
+!backend/vendor/platform-tools/adb.exe

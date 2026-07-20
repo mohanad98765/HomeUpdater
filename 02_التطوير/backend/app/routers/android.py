@@ -27,6 +27,7 @@ from ..services.android import (
     AndroidError,
     list_apps,
     open_play_store,
+    pair,
     probe,
 )
 
@@ -39,6 +40,12 @@ router = APIRouter()
 class AddDeviceRequest(BaseModel):
     host: str = Field(..., description="Phone IP address")
     port: int = Field(default=5555, ge=1, le=65535)
+
+
+class PairRequest(BaseModel):
+    host: str = Field(..., description="Phone IP address (from the pairing dialog)")
+    port: int = Field(..., ge=1, le=65535, description="Pairing port (changes each time)")
+    code: str = Field(..., description="Six-digit pairing code shown on the phone")
 
 
 class UpdateDeviceRequest(BaseModel):
@@ -56,6 +63,23 @@ async def list_devices(db: AsyncSession = Depends(get_db)) -> dict:
         "devices": [r.to_dict() for r in rows],
         "total": len(rows),
     }
+
+
+# ==================================================================
+# POST /pair  -> pair with Wireless debugging (Android 11+)
+# ==================================================================
+@router.post("/pair")
+async def pair_device(payload: PairRequest) -> dict:
+    """Pair with a phone's Wireless debugging using the six-digit code.
+
+    One-time per phone. Afterwards, add it with its *connect* IP:port.
+    """
+    logger.info(f"POST /api/android/pair - {payload.host}:{payload.port}")
+    try:
+        await pair(payload.host, payload.port, payload.code)
+    except AndroidError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"paired": True, "host": payload.host}
 
 
 # ==================================================================

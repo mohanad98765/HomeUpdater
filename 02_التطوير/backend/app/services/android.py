@@ -1,66 +1,53 @@
 """
-Android device integration via ADB over TCP/IP.
+Android device integration via the bundled official ``adb`` binary.
 
-Uses the pure-Python `adb-shell` library so we don't depend on the
-official adb.exe binary. Devices must be reachable at IP:port (usually
-5555). The user enables "Wireless debugging" (Android 11+) or plugs the
-phone in and runs `adb tcpip 5555` once beforehand.
+Earlier versions used the pure-Python ``adb-shell`` library, but it cannot
+perform the **Android 11+ Wireless-debugging** handshake (ADB-over-TLS +
+pairing): the phone replies ``STLS`` and the connection fails. We now ship
+Google's ``adb.exe`` (see ``vendor/platform-tools``) and drive it as a
+subprocess, which supports pairing, TLS wireless connect, and the legacy
+``adb connect IP:5555`` path all at once.
 
-Public API:
-  - connect(host, port)            -> AdbDevice
-  - get_device_info(host, port)    -> dict of properties
-  - list_packages(host, port)      -> list of installed 3rd-party packages
-  - open_play_store(host, port, pkg) -> ask Android to open the Play page
+Public API (all async):
+  - pair(host, port, code)          -> pair with Wireless debugging (one-time)
+  - probe(host, port)               -> DeviceInfo (connect + read properties)
+  - list_apps(host, port)           -> installed 3rd-party apps
+  - open_play_store(host, port, pkg)-> ask Android to open the Play page
 
-RSA key pair is stored in %APPDATA%\\HomeUpdater\\adb_keys\\ and generated
-on first use. The phone will prompt "Allow USB debugging?" the first time
-a new host connects — the user must tap Allow.
+adb manages its own RSA key (``%USERPROFILE%\\.android``) and the phone
+prompts "Allow debugging?" the first time a new host connects.
 """
 
 from __future__ import annotations
 
 import asyncio
 import re
+import shutil
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
 
-from ..config import get_appdata_dir
+# list_apps() spawns one dumpsys per app to read its version; bound that work.
+_APP_VERSION_CAP = 120  # enrich at most this many apps
+_APP_ENRICH_BUDGET_S = 25.0  # ...and stop enriching after this wall-clock budget
 
 # A valid Android package name is dot-separated alphanumerics/underscores only.
-# Enforced before it is ever interpolated into an `am start` shell command, to
-# block shell injection through the /apps/{package_name}/open path parameter.
+# Enforced before it is ever passed to `am start`, to block injection through
+# the /apps/{package_name}/open path parameter.
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.]*$")
+# A host we are willing to hand to adb. IPv4 or a simple hostname — crucially it
+# must NOT start with '-' (which adb would parse as a flag) and contains no shell
+# metacharacters. Ports are ints (validated by the router), so are always safe.
+_HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]*$")
+# Wireless-debugging pairing codes are exactly six digits.
+_CODE_RE = re.compile(r"^\d{6}$")
 
-
-# ==================================================================
-# ADB key management
-# ==================================================================
-def _key_paths() -> tuple[Path, Path]:
-    """Return (private_key_path, public_key_path). Creates the parent dir."""
-    key_dir = get_appdata_dir() / "adb_keys"
-    key_dir.mkdir(parents=True, exist_ok=True)
-    return key_dir / "adbkey", key_dir / "adbkey.pub"
-
-
-def _ensure_keys() -> tuple[str, str]:
-    """Generate an RSA key pair on first run. Returns (pub, priv) strings."""
-    from adb_shell.auth.keygen import keygen  # type: ignore[import-not-found]
-
-    priv_path, pub_path = _key_paths()
-    if not priv_path.exists() or not pub_path.exists():
-        logger.info(f"Generating ADB key pair at {priv_path}")
-        keygen(str(priv_path))  # creates both files
-    return pub_path.read_text().strip(), priv_path.read_text().strip()
-
-
-def _signer():
-    """Return a PythonRSASigner bound to our key pair."""
-    from adb_shell.auth.sign_pythonrsa import PythonRSASigner  # type: ignore[import-not-found]
-
-    pub, priv = _ensure_keys()
-    return PythonRSASigner(pub, priv)
+# Avoid flashing a console window from the windowed (WebView2) app.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
 
 
 # ==================================================================
@@ -120,23 +107,50 @@ class AppInfo:
 
 
 # ==================================================================
-# Low-level: connect + run shell
+# Locating + running the bundled adb
 # ==================================================================
-def _connect_blocking(host: str, port: int, timeout: float = 10.0):
-    """Blocking connect. Runs in an executor."""
-    from adb_shell.adb_device import AdbDeviceTcp  # type: ignore[import-not-found]
+def _adb_exe() -> str | None:
+    """Locate the adb binary: bundled (frozen) -> vendored (source) -> PATH."""
+    names = ["adb.exe"] if sys.platform == "win32" else ["adb"]
+    dirs: list[Path] = []
+    base = getattr(sys, "_MEIPASS", None)
+    if base:  # PyInstaller onedir: platform-tools bundled next to the app
+        dirs.append(Path(base) / "platform-tools")
+    # source tree: app/services/android.py -> backend/vendor/platform-tools
+    dirs.append(Path(__file__).resolve().parent.parent.parent / "vendor" / "platform-tools")
+    for d in dirs:
+        for n in names:
+            p = d / n
+            if p.is_file():
+                return str(p)
+    return shutil.which("adb")
 
-    device = AdbDeviceTcp(host, port, default_transport_timeout_s=timeout)
-    device.connect(rsa_keys=[_signer()], auth_timeout_s=15.0)
-    return device
+
+def _have_adb() -> bool:
+    return _adb_exe() is not None
 
 
-def _shell_blocking(device, cmd: str, timeout: float = 20.0) -> str:
-    """Run a shell command; return stdout as a string."""
+def _run_adb_blocking(
+    args: list[str], timeout: float = 30.0, input_text: str | None = None
+) -> tuple[int, str, str]:
+    """Run adb with the given args. Returns (returncode, stdout, stderr)."""
+    exe = _adb_exe()
+    if not exe:
+        raise AndroidError("لم يُعثر على أداة adb المضمّنة — أعد تثبيت البرنامج.")
     try:
-        return device.shell(cmd, read_timeout_s=timeout) or ""
-    except Exception as exc:
-        raise AndroidError(f"shell '{cmd[:60]}' failed: {exc}") from exc
+        proc = subprocess.run(
+            [exe, *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            input=input_text,
+            creationflags=_NO_WINDOW,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AndroidError(f"انتهت مهلة adb ({' '.join(args[:2])}).") from exc
+    except OSError as exc:
+        raise AndroidError(f"تعذّر تشغيل adb: {exc}") from exc
+    return proc.returncode, proc.stdout or "", proc.stderr or ""
 
 
 async def _in_executor(func, *args, **kwargs):
@@ -145,40 +159,69 @@ async def _in_executor(func, *args, **kwargs):
 
 
 # ==================================================================
-# Public async API
+# Pure parsing / validation helpers (unit-tested)
 # ==================================================================
-async def probe(host: str, port: int = 5555) -> DeviceInfo:
-    """Connect, read device properties, disconnect. Fast reachability check."""
+def _validate_host(host: str) -> None:
+    if not host or not _HOST_RE.match(host):
+        raise AndroidError(f"عنوان غير صالح: {host!r}")
 
-    def _work():
-        device = _connect_blocking(host, port)
-        try:
-            props = {}
-            for prop in (
-                "ro.serialno",
-                "ro.product.manufacturer",
-                "ro.product.model",
-                "ro.product.brand",
-                "ro.build.version.release",
-                "ro.build.version.sdk",
-                "ro.build.version.security_patch",
-            ):
-                props[prop] = _shell_blocking(device, f"getprop {prop}").strip()
-            return props
-        finally:
-            try:
-                device.close()
-            except Exception:
-                pass
 
-    try:
-        props = await _in_executor(_work)
-    except AndroidError:
-        raise
-    except Exception as exc:
-        logger.exception(f"ADB probe {host}:{port} failed")
-        raise AndroidError(f"Could not connect to {host}:{port}: {exc}") from exc
+_PROP_LINE = re.compile(r"^\[([^\]]+)\]:\s*\[(.*)\]$")
 
+
+def _parse_getprop(output: str) -> dict[str, str]:
+    """Parse ``adb shell getprop`` output ("[key]: [value]" per line)."""
+    props: dict[str, str] = {}
+    for line in output.splitlines():
+        m = _PROP_LINE.match(line.strip())
+        if m:
+            props[m.group(1)] = m.group(2)
+    return props
+
+
+def _clean_adb_msg(out: str, err: str) -> str:
+    """Build a user-facing message, dropping adb's daemon-startup noise
+    ("* daemon not running; starting now …") that pollutes the first call."""
+    lines = [
+        ln.strip()
+        for ln in f"{out}\n{err}".splitlines()
+        if ln.strip() and not ln.lstrip().startswith("*")
+    ]
+    return " ".join(lines).strip()
+
+
+def _check_pair_result(rc: int, out: str, err: str) -> None:
+    if "successfully paired" in f"{out}\n{err}".lower():
+        return
+    msg = _clean_adb_msg(out, err) or f"adb pair exited {rc}"
+    raise AndroidError(f"فشل الإقران: {msg[:200]}")
+
+
+def _check_connect_result(rc: int, out: str, err: str) -> None:
+    text = f"{out} {err}".lower()
+    if "connected to" in text or "already connected" in text:
+        return
+    msg = _clean_adb_msg(out, err) or f"adb connect exited {rc}"
+    raise AndroidError(f"تعذّر الاتصال: {msg[:200]}")
+
+
+def _parse_pkg_versions(dump: str) -> tuple[str, str]:
+    """Extract (versionName, versionCode) from ``dumpsys package`` output.
+
+    Guards the versionCode split: an empty value would otherwise IndexError.
+    """
+    name, code = "", ""
+    for raw in dump.splitlines():
+        line = raw.strip()
+        if not name and line.startswith("versionName="):
+            name = line.split("=", 1)[1].strip()
+        elif not code and line.startswith("versionCode="):
+            parts = line.split("=", 1)[1].split()
+            code = parts[0].strip() if parts else ""
+    return name, code
+
+
+def _device_info_from_props(host: str, port: int, props: dict[str, str]) -> DeviceInfo:
     return DeviceInfo(
         host=host,
         port=port,
@@ -192,70 +235,154 @@ async def probe(host: str, port: int = 5555) -> DeviceInfo:
     )
 
 
+# ==================================================================
+# adb operations (blocking; run in an executor)
+# ==================================================================
+def _connect(host: str, port: int) -> None:
+    rc, out, err = _run_adb_blocking(["connect", f"{host}:{port}"], timeout=20)
+    _check_connect_result(rc, out, err)
+
+
+def _serial(host: str, port: int) -> str:
+    return f"{host}:{port}"
+
+
+def _pair_blocking(host: str, port: int, code: str) -> None:
+    # Pass the code as an argument (modern adb) and also on stdin as a fallback
+    # for builds that would otherwise prompt for it interactively.
+    rc, out, err = _run_adb_blocking(
+        ["pair", f"{host}:{port}", code], timeout=25, input_text=f"{code}\n"
+    )
+    _check_pair_result(rc, out, err)
+
+
+def _probe_blocking(host: str, port: int) -> dict[str, str]:
+    _connect(host, port)
+    rc, out, err = _run_adb_blocking(["-s", _serial(host, port), "shell", "getprop"], timeout=20)
+    props = _parse_getprop(out)
+    if not props:
+        raise AndroidError(f"لم تُقرأ خصائص الجهاز: {(err or out).strip()[:200]}")
+    return props
+
+
+def _list_apps_blocking(host: str, port: int, include_system: bool) -> list[AppInfo]:
+    _connect(host, port)
+    serial = _serial(host, port)
+    args = ["-s", serial, "shell", "pm", "list", "packages", "-f"]
+    if not include_system:
+        args.insert(-1, "-3")  # 3rd-party only
+    rc, out, err = _run_adb_blocking(args, timeout=25)
+    if rc != 0 and not out:
+        raise AndroidError(f"pm list packages فشل: {(err or '').strip()[:200]}")
+
+    pkgs: list[tuple[str, str]] = []
+    for line in out.splitlines():
+        # Format: package:/data/app/pkg-x/base.apk=com.example.app
+        if not line.startswith("package:"):
+            continue
+        body = line[len("package:") :].strip()
+        if "=" not in body:
+            continue
+        path, pkg = body.rsplit("=", 1)
+        pkgs.append((pkg.strip(), path.strip()))
+
+    # Version lookup spawns one dumpsys per app, so bound the total work: enrich
+    # up to _APP_VERSION_CAP apps and stop once _APP_ENRICH_BUDGET_S elapses.
+    # Apps past the budget are still listed, just without a version string.
+    apps: list[AppInfo] = []
+    deadline = time.monotonic() + _APP_ENRICH_BUDGET_S
+    for i, (pkg, path) in enumerate(pkgs):
+        info = AppInfo(package_name=pkg, apk_path=path)
+        if i < _APP_VERSION_CAP and time.monotonic() < deadline:
+            try:
+                _, dump, _ = _run_adb_blocking(
+                    ["-s", serial, "shell", "dumpsys", "package", pkg], timeout=8
+                )
+                info.version_name, info.version_code = _parse_pkg_versions(dump)
+            except AndroidError:
+                pass
+        apps.append(info)
+    return apps
+
+
+def _open_store_blocking(host: str, port: int, package_name: str) -> None:
+    _connect(host, port)
+    uri = f"market://details?id={package_name}"
+    # List args (no shell): the package is already validated to [A-Za-z0-9_.],
+    # so the on-device `am start` receives a single safe -d argument.
+    _run_adb_blocking(
+        [
+            "-s",
+            _serial(host, port),
+            "shell",
+            "am",
+            "start",
+            "-a",
+            "android.intent.action.VIEW",
+            "-d",
+            uri,
+        ],
+        timeout=15,
+    )
+
+
+# ==================================================================
+# Public async API
+# ==================================================================
+async def pair(host: str, port: int, code: str) -> None:
+    """Pair with a phone's Wireless debugging (Android 11+). One-time per phone.
+
+    ``host``/``port`` come from the phone's *pairing* dialog (not the main
+    connect port), ``code`` is the six-digit code it shows.
+    """
+    _validate_host(host)
+    if not _CODE_RE.match(code or ""):
+        raise AndroidError("رمز الإقران يجب أن يكون ٦ أرقام.")
+    if not _have_adb():
+        raise AndroidError("الإقران اللاسلكي يتطلّب أداة adb المضمّنة.")
+    try:
+        await _in_executor(_pair_blocking, host, port, code)
+    except AndroidError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"adb pair {host}:{port} failed")
+        raise AndroidError(f"فشل الإقران: {exc}") from exc
+
+
+async def probe(host: str, port: int = 5555) -> DeviceInfo:
+    """Connect and read device properties. Fast reachability + identity check."""
+    _validate_host(host)
+    try:
+        props = await _in_executor(_probe_blocking, host, port)
+    except AndroidError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"ADB probe {host}:{port} failed")
+        raise AndroidError(f"Could not connect to {host}:{port}: {exc}") from exc
+    return _device_info_from_props(host, port, props)
+
+
 async def list_apps(host: str, port: int = 5555, include_system: bool = False) -> list[AppInfo]:
     """List installed apps on the device."""
-
-    def _work():
-        device = _connect_blocking(host, port)
-        try:
-            flag = "" if include_system else "-3"  # -3 = 3rd-party only
-            out = _shell_blocking(device, f"pm list packages {flag} -f")
-            pkgs: list[tuple[str, str]] = []
-            for line in out.splitlines():
-                # Format: package:/data/app/pkg-x/base.apk=com.example.app
-                if not line.startswith("package:"):
-                    continue
-                body = line[len("package:") :].strip()
-                if "=" not in body:
-                    continue
-                path, pkg = body.rsplit("=", 1)
-                pkgs.append((pkg.strip(), path.strip()))
-
-            # Fetch version for each package (batched via dumpsys)
-            apps: list[AppInfo] = []
-            for pkg, path in pkgs:
-                info = AppInfo(package_name=pkg, apk_path=path)
-                try:
-                    dump = _shell_blocking(
-                        device, f"dumpsys package {pkg} | grep version", timeout=10
-                    )
-                    for line in dump.splitlines():
-                        line = line.strip()
-                        if line.startswith("versionName="):
-                            info.version_name = line.split("=", 1)[1].strip()
-                        elif line.startswith("versionCode="):
-                            # "versionCode=12345 minSdk=..." -> keep first token
-                            info.version_code = line.split("=", 1)[1].split()[0].strip()
-                except Exception:
-                    pass
-                apps.append(info)
-            return apps
-        finally:
-            try:
-                device.close()
-            except Exception:
-                pass
-
-    return await _in_executor(_work)
+    _validate_host(host)
+    try:
+        return await _in_executor(_list_apps_blocking, host, port, include_system)
+    except AndroidError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"ADB list_apps {host}:{port} failed")
+        raise AndroidError(f"تعذّرت قراءة التطبيقات على {host}:{port}: {exc}") from exc
 
 
 async def open_play_store(host: str, port: int, package_name: str) -> None:
     """Ask Android to open the Play Store page for a package (so user can Update)."""
     if not _PACKAGE_RE.match(package_name or ""):
         raise AndroidError(f"Invalid package name: {package_name!r}")
-
-    def _work():
-        device = _connect_blocking(host, port)
-        try:
-            uri = f"market://details?id={package_name}"
-            _shell_blocking(
-                device,
-                f'am start -a android.intent.action.VIEW -d "{uri}"',
-            )
-        finally:
-            try:
-                device.close()
-            except Exception:
-                pass
-
-    await _in_executor(_work)
+    _validate_host(host)
+    try:
+        await _in_executor(_open_store_blocking, host, port, package_name)
+    except AndroidError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"ADB open_play_store {host}:{port} failed")
+        raise AndroidError(f"تعذّر فتح المتجر: {exc}") from exc

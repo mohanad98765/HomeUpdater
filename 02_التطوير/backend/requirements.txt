@@ -34,7 +34,9 @@ python-nmap==0.7.1
 psutil==6.1.0
 
 # --- Android (ADB) ---
-adb-shell==0.4.4
+# The official adb binary is bundled (vendor/platform-tools) and driven as a
+# subprocess — it supports Android 11+ Wireless-debugging pairing, which the
+# pure-Python adb-shell cannot. No Python ADB dependency is needed.
 
 # --- Logging ---
 loguru==0.7.3
@@ -44,7 +46,7 @@ httpx==0.28.1
 
 # --- SSH (Linux host updates) ---
 asyncssh==2.18.0
-cryptography==44.0.0  # required by asyncssh (also transitive via adb-shell)
+cryptography==44.0.0  # required by asyncssh
 
 # --- Windows Native Integration (WUA COM API + tray icon) ---
 pywin32==308; sys_platform == "win32"

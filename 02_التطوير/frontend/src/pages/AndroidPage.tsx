@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   ExternalLink,
   Pencil,
+  Link2,
+  Check,
 } from "lucide-react";
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -304,24 +306,41 @@ function AddDeviceDialog({
 }) {
   const { t } = useTranslation();
   const [host, setHost] = useState("");
+  const [pairPort, setPairPort] = useState("");
+  const [code, setCode] = useState("");
   const [port, setPort] = useState(5555);
+
+  const ipOk = /^\d{1,3}(\.\d{1,3}){3}$/.test(host.trim());
+
+  const pairMut = useMutation<{ paired: boolean }, Error>({
+    mutationFn: () =>
+      apiFetch<{ paired: boolean }>("/api/android/pair", {
+        method: "POST",
+        body: JSON.stringify({
+          host: host.trim(),
+          port: parseInt(pairPort) || 0,
+          code: code.trim(),
+        }),
+      }),
+  });
 
   const add = useMutation<AndroidDevice, Error>({
     mutationFn: () =>
       apiFetch<AndroidDevice>("/api/android/devices", {
         method: "POST",
-        body: JSON.stringify({ host, port }),
+        body: JSON.stringify({ host: host.trim(), port }),
       }),
     onSuccess: () => onAdded(),
   });
 
-  const canSubmit = /^\d{1,3}(\.\d{1,3}){3}$/.test(host.trim()) && port > 0;
+  const canPair = ipOk && /^\d{2,5}$/.test(pairPort.trim()) && /^\d{6}$/.test(code.trim());
+  const canSubmit = ipOk && port > 0;
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div className="card w-full max-w-md pointer-events-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none overflow-y-auto">
+        <div className="card w-full max-w-md pointer-events-auto my-8">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-lg">{t("android.addDialog.title")}</h3>
             <button
@@ -336,51 +355,113 @@ function AddDeviceDialog({
           <p className="text-sm text-fg-muted mb-3">{t("android.addDialog.hint")}</p>
 
           <div className="mb-4 p-3 rounded-md bg-info/10 border border-info/30 text-xs text-fg-muted space-y-2">
-            <div className="font-bold text-info">أين أجد الـ IP والمنفذ؟</div>
+            <div className="font-bold text-info">كيف أربط جوّالي؟</div>
             <div>
               <b>Android 11 فأحدث (لاسلكي):</b> الإعدادات ← خيارات المطوّر ←{" "}
-              <span dir="ltr">Wireless debugging</span> (فعّله) ← اضغط على الخيار نفسه ← ستظهر{" "}
-              <span dir="ltr">«IP address &amp; Port»</span> مثل{" "}
-              <span dir="ltr" className="font-mono">192.168.1.50:37123</span> — انسخ الاثنين هنا.
-              <span className="text-warning"> المنفذ يتغيّر كل مرّة (ليس 5555).</span>
+              <span dir="ltr">Wireless debugging</span> (فعّله). للربط أوّل مرّة اضغط{" "}
+              <b>«إقران جهاز برمز الإقران»</b> — انسخ <span dir="ltr">IP:المنفذ</span> والرمز
+              (٦ أرقام) إلى قسم «الإقران» أدناه واضغط <b>«إقران»</b>. ثم من الشاشة الرئيسية للتصحيح
+              اللاسلكي خذ <span dir="ltr">IP:المنفذ</span> (
+              <span className="text-warning">منفذ مختلف عن الإقران، ويتغيّر كل مرّة</span>) وأدخله في
+              «منفذ الاتصال» واضغط «إضافة هاتف».
             </div>
             <div>
-              <b>أقدم أو عبر USB:</b> وصّل الهاتف بالكمبيوتر بكابل مرّة، شغّل{" "}
-              <span dir="ltr" className="font-mono">adb tcpip 5555</span>، ثم استخدم IP الهاتف مع المنفذ{" "}
-              <span dir="ltr" className="font-mono">5555</span>.
-            </div>
-            <div className="text-fg-subtle">
-              أوّل اتصال: سيسأل الهاتف «السماح بتصحيح USB؟» — اقبل. (اللاسلكي قد يتطلّب «إقران» أولاً من
-              نفس الشاشة عبر رمز الإقران.)
+              <b>أقدم أو عبر USB:</b> شغّل <span dir="ltr" className="font-mono">adb tcpip 5555</span>{" "}
+              مرّة، ثم استخدم IP الهاتف مع المنفذ{" "}
+              <span dir="ltr" className="font-mono">5555</span> مباشرةً (بلا إقران).
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-bold text-fg-muted mb-1 block">
-                {t("android.addDialog.ipLabel")}
-              </label>
-              <input
-                type="text"
-                dir="ltr"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder={t("android.addDialog.ipPlaceholder")}
-                className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
-              />
+          {/* Phone IP (shared by pairing + connecting) */}
+          <div className="mb-3">
+            <label className="text-xs font-bold text-fg-muted mb-1 block">
+              {t("android.addDialog.ipLabel")}
+            </label>
+            <input
+              type="text"
+              dir="ltr"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder={t("android.addDialog.ipPlaceholder")}
+              className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
+            />
+          </div>
+
+          {/* Pairing (Android 11+, one-time) */}
+          <div className="mb-3 p-3 rounded-md border border-border bg-surface-2/40 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-fg">
+              <Link2 className="w-4 h-4 text-primary" />
+              الإقران (لاسلكي · Android 11+ · مرّة واحدة)
             </div>
-            <div>
-              <label className="text-xs font-bold text-fg-muted mb-1 block">
-                {t("android.addDialog.portLabel")}
-              </label>
-              <input
-                type="number"
-                dir="ltr"
-                value={port}
-                onChange={(e) => setPort(parseInt(e.target.value) || 5555)}
-                className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
-              />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[11px] text-fg-muted mb-1 block">منفذ الإقران</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  value={pairPort}
+                  onChange={(e) => setPairPort(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="37123"
+                  className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono text-sm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-[11px] text-fg-muted mb-1 block">رمز الإقران (٦ أرقام)</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="123456"
+                  className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono text-sm"
+                />
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => pairMut.mutate()}
+              disabled={!canPair || pairMut.isPending}
+              className="btn-secondary w-full inline-flex items-center justify-center gap-2 text-sm"
+            >
+              {pairMut.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  جارٍ الإقران…
+                </>
+              ) : (
+                <>
+                  <Link2 className="w-4 h-4" />
+                  إقران
+                </>
+              )}
+            </button>
+            {pairMut.isSuccess && (
+              <div className="text-xs text-success inline-flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> تمّ الإقران — الآن أدخل منفذ الاتصال وأضِف الهاتف.
+              </div>
+            )}
+            {pairMut.isError && (
+              <div className="text-xs text-danger font-mono break-all">
+                {(pairMut.error as Error).message}
+              </div>
+            )}
+          </div>
+
+          {/* Connect port + add */}
+          <div className="mb-2">
+            <label className="text-xs font-bold text-fg-muted mb-1 block">
+              {t("android.addDialog.portLabel")}
+            </label>
+            <input
+              type="number"
+              dir="ltr"
+              value={port}
+              onChange={(e) => setPort(parseInt(e.target.value) || 5555)}
+              className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
+            />
           </div>
 
           <div className="mt-4 p-3 rounded-md bg-info/10 border border-info/30 text-info text-xs">
@@ -390,7 +471,7 @@ function AddDeviceDialog({
           {add.isError && (
             <div className="mt-3 p-3 rounded-md bg-danger/10 border border-danger/30 text-danger text-sm flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span className="font-mono text-xs">{(add.error as Error).message}</span>
+              <span className="font-mono text-xs break-all">{(add.error as Error).message}</span>
             </div>
           )}
 

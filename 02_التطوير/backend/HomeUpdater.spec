@@ -2,9 +2,9 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('../frontend/dist', 'frontend_dist'), ('alembic', 'alembic'), ('alembic.ini', '.'), ('VERSION', '.'), ('assets', 'assets'), ('loading.html', '.')]
+datas = [('../frontend/dist', 'frontend_dist'), ('alembic', 'alembic'), ('alembic.ini', '.'), ('VERSION', '.'), ('assets', 'assets'), ('loading.html', '.'), ('vendor/platform-tools', 'platform-tools')]
 binaries = []
-hiddenimports = ['win32com', 'win32com.client', 'pythoncom', 'win32timezone', 'win32crypt', 'adb_shell']
+hiddenimports = ['win32com', 'win32com.client', 'pythoncom', 'win32timezone', 'win32crypt']
 # Native app window (pywebview + WebView2 via pythonnet) — dynamically imported.
 hiddenimports += ['webview.platforms.edgechromium', 'webview.platforms.winforms',
                   'clr', 'clr_loader', 'clr_loader.ffi']
