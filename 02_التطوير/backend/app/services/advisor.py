@@ -244,12 +244,79 @@ the user can apply them with one click — then write your text summary.
 Reply in the SAME language the user writes in (Arabic or English)."""
 
 
-async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
-    """Run the agentic advisor loop.
+async def _run_agent(
+    db: AsyncSession,
+    client,
+    system: str,
+    tools: list[dict],
+    messages: list[dict[str, Any]],
+    capture_plan: bool = False,
+) -> dict:
+    """Drive the Claude tool-use loop over ``messages`` until a final answer.
 
-    Returns ``{"recommendations": str, "trace": [{"tool": name}, ...], "model": str}``.
-    Raises :class:`AdvisorError` if the key is missing or the API call fails.
+    Shared by analyze() and chat(). Returns
+    ``{"text", "trace", "model", "truncated", "actions"}``. Raises AdvisorError on
+    refusal / empty answer / non-convergence; the caller catches API errors.
     """
+    trace: list[dict] = []
+    plan: list[dict] = []  # structured applicable actions from the set_plan tool
+    for _ in range(8):  # cap the agentic loop
+        resp = await client.messages.create(
+            model=settings.advisor_model,
+            max_tokens=8192,
+            thinking={"type": "adaptive"},
+            system=system,
+            tools=tools,
+            messages=messages,
+        )
+
+        if resp.stop_reason != "tool_use":
+            text = "".join(b.text for b in resp.content if b.type == "text").strip()
+            # Distinguish a real answer from a safety refusal or a truncation.
+            if resp.stop_reason == "refusal":
+                raise AdvisorError("The model declined this request. Try rephrasing.")
+            if not text:
+                raise AdvisorError("The model returned an empty answer; please try again.")
+            return {
+                "text": text,
+                "trace": trace,
+                "model": resp.model,
+                "truncated": resp.stop_reason == "max_tokens",
+                "actions": plan[:10],
+            }
+
+        # Echo the assistant turn back verbatim (thinking + tool_use blocks),
+        # then answer every tool_use with a tool_result in one user turn.
+        messages.append({"role": "assistant", "content": resp.content})
+        results: list[dict] = []
+        for block in resp.content:
+            if block.type == "tool_use":
+                trace.append({"tool": block.name})
+                if capture_plan and block.name == "set_plan":
+                    raw = block.input.get("actions", []) if isinstance(block.input, dict) else []
+                    plan = [a for a in raw if isinstance(a, dict) and a.get("id")]
+                    data = {"recorded": len(plan)}
+                else:
+                    fn = _DISPATCH.get(block.name)
+                    try:
+                        data = await fn(db) if fn else {"error": f"unknown tool {block.name}"}
+                    except Exception as exc:  # surface tool failure to the model
+                        logger.warning(f"Advisor tool {block.name} failed: {exc}")
+                        data = {"error": str(exc)}
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(data, ensure_ascii=False),
+                    }
+                )
+        messages.append({"role": "user", "content": results})
+
+    raise AdvisorError("Advisor did not converge (too many tool rounds).")
+
+
+async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
+    """Run the agentic advisor loop and return a prioritized plan + applicable actions."""
     api_key = get_api_key()
     if not api_key:
         raise AdvisorError("AI Advisor is not configured (no Anthropic API key).")
@@ -264,70 +331,63 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
         + ("Respond in Arabic." if ar else "Respond in English.")
     )
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_msg}]
-    trace: list[dict] = []
-    plan: list[dict] = []  # structured applicable actions from the set_plan tool
-
     try:
-        for _ in range(8):  # cap the agentic loop
-            resp = await client.messages.create(
-                model=settings.advisor_model,
-                max_tokens=8192,
-                thinking={"type": "adaptive"},
-                system=_SYSTEM,
-                tools=_TOOLS,
-                messages=messages,
-            )
-
-            if resp.stop_reason != "tool_use":
-                text = "".join(b.text for b in resp.content if b.type == "text").strip()
-                # Distinguish a real answer from a safety refusal or a truncation —
-                # otherwise both would surface as a blank/half-written "success".
-                if resp.stop_reason == "refusal":
-                    raise AdvisorError("The model declined this request. Try rephrasing.")
-                if not text:
-                    raise AdvisorError("The model returned an empty answer; please try again.")
-                return {
-                    "recommendations": text,
-                    "trace": trace,
-                    "model": resp.model,
-                    "truncated": resp.stop_reason == "max_tokens",
-                    "actions": plan[:10],
-                }
-
-            # Echo the assistant turn back verbatim (thinking + tool_use blocks),
-            # then answer every tool_use with a tool_result in one user turn.
-            messages.append({"role": "assistant", "content": resp.content})
-            results: list[dict] = []
-            for block in resp.content:
-                if block.type == "tool_use":
-                    trace.append({"tool": block.name})
-                    if block.name == "set_plan":
-                        # Terminal tool: capture the applicable plan; don't hit the DB.
-                        raw = (
-                            block.input.get("actions", []) if isinstance(block.input, dict) else []
-                        )
-                        plan = [a for a in raw if isinstance(a, dict) and a.get("id")]
-                        data = {"recorded": len(plan)}
-                    else:
-                        fn = _DISPATCH.get(block.name)
-                        try:
-                            data = await fn(db) if fn else {"error": f"unknown tool {block.name}"}
-                        except Exception as exc:  # surface tool failure to the model
-                            logger.warning(f"Advisor tool {block.name} failed: {exc}")
-                            data = {"error": str(exc)}
-                    results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": json.dumps(data, ensure_ascii=False),
-                        }
-                    )
-            messages.append({"role": "user", "content": results})
-
-        raise AdvisorError("Advisor did not converge (too many tool rounds).")
+        r = await _run_agent(db, client, _SYSTEM, _TOOLS, messages, capture_plan=True)
     except anthropic.APIError as exc:
         logger.error(f"Advisor API error: {exc}")
         raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
+    return {
+        "recommendations": r["text"],
+        "trace": r["trace"],
+        "model": r["model"],
+        "truncated": r["truncated"],
+        "actions": r["actions"],
+    }
+
+
+# Read-only subset (no set_plan) — chat answers questions, it doesn't build a plan.
+_READ_TOOLS = [t for t in _TOOLS if t["name"] != "set_plan"]
+
+_CHAT_SYSTEM = """You are the AI Advisor inside HomeUpdater, a local home-network update app. \
+Answer the user's questions about their home network — its devices, known vulnerabilities, and \
+pending updates — conversationally and concisely.
+
+Ground every factual answer in the user's ACTUAL local data by using the read-only tools \
+(list_devices, check_vulnerabilities, list_pending_updates) — don't guess. If the network hasn't \
+been scanned yet (no devices / no data), say so and suggest running a scan. You cannot apply \
+updates from chat; if asked to, point the user to the "Analyze my network" plan and its Apply \
+button. Reply in the SAME language the user writes in (Arabic or English)."""
+
+
+async def chat(db: AsyncSession, history: list[dict]) -> dict:
+    """Answer a conversational question about the network (read-only tools).
+
+    ``history`` is the client-side ``[{role: 'user'|'assistant', content: str}, ...]``
+    with the newest user turn last. Returns ``{reply, trace, model}``.
+    """
+    api_key = get_api_key()
+    if not api_key:
+        raise AdvisorError("AI Advisor is not configured (no Anthropic API key).")
+
+    messages: list[dict[str, Any]] = [
+        {"role": m["role"], "content": str(m["content"])}
+        for m in history
+        if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()
+    ][-20:]  # keep the last ~20 turns
+    while messages and messages[0]["role"] != "user":
+        messages.pop(0)  # the API requires the conversation to start on a user turn
+    if not messages:
+        raise AdvisorError("Chat must start with a user message.")
+
+    import anthropic
+
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    try:
+        r = await _run_agent(db, client, _CHAT_SYSTEM, _READ_TOOLS, messages, capture_plan=False)
+    except anthropic.APIError as exc:
+        logger.error(f"Advisor chat API error: {exc}")
+        raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
+    return {"reply": r["text"], "trace": r["trace"], "model": r["model"]}
 
 
 async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:

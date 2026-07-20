@@ -33,6 +33,15 @@ class ApplyRequest(BaseModel):
     actions: list[ActionItem] = []
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = []
+
+
 @router.get("/status")
 async def status() -> dict:
     """Whether the advisor is usable (an Anthropic API key is configured).
@@ -63,6 +72,17 @@ async def analyze(body: AnalyzeRequest, db: AsyncSession = Depends(get_db)) -> d
     """Run the agentic advisor and return its prioritized recommendations."""
     try:
         return await advisor.analyze(db, lang_hint=body.lang)
+    except advisor.AdvisorError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/chat")
+async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    """Conversational Q&A about the network (read-only advisor tools)."""
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="No message.")
+    try:
+        return await advisor.chat(db, [m.model_dump() for m in body.messages])
     except advisor.AdvisorError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

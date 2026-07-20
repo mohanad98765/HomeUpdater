@@ -55,6 +55,9 @@ const resources = {
           applied: "طُبِّق {{count}} تحديثاً",
           applySkipped: "تُخطّي {{count}} (لم تعد معلّقة)",
           applyFailed: "تعذّر التطبيق:",
+          chatTitle: "اسأل المستشار",
+          chatPlaceholder: "اسأل عن شبكتك… (مثال: ما أخطر جهاز عندي؟)",
+          chatThinking: "يفكّر…",
         },
         sec: {
           title: "الأمان — الثغرات المعروفة",
@@ -452,6 +455,9 @@ const resources = {
           applied: "Applied {{count}} update(s)",
           applySkipped: "skipped {{count}} (no longer pending)",
           applyFailed: "Apply failed:",
+          chatTitle: "Ask the Advisor",
+          chatPlaceholder: "Ask about your network… (e.g. what's my riskiest device?)",
+          chatThinking: "Thinking…",
         },
         sec: {
           title: "Security — known vulnerabilities",

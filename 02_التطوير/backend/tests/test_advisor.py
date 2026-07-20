@@ -129,6 +129,39 @@ def test_agentic_loop(monkeypatch, tmp_path):
     assert any(m["role"] == "user" for m in fake.messages.calls[1]["messages"])
 
 
+def test_chat_uses_readonly_tools(monkeypatch, tmp_path):
+    """Chat answers via the read-only tools and never exposes set_plan."""
+    import anthropic
+
+    monkeypatch.setattr(advisor.settings, "anthropic_api_key", "sk-test")
+    responses = [
+        _Resp("tool_use", [_Block(type="tool_use", name="list_devices", id="c1", input={})]),
+        _Resp("end_turn", [_Block(type="text", text="You have 1 device: the router.")]),
+    ]
+    fake = _FakeClient(responses)
+    monkeypatch.setattr(anthropic, "AsyncAnthropic", lambda **kw: fake)
+
+    async def run():
+        db_url = f"sqlite+aiosqlite:///{(tmp_path / 'chat.db').as_posix()}"
+        engine = create_async_engine(db_url, poolclass=NullPool)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with Session() as db:
+            db.add(DeviceORM(ip="192.168.1.1", vendor="TP-Link", device_type="router"))
+            await db.commit()
+            res = await advisor.chat(db, [{"role": "user", "content": "how many devices?"}])
+        await engine.dispose()
+        return res
+
+    result = asyncio.run(run())
+    assert "device" in result["reply"].lower()
+    assert result["trace"] == [{"tool": "list_devices"}]
+    tools_sent = fake.messages.calls[0]["tools"]
+    assert all(t["name"] != "set_plan" for t in tools_sent)  # read-only in chat
+    assert any(t["name"] == "list_devices" for t in tools_sent)
+
+
 def test_apply_plan_only_installs_pending(monkeypatch, tmp_path):
     """apply_plan installs only genuinely-pending ids; unknown/stale ids are skipped."""
     from app.services import software_updates, windows_updates

@@ -1,8 +1,19 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Loader2, Sparkles, Cpu, KeyRound, Download, CheckCircle2 } from "lucide-react";
-import { apiFetch } from "@/lib/utils";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Loader2,
+  Sparkles,
+  Cpu,
+  KeyRound,
+  Download,
+  CheckCircle2,
+  MessageSquare,
+  Send,
+} from "lucide-react";
+import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 
 // ================================================================
@@ -48,6 +59,8 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
   const qc = useQueryClient();
   const BackIcon = dir === "rtl" ? ArrowRight : ArrowLeft;
   const [keyInput, setKeyInput] = useState("");
+  const [chatMsgs, setChatMsgs] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
 
   const status = useQuery<AdvisorStatus>({
     queryKey: ["advisor-status"],
@@ -82,6 +95,23 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
       qc.invalidateQueries({ queryKey: ["advisor-status"] });
     },
   });
+
+  const chat = useMutation<{ reply: string }, Error, { role: "user" | "assistant"; content: string }[]>({
+    mutationFn: (msgs) =>
+      apiFetch<{ reply: string }>("/api/advisor/chat", {
+        method: "POST",
+        body: JSON.stringify({ messages: msgs }),
+      }),
+    onSuccess: (data, msgs) => setChatMsgs([...msgs, { role: "assistant", content: data.reply }]),
+  });
+  const sendChat = () => {
+    const q = chatInput.trim();
+    if (!q || chat.isPending) return;
+    const next = [...chatMsgs, { role: "user" as const, content: q }];
+    setChatMsgs(next);
+    setChatInput("");
+    chat.mutate(next);
+  };
 
   const topActions = (analyze.data?.actions ?? []).slice(0, 3);
   const applyTop = () => {
@@ -234,6 +264,59 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
               {t("pages.advisor.applyFailed")} {apply.error.message}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Ask-the-advisor chat (read-only Q&A over the same tools) */}
+      {configured && (
+        <div className="card mt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare className="w-4 h-4 text-primary" />
+            <h3 className="font-bold text-sm">{t("pages.advisor.chatTitle")}</h3>
+          </div>
+          {chatMsgs.length > 0 && (
+            <div className="space-y-2 mb-3 max-h-72 overflow-y-auto">
+              {chatMsgs.map((m, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "text-sm rounded-lg px-3 py-2 whitespace-pre-wrap",
+                    m.role === "user" ? "bg-primary/10 ms-8" : "bg-surface-2 me-8",
+                  )}
+                >
+                  {m.content}
+                </div>
+              ))}
+              {chat.isPending && (
+                <div className="text-sm text-fg-muted me-8 inline-flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> {t("pages.advisor.chatThinking")}
+                </div>
+              )}
+            </div>
+          )}
+          {chat.isError && (
+            <p className="text-sm text-danger mb-2">
+              {t("pages.advisor.failed")} {chat.error.message}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendChat()}
+              placeholder={t("pages.advisor.chatPlaceholder")}
+              className="input flex-1"
+            />
+            <button
+              type="button"
+              onClick={sendChat}
+              disabled={chat.isPending || !chatInput.trim()}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>
