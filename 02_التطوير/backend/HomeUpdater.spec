@@ -39,6 +39,10 @@ tmp_ret = collect_all('winrm')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('sspilib')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# --- AI Advisor (Anthropic SDK) ---
+tmp_ret = collect_all('anthropic')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports += ['jiter', 'distro', 'sniffio']
 
 
 a = Analysis(

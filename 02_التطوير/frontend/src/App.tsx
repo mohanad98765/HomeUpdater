@@ -18,6 +18,7 @@ import {
   House,
   Terminal,
   MonitorDown,
+  Sparkles,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -29,6 +30,7 @@ import { SecurityPage } from "@/pages/SecurityPage";
 import { HomeAssistantPage } from "@/pages/HomeAssistantPage";
 import { LinuxPage } from "@/pages/LinuxPage";
 import { WindowsRemotePage } from "@/pages/WindowsRemotePage";
+import { AdvisorPage } from "@/pages/AdvisorPage";
 
 // ================================================================
 // محدِّث المنزل — App shell + navigation
@@ -54,7 +56,8 @@ type Page =
   | "security"
   | "homeassistant"
   | "linux"
-  | "winrm";
+  | "winrm"
+  | "advisor";
 
 function App() {
   const { t } = useTranslation();
@@ -152,6 +155,12 @@ function App() {
               icon={MonitorDown}
               label={t("nav.winrm")}
             />
+            <NavTab
+              active={page === "advisor"}
+              onClick={() => setPage("advisor")}
+              icon={Sparkles}
+              label={t("nav.advisor")}
+            />
           </nav>
 
           <div className="flex items-center gap-2">
@@ -182,6 +191,7 @@ function App() {
         {page === "homeassistant" && <HomeAssistantPage onBack={() => setPage("dashboard")} />}
         {page === "linux" && <LinuxPage onBack={() => setPage("dashboard")} />}
         {page === "winrm" && <WindowsRemotePage onBack={() => setPage("dashboard")} />}
+        {page === "advisor" && <AdvisorPage onBack={() => setPage("dashboard")} />}
       </main>
 
       {/* التذييل */}

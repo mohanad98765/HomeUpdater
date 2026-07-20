@@ -24,6 +24,7 @@ from .config import settings
 from .db import init_db
 from .logging_setup import setup_logging
 from .routers import (
+    advisor,
     android,
     devices,
     homeassistant,
@@ -210,6 +211,7 @@ app.include_router(security.router, prefix="/api/security", tags=["Security"])
 app.include_router(homeassistant.router, prefix="/api/homeassistant", tags=["HomeAssistant"])
 app.include_router(ssh.router, prefix="/api/ssh", tags=["SSH"])
 app.include_router(winrm_hosts.router, prefix="/api/winrm", tags=["WinRM"])
+app.include_router(advisor.router, prefix="/api/advisor", tags=["Advisor"])
 
 
 # ─── API welcome (always available) ───────────────────────────────

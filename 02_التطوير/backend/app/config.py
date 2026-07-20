@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     # legitimate UI receives it in its launch URL. Empty (dev/tests) = not enforced.
     session_token: str = ""
 
+    # === AI Advisor (optional) ===
+    # Anthropic API key for the AI Advisor feature (app/services/advisor.py). When
+    # set, the advisor uses Claude to reason over the network scan + CVEs + pending
+    # updates and recommend a prioritized update plan. Empty = feature disabled (the
+    # UI shows a "add your key" prompt). Set HOMEUPDATER_ANTHROPIC_API_KEY.
+    anthropic_api_key: str = ""
+    advisor_model: str = "claude-opus-4-8"
+
     # === Network scan ===
     scan_interval_minutes: int = 30
     scan_subnet: str = "auto"  # 'auto' = detect from network interface

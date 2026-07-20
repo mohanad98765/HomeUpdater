@@ -60,6 +60,10 @@ pywebview==5.4
 pywinrm==0.5.0
 # requests-ntlm / pyspnego / xmltodict come with pywinrm (NTLM auth + WS-Man).
 
+# --- AI Advisor (agentic Claude review of the update posture) ---
+anthropic==0.117.0
+# jiter / distro / sniffio / docstring-parser come with anthropic.
+
 # --- Development & Testing ---
 pytest==8.3.4
 pytest-asyncio==0.25.0
