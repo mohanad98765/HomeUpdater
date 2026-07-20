@@ -108,10 +108,26 @@ app.add_middleware(
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
+def _hostname_only(host: str) -> str:
+    """Strip the :port (and IPv6 brackets) from a Host header value."""
+    if host.startswith("["):  # [::1]:8000 or [::1]
+        return host[1 : host.index("]")] if "]" in host else host[1:]
+    if ":" in host:
+        return host.rsplit(":", 1)[0]
+    return host
+
+
+# The DNS-rebinding defense only cares about the HOSTNAME (an attacker uses a
+# domain that resolves to loopback) — not the port. Checking the hostname alone
+# lets the app run on any auto-selected port (find_free_port) without every
+# request being rejected. Derived from the configured allowlist.
+_ALLOWED_HOSTNAMES = {_hostname_only(h.lower()) for h in settings.allowed_hosts}
+
+
 @app.middleware("http")
 async def security_guard(request: Request, call_next):
     host = (request.headers.get("host") or "").lower()
-    if host and host not in settings.allowed_hosts:
+    if host and _hostname_only(host) not in _ALLOWED_HOSTNAMES:
         logger.warning(f"Rejected request: disallowed Host header {host!r}")
         return JSONResponse(
             status_code=400,
@@ -202,10 +218,15 @@ def run():
     """Run the server (used by `python -m app.main` or run.bat)."""
     import uvicorn
 
+    from .config import find_free_port
+
+    port = find_free_port(settings.port, settings.host)
+    if port != settings.port:
+        logger.info(f"Port {settings.port} busy — using {port} instead")
     uvicorn.run(
         "app.main:app",
         host=settings.host,
-        port=settings.port,
+        port=port,
         reload=settings.reload,
         log_level=settings.log_level.lower(),
     )

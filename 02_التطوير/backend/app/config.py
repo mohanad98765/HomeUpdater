@@ -44,6 +44,29 @@ def get_data_dir() -> Path:
     return data
 
 
+def find_free_port(preferred: int, host: str = "127.0.0.1", span: int = 50) -> int:
+    """Return ``preferred`` if it's bindable, else the next free port after it.
+
+    Prevents the "app fails to load" failure when the default port (8000) is
+    already taken by a leftover/old instance or another program — the app just
+    moves to 8001, 8002, ... instead of shutting down. Falls back to
+    ``preferred`` (and lets uvicorn surface the bind error) only if the whole
+    span is busy.
+    """
+    import socket
+
+    bind_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+    for candidate in range(preferred, preferred + max(1, span)):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+            try:
+                sock.bind((bind_host, candidate))
+                return candidate
+            except OSError:
+                continue
+    return preferred
+
+
 class Settings(BaseSettings):
     """Application settings."""
 

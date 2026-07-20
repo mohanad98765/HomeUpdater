@@ -172,10 +172,13 @@ def main() -> None:
     _ensure_std_streams()  # MUST be first, before uvicorn/loguru/pythonnet
     _mutex = _single_instance_or_exit()  # noqa: F841 — kept alive intentionally
 
-    from app.config import settings
+    from app.config import find_free_port, settings
 
+    # If the configured port is taken (a leftover/old instance, another program),
+    # move to the next free one instead of failing to load.
+    port = find_free_port(settings.port, settings.host)
     ui_host = "127.0.0.1" if settings.host in ("0.0.0.0", "::") else settings.host
-    real_url = f"http://{ui_host}:{settings.port}/"
+    real_url = f"http://{ui_host}:{port}/"
 
     # WebView2 user-data folder must be writable even under Program Files.
     storage = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / APP_NAME / "WebView2"
@@ -186,7 +189,7 @@ def main() -> None:
         storage.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("WEBVIEW2_USER_DATA_FOLDER", str(storage))
 
-    server = _BackgroundServer(settings.host, settings.port, settings.log_level.lower())
+    server = _BackgroundServer(settings.host, port, settings.log_level.lower())
     server.start()
 
     # No native tray sink in the window build; backend notifications simply no-op
@@ -196,7 +199,7 @@ def main() -> None:
         _run_browser_fallback(
             server,
             ui_host,
-            settings.port,
+            port,
             real_url,
             "متصفّح WebView2 غير مثبّت — سيتم فتح الواجهة في المتصفّح.\n"
             "The WebView2 Runtime is required for the native window; "
@@ -232,7 +235,7 @@ def main() -> None:
     def _on_started(win):
         # Runs on a pywebview worker thread once the GUI loop is live.
         try:
-            if _wait_for_port(ui_host, settings.port):
+            if _wait_for_port(ui_host, port):
                 win.load_url(real_url)
             else:
                 _msgbox(
@@ -258,7 +261,7 @@ def main() -> None:
         _run_browser_fallback(
             server,
             ui_host,
-            settings.port,
+            port,
             real_url,
             f"تعذّر فتح النافذة الأصلية — سيتم الفتح في المتصفّح.\n"
             f"Failed to open the native window ({exc}); opening in your browser instead.",

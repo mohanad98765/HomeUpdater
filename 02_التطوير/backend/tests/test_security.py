@@ -37,3 +37,17 @@ def test_get_requests_do_not_require_csrf_header(client):
     # Reads are exempt from the CSRF header requirement.
     r = client.get("/api/system/version")
     assert r.status_code == 200
+
+
+def test_loopback_host_allowed_on_any_port(client):
+    # The app may auto-select a free port; a loopback Host on a different port
+    # must still pass (the DNS-rebinding check is hostname-only, port-agnostic).
+    r = client.get("/api/system/health", headers={"host": "127.0.0.1:8137"})
+    assert r.status_code == 200
+    r2 = client.get("/api/system/health", headers={"host": "localhost:9042"})
+    assert r2.status_code == 200
+
+
+def test_nonloopback_host_still_rejected_regardless_of_port(client):
+    r = client.get("/api/system/health", headers={"host": "evil.com:8000"})
+    assert r.status_code == 400

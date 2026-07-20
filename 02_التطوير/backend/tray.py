@@ -86,11 +86,14 @@ def main() -> None:
 
     import pystray
 
-    from app.config import settings
+    from app.config import find_free_port, settings
     from app.services import notifications
 
-    url = f"http://{settings.host}:{settings.port}/"
-    server = _BackgroundServer(settings.host, settings.port, settings.log_level.lower())
+    # Move to the next free port if the default is taken, so the app still loads.
+    port = find_free_port(settings.port, settings.host)
+    ui_host = "127.0.0.1" if settings.host in ("0.0.0.0", "::") else settings.host
+    url = f"http://{ui_host}:{port}/"
+    server = _BackgroundServer(settings.host, port, settings.log_level.lower())
     server.start()
 
     def _open(*_):
@@ -120,10 +123,9 @@ def main() -> None:
         import socket
         import time
 
-        host, port = settings.host, settings.port
         for _ in range(80):  # up to ~8s
             try:
-                with socket.create_connection((host, port), timeout=0.2):
+                with socket.create_connection((ui_host, port), timeout=0.2):
                     break
             except OSError:
                 time.sleep(0.1)
