@@ -90,11 +90,11 @@ function App() {
 
       {/* الرأس */}
       <header className="bg-surface border-b border-border shadow-sm sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+        <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <button
             type="button"
             onClick={() => setPage("dashboard")}
-            className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0"
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0 flex-shrink-0"
           >
             <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
               <Cpu className="w-6 h-6 text-primary-fg" />
@@ -106,7 +106,7 @@ function App() {
           </button>
 
           {/* Nav tabs */}
-          <nav className="hidden md:flex items-center gap-1 bg-surface-2 rounded-lg p-1">
+          <nav className="hidden md:flex items-center gap-1 bg-surface-2 rounded-lg p-1 min-w-0 overflow-x-auto no-scrollbar">
             <NavTab
               active={page === "dashboard"}
               onClick={() => setPage("dashboard")}
@@ -163,7 +163,7 @@ function App() {
             />
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <ConnectionIndicator
               isLoading={health.isLoading}
               isError={health.isError}

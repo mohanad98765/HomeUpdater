@@ -266,3 +266,10 @@
   .badge-danger  { background: rgb(var(--color-danger)  / 0.15); color: rgb(var(--color-danger)); }
   .badge-info    { background: rgb(var(--color-info)    / 0.15); color: rgb(var(--color-info)); }
 }
+
+@layer utilities {
+  /* Hide the scrollbar while keeping the element scrollable (e.g. the nav on
+     narrow windows) so an overflowing nav never clips the logo/controls. */
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
