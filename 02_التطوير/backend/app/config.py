@@ -90,7 +90,10 @@ class Settings(BaseSettings):
     database_url: str = ""  # filled from data dir below
 
     # === Security ===
-    encryption_passphrase: str = ""  # set on first run
+    # Optional passphrase for at-rest credential encryption (crypto.py). If set,
+    # the Fernet key is derived from it (PBKDF2); if blank, a machine-bound key
+    # file is used instead (DPAPI-wrapped on Windows). Set HOMEUPDATER_ENCRYPTION_PASSPHRASE.
+    encryption_passphrase: str = ""
 
     # === Network scan ===
     scan_interval_minutes: int = 30

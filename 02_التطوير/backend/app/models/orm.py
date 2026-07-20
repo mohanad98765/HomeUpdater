@@ -15,6 +15,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+from ..crypto import decrypt, encrypt
 
 
 class Base(DeclarativeBase):
@@ -23,6 +26,24 @@ class Base(DeclarativeBase):
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class EncryptedString(TypeDecorator):
+    """A Text column whose value is encrypted at rest (Fernet).
+
+    Stored as ciphertext in SQLite, transparently decrypted to plaintext on read.
+    The SQL type stays TEXT, so no migration is needed. Legacy plaintext values
+    pass through unchanged on read and get encrypted on the next write.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return encrypt(value) if value else value
+
+    def process_result_value(self, value, dialect):
+        return decrypt(value) if value else value
 
 
 class DeviceORM(Base):
@@ -241,7 +262,7 @@ class HAConfigORM(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
     base_url: Mapped[str] = mapped_column(String(255), default="")
-    token: Mapped[str] = mapped_column(Text, default="")  # TODO(O.5): encrypt at rest
+    token: Mapped[str] = mapped_column(EncryptedString, default="")  # encrypted at rest (O.5)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -264,7 +285,7 @@ class SSHHostORM(Base):
     host: Mapped[str] = mapped_column(String(128), index=True)
     port: Mapped[int] = mapped_column(Integer, default=22)
     username: Mapped[str] = mapped_column(String(64), default="")
-    password: Mapped[str] = mapped_column(Text, default="")  # TODO(O.5): encrypt at rest
+    password: Mapped[str] = mapped_column(EncryptedString, default="")  # encrypted at rest (O.5)
     custom_name: Mapped[str] = mapped_column(String(255), default="")
 
     # Filled by probe
@@ -303,7 +324,7 @@ class WinRMHostORM(Base):
     host: Mapped[str] = mapped_column(String(128), index=True)
     port: Mapped[int] = mapped_column(Integer, default=5985)
     username: Mapped[str] = mapped_column(String(128), default="")
-    password: Mapped[str] = mapped_column(Text, default="")  # TODO(O.5): encrypt at rest
+    password: Mapped[str] = mapped_column(EncryptedString, default="")  # encrypted at rest (O.5)
     use_https: Mapped[bool] = mapped_column(Boolean, default=False)
     transport: Mapped[str] = mapped_column(String(16), default="ntlm")  # ntlm | kerberos | basic
     custom_name: Mapped[str] = mapped_column(String(255), default="")
