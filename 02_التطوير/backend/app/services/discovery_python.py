@@ -14,11 +14,13 @@ import asyncio
 import ipaddress
 import socket
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from loguru import logger
 
+from .adaptive_timeout import AdaptiveNetworkTimeout, backoff_with_jitter
 from .mac_vendor import enrich_vendor
 from .network_utils import classify_device, get_network_info, normalize_mac
 from .progress import scan_progress
@@ -26,11 +28,35 @@ from .progress import scan_progress
 MAX_SWEEP_HOSTS = 1024
 PROBE_CONCURRENCY = 256
 PROBE_PORT = 80
-# 1.2s (was 0.4s): a phone in Wi-Fi power-save only wakes its radio at DTIM
-# intervals, so it misses a 0.4s single-shot window but answers within ~1.2s +
-# a second pass. This is the main reason phones dropped out of the pure-Python
-# scan vs. nmap (which retries with a ~1.5s RTT timeout).
-PROBE_TIMEOUT = 1.2
+
+# The per-host probe deadline is no longer a fixed constant. It's a
+# Jacobson-Karels RTO learned from the live hosts that actually answer on this
+# subnet (SYN-ACK or RST), clamped to [PROBE_FLOOR, PROBE_CEIL]. A fast LAN then
+# times out dead IPs quickly instead of always waiting the old 1.2s.
+PROBE_FLOOR = 0.5
+PROBE_CEIL = 2.5
+PROBE_INITIAL = 1.2  # cold-start guess == the old fixed timeout, so day-one behaviour is unchanged
+# A phone in Wi-Fi power-save only wakes its radio at DTIM intervals, so it can
+# miss the fast first pass. The retry pass gives every non-responder a widened,
+# jittered window (>= this) so sleepers still answer — and de-synchronizes them.
+SECOND_PASS_MIN = 1.5
+
+# Per-subnet (CIDR) RTO estimators. In-memory for now; persistence warms these
+# across runs so a repeat scan starts from the measured value, not the cold guess.
+_PROBE_ESTIMATORS: dict[str, AdaptiveNetworkTimeout] = {}
+
+
+def _probe_estimator(target: str) -> AdaptiveNetworkTimeout:
+    """Get (or lazily create) the RTO estimator for this subnet."""
+    cidr = str(ipaddress.IPv4Network(target, strict=False))
+    est = _PROBE_ESTIMATORS.get(cidr)
+    if est is None:
+        est = AdaptiveNetworkTimeout(
+            rto_min=PROBE_FLOOR, rto_max=PROBE_CEIL, rto_initial=PROBE_INITIAL
+        )
+        _PROBE_ESTIMATORS[cidr] = est
+    return est
+
 
 # Dedicated pool for reverse-DNS: gethostbyaddr threads for PTR-less hosts run
 # the full ~3s and can't be cancelled, so they must NOT share the default
@@ -60,25 +86,45 @@ def _hosts_to_sweep(target: str) -> tuple[list[str], str]:
     return capped, f"شبكة كبيرة — قصر المسح على أول {MAX_SWEEP_HOSTS} عنوان"
 
 
-async def _probe(ip: str, sem: asyncio.Semaphore) -> None:
+def _probe_deadline(est: AdaptiveNetworkTimeout, second_pass: bool) -> float:
+    """Per-probe timeout. First pass: the learned RTO (fast). Second pass:
+    a widened, jittered window (>= SECOND_PASS_MIN) so a power-save phone that
+    missed the fast first pass is still caught — the DTIM-capture guarantee."""
+    if second_pass:
+        return max(SECOND_PASS_MIN, est.current()) + backoff_with_jitter(1, base=0.3, cap=0.6)
+    return est.current()
+
+
+async def _probe(
+    ip: str, sem: asyncio.Semaphore, est: AdaptiveNetworkTimeout, second_pass: bool
+) -> None:
     async with sem:
+        # Read lazily (after acquiring the sem) so later probes in a wave see the
+        # learning from earlier ones.
+        timeout = _probe_deadline(est, second_pass)
+        start = time.monotonic()
         try:
             _, writer = await asyncio.wait_for(
-                asyncio.open_connection(ip, PROBE_PORT), timeout=PROBE_TIMEOUT
+                asyncio.open_connection(ip, PROBE_PORT), timeout=timeout
             )
+            est.on_sample(time.monotonic() - start)  # live host answered: a real RTT
             writer.close()
             try:
                 await writer.wait_closed()
             except Exception:
                 pass
+        except ConnectionRefusedError:
+            # RST is also a completed round-trip to a live host — a clean sample.
+            est.on_sample(time.monotonic() - start)
         except Exception:
-            # Any outcome is fine — sending the SYN already populated the ARP cache.
+            # Timeout / unreachable: the SYN already populated the ARP cache, but
+            # this is not a clean RTT sample (mostly just "no host at this IP").
             pass
 
 
-async def _sweep(hosts: list[str]) -> None:
+async def _sweep(hosts: list[str], est: AdaptiveNetworkTimeout, second_pass: bool = False) -> None:
     sem = asyncio.Semaphore(PROBE_CONCURRENCY)
-    tasks = [asyncio.create_task(_probe(h, sem)) for h in hosts]
+    tasks = [asyncio.create_task(_probe(h, sem, est, second_pass)) for h in hosts]
     done = 0
     for fut in asyncio.as_completed(tasks):
         await fut
@@ -173,10 +219,11 @@ def _local_device() -> dict[str, Any] | None:
 async def discover_python(target: str) -> list[dict[str, Any]]:
     """Discover live hosts on ``target`` without nmap. Updates scan_progress."""
     hosts, note = _hosts_to_sweep(target)
+    est = _probe_estimator(target)
     if note:
         scan_progress.set_phase("scanning", note)
     scan_progress.set_phase("scanning", f"مسح {len(hosts)} عنواناً (Python: TCP + ARP، بلا nmap)")
-    await _sweep(hosts)
+    await _sweep(hosts, est)
     arp = _read_arp_table()
 
     # Second pass over hosts that didn't answer the first (short) window —
@@ -186,7 +233,7 @@ async def discover_python(target: str) -> list[dict[str, Any]]:
         scan_progress.set_phase(
             "scanning", f"تمريرة ثانية لـ {len(missing)} عنواناً لم يردّ (أجهزة قد تكون نائمة)"
         )
-        await _sweep(missing)
+        await _sweep(missing, est, second_pass=True)
         arp = {**arp, **_read_arp_table()}
 
     scan_progress.set_phase("resolving", "قراءة جدول ARP وحلّ الأسماء")
