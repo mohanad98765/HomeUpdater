@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from loguru import logger
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -23,6 +24,25 @@ from .models.orm import Base  # noqa: F401  (imported so metadata is registered)
 
 # echo=False: keep SQL out of logs unless debugging
 engine = create_async_engine(settings.database_url, echo=False, future=True)
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record) -> None:
+    """Make SQLite tolerate real concurrency. Request handlers, the background
+    scan's own session, the advisor apply, and CVE-cache writes all write to the
+    one file — on the default rollback journal with a 0ms busy timeout, any
+    overlap raises "database is locked" (surfaced as an opaque 500). WAL lets
+    readers run alongside a writer, and busy_timeout makes a briefly-locked
+    writer wait-and-retry instead of failing instantly."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")  # ms
+        cur.execute("PRAGMA synchronous=NORMAL")  # safe with WAL, far fewer fsyncs
+    finally:
+        cur.close()
 
 SessionLocal = async_sessionmaker(
     bind=engine,
