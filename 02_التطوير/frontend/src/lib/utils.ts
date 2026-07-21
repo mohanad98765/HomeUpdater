@@ -109,8 +109,28 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     }
     const errorBody = await res.json().catch(() => ({}));
     // Backend HTTPException serializes as {"detail": ...}; the global handler
-    // uses {"error": ...}. Read both so the user sees the real message.
-    throw new Error(errorBody.detail || errorBody.error || `HTTP ${res.status}`);
+    // uses {"error": ...}. `detail` is usually a string, but some endpoints
+    // (e.g. the advisor consent gate) return a structured object — coerce to a
+    // readable string so `.message` stays useful, and expose the raw body +
+    // status so callers can branch on structured errors (like consent_required).
+    const detail = errorBody?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : detail && typeof detail === "object"
+          ? detail.message || detail.message_en || detail.error || `HTTP ${res.status}`
+          : errorBody?.error || `HTTP ${res.status}`;
+    const err = new Error(message) as ApiError;
+    err.status = res.status;
+    err.body = errorBody;
+    throw err;
   }
   return res.json() as Promise<T>;
+}
+
+/** Error thrown by {@link apiFetch}. Carries the HTTP status and parsed body so
+ * callers can branch on structured backend errors (not just the message). */
+export interface ApiError extends Error {
+  status?: number;
+  body?: unknown;
 }

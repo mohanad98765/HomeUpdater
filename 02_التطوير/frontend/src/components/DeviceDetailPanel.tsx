@@ -23,6 +23,8 @@ export interface Device {
   display_name: string;
   first_seen: string | null;
   last_seen: string | null;
+  // T15 — false for routers/TVs/IoT/unknown that HomeUpdater can't update directly.
+  manageable?: boolean;
 }
 
 export function DeviceDetailPanel({
@@ -167,6 +169,13 @@ export function DeviceDetailPanel({
                     <span className="badge badge-danger">{t("status.offline")}</span>
                   )}
                 </Row>
+                {device.manageable === false && (
+                  <Row label={t("detail.management")}>
+                    <span className="badge bg-fg-muted/10 text-fg-muted">
+                      {t("devices.notManaged")}
+                    </span>
+                  </Row>
+                )}
                 <Row label={t("detail.deviceId")}>
                   <span className="font-mono text-xs text-fg-muted" dir="ltr">
                     #{device.id}

@@ -13,9 +13,19 @@ import {
   MessageSquare,
   Send,
   FileText,
+  ShieldCheck,
 } from "lucide-react";
-import { apiFetch, cn } from "@/lib/utils";
+import { apiFetch, cn, type ApiError } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
+
+// A 403 from analyze/chat means the T11 data-sharing consent hasn't been given
+// (or was revoked). Detect it so we can open the consent modal instead of
+// showing a raw "[object]" error.
+function isConsentError(err: unknown): boolean {
+  const e = err as ApiError | undefined;
+  const detail = (e?.body as { detail?: { error?: string } } | undefined)?.detail;
+  return e?.status === 403 && detail?.error === "consent_required";
+}
 
 // ================================================================
 // صفحة المستشار الذكي — تحليل agentic عبر Claude لأولويات التحديث
@@ -25,6 +35,12 @@ interface AdvisorStatus {
   configured: boolean;
   model: string;
   env: boolean;
+  consented: boolean;
+}
+interface ConsentText {
+  ar: string;
+  en: string;
+  consented: boolean;
 }
 interface AdvisorAction {
   type: "app" | "windows";
@@ -62,11 +78,17 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
   const [keyInput, setKeyInput] = useState("");
   const [chatMsgs, setChatMsgs] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
+  // T11 — data-sharing consent gate: the modal shown before the first cloud call.
+  const [showConsent, setShowConsent] = useState(false);
 
   const status = useQuery<AdvisorStatus>({
     queryKey: ["advisor-status"],
     queryFn: () => apiFetch<AdvisorStatus>("/api/advisor/status"),
   });
+
+  const configured = !!status.data?.configured;
+  const consented = configured && status.data?.consented === true;
+  const needsConsent = configured && status.data?.consented === false;
 
   // Defined before `analyze` so a new analysis can reset its stale result.
   const apply = useMutation<ApplyResult, Error, AdvisorAction[]>({
@@ -86,6 +108,10 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
     // A fresh analysis produces a new plan — clear the previous apply result so
     // the old "Applied N" line + hidden button don't stick to the new plan.
     onMutate: () => apply.reset(),
+    // Consent revoked mid-session (or never given) → open the gate, not an error.
+    onError: (err) => {
+      if (isConsentError(err)) setShowConsent(true);
+    },
   });
 
   const saveKey = useMutation({
@@ -104,15 +130,58 @@ export function AdvisorPage({ onBack }: { onBack: () => void }) {
         body: JSON.stringify({ messages: msgs }),
       }),
     onSuccess: (data, msgs) => setChatMsgs([...msgs, { role: "assistant", content: data.reply }]),
+    onError: (err) => {
+      if (isConsentError(err)) setShowConsent(true);
+    },
   });
   const sendChat = () => {
     const q = chatInput.trim();
     if (!q || chat.isPending) return;
+    // Gate on consent before sending anything to the cloud.
+    if (needsConsent) {
+      setShowConsent(true);
+      return;
+    }
     const next = [...chatMsgs, { role: "user" as const, content: q }];
     setChatMsgs(next);
     setChatInput("");
     chat.mutate(next);
   };
+
+  // T11 — consent text + record/revoke. The text query is enabled once the
+  // advisor is configured so the modal has content ready when it opens.
+  const consentText = useQuery<ConsentText>({
+    queryKey: ["advisor-consent-text"],
+    queryFn: () => apiFetch<ConsentText>("/api/advisor/consent-text"),
+    enabled: configured,
+  });
+
+  const consent = useMutation<{ consented: boolean }, Error, boolean>({
+    mutationFn: (value) =>
+      apiFetch<{ consented: boolean }>("/api/advisor/consent", {
+        method: "POST",
+        body: JSON.stringify({ consented: value }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["advisor-status"] });
+      qc.invalidateQueries({ queryKey: ["advisor-consent-text"] });
+    },
+  });
+
+  // Analyze is only allowed after consent; otherwise open the gate first.
+  const requestAnalyze = () => {
+    if (needsConsent) {
+      setShowConsent(true);
+      return;
+    }
+    analyze.mutate();
+  };
+  const acceptConsent = () => consent.mutate(true, { onSuccess: () => setShowConsent(false) });
+
+  // Consent statement in the current language (ar/ur → Arabic, else English).
+  const consentBody = i18n.language.startsWith("ar")
+    ? consentText.data?.ar
+    : consentText.data?.en;
 
   // Export the AI's analysis as a printable/Save-as-PDF report. Uses a hidden
   // iframe so ONLY the report prints (not the app), and the browser renders
@@ -164,8 +233,6 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
     if (window.confirm(`${t("pages.advisor.applyConfirm")}\n\n${list}`)) apply.mutate(topActions);
   };
 
-  const configured = !!status.data?.configured;
-
   return (
     <div className="max-w-3xl mx-auto px-6 py-8">
       {/* header */}
@@ -188,15 +255,44 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
       <div className="card mb-6">
         <p className="text-sm text-fg-muted mb-4">{t("pages.advisor.intro")}</p>
         {configured ? (
-          <button
-            type="button"
-            onClick={() => analyze.mutate()}
-            disabled={analyze.isPending}
-            className="btn-primary inline-flex items-center gap-2"
-          >
-            {analyze.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {analyze.isPending ? t("pages.advisor.analyzing") : t("pages.advisor.analyze")}
-          </button>
+          <>
+            {needsConsent ? (
+              // Consent gate — analysis/chat stay locked until the user accepts.
+              <div className="p-3 rounded-lg border border-warning/30 bg-warning/10">
+                <p className="text-sm text-fg-muted mb-3">{t("pages.advisor.consentRequired")}</p>
+                <button
+                  type="button"
+                  onClick={() => setShowConsent(true)}
+                  className="btn-primary inline-flex items-center gap-2"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  {t("pages.advisor.consentReview")}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={requestAnalyze}
+                disabled={analyze.isPending}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                {analyze.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {analyze.isPending ? t("pages.advisor.analyzing") : t("pages.advisor.analyze")}
+              </button>
+            )}
+            {consented && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => consent.mutate(false)}
+                  disabled={consent.isPending}
+                  className="text-xs text-fg-subtle hover:text-danger underline underline-offset-2 transition-colors"
+                >
+                  {t("pages.advisor.revokeConsent")}
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -230,7 +326,7 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
         )}
       </div>
 
-      {analyze.isError && (
+      {analyze.isError && !isConsentError(analyze.error) && (
         <div className="mb-6 p-4 rounded-lg border border-danger/30 bg-danger/10 text-danger text-sm">
           {t("pages.advisor.failed")} {analyze.error.message}
         </div>
@@ -347,7 +443,7 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
               )}
             </div>
           )}
-          {chat.isError && (
+          {chat.isError && !isConsentError(chat.error) && (
             <p className="text-sm text-danger mb-2">
               {t("pages.advisor.failed")} {chat.error.message}
             </p>
@@ -369,6 +465,55 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
             >
               <Send className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* T11 — data-sharing consent modal (shown before the first cloud call, or
+          when analyze/chat return 403 consent_required). */}
+      {showConsent && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setShowConsent(false)}
+        >
+          <div
+            className="card max-w-lg w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck className="w-5 h-5 text-primary" />
+              <h3 className="font-bold">{t("pages.advisor.consentTitle")}</h3>
+            </div>
+            <div className="text-sm text-fg-muted whitespace-pre-wrap leading-relaxed mb-4">
+              {consentBody || t("pages.advisor.consentLoading")}
+            </div>
+            {consent.isError && (
+              <p className="mb-3 text-sm text-danger">
+                {t("pages.advisor.failed")} {consent.error.message}
+              </p>
+            )}
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowConsent(false)}
+                className="btn-secondary"
+              >
+                {t("pages.advisor.consentDecline")}
+              </button>
+              <button
+                type="button"
+                onClick={acceptConsent}
+                disabled={consent.isPending || !consentBody}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                {consent.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                {t("pages.advisor.consentAccept")}
+              </button>
+            </div>
           </div>
         </div>
       )}

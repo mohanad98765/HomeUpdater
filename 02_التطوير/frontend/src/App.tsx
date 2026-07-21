@@ -19,6 +19,7 @@ import {
   Terminal,
   MonitorDown,
   Sparkles,
+  X,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -47,6 +48,13 @@ interface VersionResponse {
   version: string;
   build: string;
 }
+interface UpdateCheck {
+  current: string;
+  latest: string | null;
+  update_available: boolean;
+  url: string | null;
+  checked: boolean;
+}
 
 type Page =
   | "dashboard"
@@ -62,6 +70,8 @@ type Page =
 function App() {
   const { t } = useTranslation();
   const [page, setPage] = useState<Page>("dashboard");
+  // T4 — dismiss the "newer version available" banner for this session.
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   const health = useQuery<HealthResponse>({
     queryKey: ["health"],
@@ -74,6 +84,19 @@ function App() {
     queryFn: () => apiFetch<VersionResponse>("/api/system/version"),
   });
 
+  // T4 — one-shot check for a newer signed release. Fail-soft: never retry, and
+  // if the check didn't run (offline/error → checked=false) we render nothing.
+  const updateCheck = useQuery<UpdateCheck>({
+    queryKey: ["update-check"],
+    queryFn: () => apiFetch<UpdateCheck>("/api/system/update-check"),
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const update = updateCheck.data;
+  const showUpdateBanner =
+    !updateDismissed && !!update?.checked && update.update_available && !!update.url;
+
   // Only development builds carry the test banner; a release build hides it.
   const isTest = health.data?.build_mode === "test";
 
@@ -85,6 +108,30 @@ function App() {
           <FlaskConical className="w-4 h-4" />
           <span>{t("banner.testMode")}</span>
           <FlaskConical className="w-4 h-4" />
+        </div>
+      )}
+
+      {/* T4 — شارة توفّر إصدار أحدث (تنبيه + رابط فقط، لا تنزيل تلقائي) */}
+      {showUpdateBanner && (
+        <div className="bg-primary text-primary-fg px-4 py-2 text-sm font-medium flex items-center justify-center gap-3 shadow-md">
+          <Download className="w-4 h-4 flex-shrink-0" />
+          <span>{t("banner.updateAvailable", { latest: update!.latest })}</span>
+          <a
+            href={update!.url!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-bold hover:opacity-80"
+          >
+            {t("banner.updateDownload")}
+          </a>
+          <button
+            type="button"
+            onClick={() => setUpdateDismissed(true)}
+            className="ms-1 rounded p-0.5 hover:bg-black/10 transition-colors"
+            aria-label={t("banner.dismiss")}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 

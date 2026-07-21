@@ -571,11 +571,18 @@ function DeviceTable({
                   {d.vendor || "—"}
                 </td>
                 <td className="px-4 py-3">
-                  {d.status === "online" ? (
-                    <span className="badge badge-success">{t("status.online")}</span>
-                  ) : (
-                    <span className="badge badge-danger">{t("status.offline")}</span>
-                  )}
+                  <div className="flex flex-col items-start gap-1">
+                    {d.status === "online" ? (
+                      <span className="badge badge-success">{t("status.online")}</span>
+                    ) : (
+                      <span className="badge badge-danger">{t("status.offline")}</span>
+                    )}
+                    {d.manageable === false && (
+                      <span className="badge bg-fg-muted/10 text-fg-muted whitespace-nowrap">
+                        {t("devices.notManaged")}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-2 py-3 text-fg-subtle">
                   <Chevron className="w-4 h-4" />
