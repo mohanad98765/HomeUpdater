@@ -44,12 +44,37 @@ def _sqlite_pragmas(dbapi_conn, _record) -> None:
     finally:
         cur.close()
 
+
 SessionLocal = async_sessionmaker(
     bind=engine,
     expire_on_commit=False,
     autoflush=False,
     class_=AsyncSession,
 )
+
+
+def _backup_db(sync_url: str) -> None:
+    """Snapshot the SQLite file before a migration mutates it, keeping the newest
+    few backups. A migration that fails mid-way can then be restored by hand
+    instead of leaving the user with a corrupt DB and no recourse. Best-effort."""
+    import shutil
+    import time
+
+    path_part = sync_url.replace("sqlite:///", "")
+    if not path_part or path_part == ":memory:":
+        return  # in-memory (tests) — nothing to back up
+    db_path = Path(path_part)
+    if not db_path.is_file() or db_path.stat().st_size == 0:
+        return
+    try:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(db_path, db_path.with_name(f"{db_path.name}.bak-{stamp}"))
+        backups = sorted(db_path.parent.glob(f"{db_path.name}.bak-*"))
+        for old in backups[:-3]:  # keep the 3 most recent
+            old.unlink(missing_ok=True)
+        logger.info(f"DB snapshot taken before migration ({db_path.name}.bak-{stamp})")
+    except OSError as exc:  # never block startup on a backup failure
+        logger.warning(f"DB pre-migration backup failed: {exc}")
 
 
 def _run_migrations() -> None:
@@ -60,6 +85,7 @@ def _run_migrations() -> None:
       * Alembic-managed DB -> `upgrade head` applies any new revisions.
       * legacy create_all DB (tables exist, no alembic_version) -> `stamp head`,
         because a create_all schema already matches the current models.
+    An existing DB is snapshotted first so a failed migration is recoverable.
     """
     from sqlalchemy import create_engine, inspect
 
@@ -76,6 +102,9 @@ def _run_migrations() -> None:
         tables = set(inspect(probe).get_table_names())
     finally:
         probe.dispose()
+
+    if tables:  # an existing DB — snapshot before any schema change
+        _backup_db(sync_url)
 
     if "devices" in tables and "alembic_version" not in tables:
         # A legacy create_all DB only has the ORIGINAL tables. Stamping *head*

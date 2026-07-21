@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..services import advisor
 from ..services.update_progress import update_progress
 
 router = APIRouter()
+
+# Strong refs to in-flight apply tasks so they aren't GC'd, and so a closed
+# WebView2 window (client disconnect) can't cancel a half-finished install.
+_apply_tasks: set[asyncio.Task] = set()
+
+
+async def _run_apply_bg(actions: list[dict]) -> dict:
+    """Run the plan on its OWN DB session and release the update slot when done —
+    NOT tied to the request, so a client disconnect can't strand a partial install
+    or leak the slot."""
+    try:
+        async with SessionLocal() as db:
+            return await advisor.apply_plan(db, actions)
+    finally:
+        update_progress.release()
 
 
 class AnalyzeRequest(BaseModel):
@@ -88,15 +105,20 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)) -> dict:
 
 
 @router.post("/apply")
-async def apply(body: ApplyRequest, db: AsyncSession = Depends(get_db)) -> dict:
+async def apply(body: ApplyRequest) -> dict:
     """Apply the advisor's plan — installs ONLY pending updates (validated in the
-    service). Shares the single update slot so it can't race the Updates page."""
+    service). Shares the single update slot so it can't race the Updates page.
+
+    The install runs as a background task with its own DB session; we shield-await
+    it so the response is unchanged for a connected client, but if the window is
+    closed mid-install the task keeps running to completion and releases the slot
+    itself (no partial install, no wedged 409 gate)."""
     actions = [a.model_dump() for a in body.actions][:10]
     if not actions:
         raise HTTPException(status_code=400, detail="No actions to apply.")
     if not update_progress.try_claim("install"):
         raise HTTPException(status_code=409, detail="Another update operation is running.")
-    try:
-        return await advisor.apply_plan(db, actions)
-    finally:
-        update_progress.release()
+    task = asyncio.create_task(_run_apply_bg(actions))
+    _apply_tasks.add(task)
+    task.add_done_callback(_apply_tasks.discard)
+    return await asyncio.shield(task)

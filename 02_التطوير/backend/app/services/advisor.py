@@ -10,7 +10,9 @@ model asks for — the tools run entirely against the local database.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from typing import Any
 
 from loguru import logger
@@ -35,6 +37,14 @@ class AdvisorError(Exception):
 
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
 _KEY_FILE = "advisor_key.enc"
+
+# Cost/latency guards for the (expensive) agentic calls.
+_REQUEST_TIMEOUT = 120.0  # per Claude API request (seconds)
+_AGENT_DEADLINE = 300.0  # whole tool-use loop across all rounds (seconds)
+_MAX_ROUNDS = 8  # cap the agentic loop
+# Serialize analyze/chat so repeated clicks can't stack parallel opus calls
+# (each bounded above). A second concurrent request is rejected, not queued.
+_advisor_lock = asyncio.Lock()
 
 
 def get_api_key() -> str:
@@ -302,7 +312,10 @@ async def _run_agent(
     """
     trace: list[dict] = []
     plan: list[dict] = []  # structured applicable actions from the set_plan tool
-    for _ in range(8):  # cap the agentic loop
+    deadline = time.monotonic() + _AGENT_DEADLINE  # overall bound across all rounds
+    for _ in range(_MAX_ROUNDS):  # cap the agentic loop
+        if time.monotonic() > deadline:
+            raise AdvisorError("انتهت مهلة المستشار — حاول مجدّدًا / Advisor timed out.")
         resp = await client.messages.create(
             model=settings.advisor_model,
             max_tokens=8192,
@@ -365,7 +378,7 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
 
     import anthropic
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = anthropic.AsyncAnthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT, max_retries=2)
     ar = lang_hint.startswith("ar")
     user_msg = (
         "Review my home network's update posture and give me a prioritized action plan: "
@@ -373,11 +386,14 @@ async def analyze(db: AsyncSession, lang_hint: str = "en") -> dict:
         + ("Respond in Arabic." if ar else "Respond in English.")
     )
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_msg}]
-    try:
-        r = await _run_agent(db, client, _SYSTEM, _TOOLS, messages, capture_plan=True)
-    except anthropic.APIError as exc:
-        logger.error(f"Advisor API error: {exc}")
-        raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
+    if _advisor_lock.locked():
+        raise AdvisorError("المستشار مشغول بطلب آخر — انتظر لحظة / Advisor is busy.")
+    async with _advisor_lock:
+        try:
+            r = await _run_agent(db, client, _SYSTEM, _TOOLS, messages, capture_plan=True)
+        except anthropic.APIError as exc:
+            logger.error(f"Advisor API error: {exc}")
+            raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
     return {
         "recommendations": r["text"],
         "trace": r["trace"],
@@ -425,12 +441,17 @@ async def chat(db: AsyncSession, history: list[dict]) -> dict:
 
     import anthropic
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    try:
-        r = await _run_agent(db, client, _CHAT_SYSTEM, _READ_TOOLS, messages, capture_plan=False)
-    except anthropic.APIError as exc:
-        logger.error(f"Advisor chat API error: {exc}")
-        raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
+    client = anthropic.AsyncAnthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT, max_retries=2)
+    if _advisor_lock.locked():
+        raise AdvisorError("المستشار مشغول بطلب آخر — انتظر لحظة / Advisor is busy.")
+    async with _advisor_lock:
+        try:
+            r = await _run_agent(
+                db, client, _CHAT_SYSTEM, _READ_TOOLS, messages, capture_plan=False
+            )
+        except anthropic.APIError as exc:
+            logger.error(f"Advisor chat API error: {exc}")
+            raise AdvisorError(f"Claude API error: {getattr(exc, 'message', str(exc))}") from exc
     return {"reply": r["text"], "trace": r["trace"], "model": r["model"]}
 
 
