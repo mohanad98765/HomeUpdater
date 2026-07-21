@@ -46,7 +46,7 @@ httpx==0.28.1
 
 # --- SSH (Linux host updates) ---
 asyncssh==2.18.0
-cryptography==44.0.0  # required by asyncssh
+cryptography==49.0.0  # required by asyncssh
 
 # --- Windows Native Integration (WUA COM API + tray icon) ---
 pywin32==308; sys_platform == "win32"
