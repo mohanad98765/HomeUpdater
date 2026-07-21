@@ -20,7 +20,7 @@ pydantic-settings==2.6.1
 # --- Database ---
 sqlalchemy==2.0.36
 aiosqlite==0.20.0
-alembic==1.14.0            # migrations (needed for the devices.mac schema change)
+alembic==1.18.5            # migrations (needed for the devices.mac schema change)
 # greenlet is a transitive dep of sqlalchemy[asyncio], but isn't always
 # auto-installed on Python 3.13. Pin it explicitly to avoid the
 # "ValueError: the greenlet library is required" startup crash.
