@@ -226,6 +226,7 @@ function DeviceCard({
             onClick={onRename}
             className="text-fg-muted hover:text-primary transition-colors"
             title={t("android.rename")}
+            aria-label={t("android.rename")}
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -363,6 +364,7 @@ function AddDeviceDialog({
               type="button"
               onClick={onClose}
               className="p-1 rounded-md hover:bg-surface-2 transition-colors"
+              aria-label={t("detail.close")}
             >
               <X className="w-5 h-5" />
             </button>
@@ -376,10 +378,11 @@ function AddDeviceDialog({
 
           {/* Phone IP (shared by pairing + connecting) */}
           <div className="mb-3">
-            <label className="text-xs font-bold text-fg-muted mb-1 block">
+            <label htmlFor="android-ip" className="text-xs font-bold text-fg-muted mb-1 block">
               {t("android.addDialog.ipLabel")}
             </label>
             <input
+              id="android-ip"
               type="text"
               dir="ltr"
               value={host}
@@ -397,8 +400,9 @@ function AddDeviceDialog({
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="text-[11px] text-fg-muted mb-1 block">{t("android.addDialog.pairPortLabel")}</label>
+                <label htmlFor="android-pair-port" className="text-[11px] text-fg-muted mb-1 block">{t("android.addDialog.pairPortLabel")}</label>
                 <input
+                  id="android-pair-port"
                   type="text"
                   dir="ltr"
                   inputMode="numeric"
@@ -409,8 +413,9 @@ function AddDeviceDialog({
                 />
               </div>
               <div className="flex-1">
-                <label className="text-[11px] text-fg-muted mb-1 block">{t("android.addDialog.pairCodeLabel")}</label>
+                <label htmlFor="android-pair-code" className="text-[11px] text-fg-muted mb-1 block">{t("android.addDialog.pairCodeLabel")}</label>
                 <input
+                  id="android-pair-code"
                   type="text"
                   dir="ltr"
                   inputMode="numeric"
@@ -457,11 +462,12 @@ function AddDeviceDialog({
 
           {/* Connect port + auto-discover + add */}
           <div className="mb-2">
-            <label className="text-xs font-bold text-fg-muted mb-1 block">
+            <label htmlFor="android-connect-port" className="text-xs font-bold text-fg-muted mb-1 block">
               {t("android.addDialog.portLabel")}
             </label>
             <div className="flex gap-2">
               <input
+                id="android-connect-port"
                 type="number"
                 dir="ltr"
                 value={port}
@@ -607,11 +613,12 @@ function AppsView({
         <div className="card !p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              <caption className="sr-only">{t("android.apps.title", { name: device.display_name })}</caption>
               <thead className="bg-surface-2 text-xs font-bold text-fg-muted">
                 <tr>
-                  <th className="px-4 py-3 text-start">{t("android.apps.package")}</th>
-                  <th className="px-4 py-3 text-start">{t("android.apps.version")}</th>
-                  <th className="px-2 py-3" />
+                  <th scope="col" className="px-4 py-3 text-start">{t("android.apps.package")}</th>
+                  <th scope="col" className="px-4 py-3 text-start">{t("android.apps.version")}</th>
+                  <th scope="col" className="px-2 py-3"><span className="sr-only">{t("android.apps.openStore")}</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

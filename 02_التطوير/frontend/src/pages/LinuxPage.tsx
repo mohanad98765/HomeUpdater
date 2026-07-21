@@ -98,11 +98,11 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
         <div className="card mb-6">
           <h3 className="font-bold mb-3">{t("pages.linux.newDevice")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input className="input" dir="ltr" placeholder={t("pages.linux.ipPlaceholder")} value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
-            <input className="input" dir="ltr" type="number" placeholder={t("pages.linux.portPlaceholder")} value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
-            <input className="input" dir="ltr" placeholder={t("pages.remote.username")} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-            <input className="input" dir="ltr" type="password" placeholder={t("pages.remote.password")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-            <input className="input md:col-span-2" placeholder={t("pages.remote.customName")} value={form.custom_name} onChange={(e) => setForm({ ...form, custom_name: e.target.value })} />
+            <input className="input" dir="ltr" aria-label={t("pages.linux.ipPlaceholder")} placeholder={t("pages.linux.ipPlaceholder")} value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
+            <input className="input" dir="ltr" type="number" aria-label={t("pages.linux.portPlaceholder")} placeholder={t("pages.linux.portPlaceholder")} value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
+            <input className="input" dir="ltr" aria-label={t("pages.remote.username")} placeholder={t("pages.remote.username")} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <input className="input" dir="ltr" type="password" aria-label={t("pages.remote.password")} placeholder={t("pages.remote.password")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <input className="input md:col-span-2" aria-label={t("pages.remote.customName")} placeholder={t("pages.remote.customName")} value={form.custom_name} onChange={(e) => setForm({ ...form, custom_name: e.target.value })} />
           </div>
           <div className="mt-3 flex items-center gap-3">
             <button type="button" onClick={() => add.mutate()} disabled={add.isPending || !form.host || !form.username} className="btn-primary inline-flex items-center gap-2">
@@ -158,7 +158,7 @@ export function LinuxPage({ onBack }: { onBack: () => void }) {
                         {t("pages.remote.upgradeAll", { count: c.total })}
                       </button>
                     )}
-                    <button type="button" onClick={() => remove.mutate(h.id)} className="btn-secondary text-sm text-danger" title={t("pages.remote.delete")}>
+                    <button type="button" onClick={() => remove.mutate(h.id)} className="btn-secondary text-sm text-danger" title={t("pages.remote.delete")} aria-label={t("pages.remote.delete")}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>

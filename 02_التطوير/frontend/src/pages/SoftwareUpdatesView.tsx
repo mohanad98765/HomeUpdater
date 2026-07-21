@@ -340,21 +340,23 @@ function Table({
     <div className="card !p-0 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">{t("software.title")}</caption>
           <thead className="bg-surface-2 text-xs font-bold text-fg-muted">
             <tr>
-              <th className="px-4 py-3">
+              <th scope="col" className="px-4 py-3">
                 <input
                   type="checkbox"
                   checked={allSelected}
                   onChange={onToggleAll}
                   disabled={disabled}
+                  aria-label={t("updates.col.select")}
                 />
               </th>
-              <th className="px-4 py-3 text-start">{t("software.col.name")}</th>
-              <th className="px-4 py-3 text-start">{t("software.col.packageId")}</th>
-              <th className="px-4 py-3 text-start">{t("software.col.current")}</th>
-              <th className="px-4 py-3 text-start">{t("software.col.available")}</th>
-              <th className="px-4 py-3 text-start">{t("software.col.source")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("software.col.name")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("software.col.packageId")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("software.col.current")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("software.col.available")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("software.col.source")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -371,6 +373,7 @@ function Table({
                       checked={checked}
                       onChange={() => onToggleOne(p.package_id)}
                       disabled={disabled}
+                      aria-label={p.name || p.package_id}
                     />
                   </td>
                   <td className="px-4 py-3 max-w-[300px]">

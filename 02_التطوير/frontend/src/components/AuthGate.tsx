@@ -138,10 +138,11 @@ function AuthForm({
           className="space-y-3"
         >
           <div>
-            <label className="text-xs font-bold text-fg-muted mb-1 block">
+            <label htmlFor="auth-password" className="text-xs font-bold text-fg-muted mb-1 block">
               {t("auth.passwordLabel")}
             </label>
             <input
+              id="auth-password"
               type="password"
               autoFocus
               value={password}
@@ -153,10 +154,11 @@ function AuthForm({
 
           {isSetup && (
             <div>
-              <label className="text-xs font-bold text-fg-muted mb-1 block">
+              <label htmlFor="auth-confirm" className="text-xs font-bold text-fg-muted mb-1 block">
                 {t("auth.confirmLabel")}
               </label>
               <input
+                id="auth-confirm"
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

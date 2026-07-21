@@ -146,6 +146,7 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runManual()}
             placeholder={t("pages.sec.manualPlaceholder")}
+            aria-label={t("pages.sec.manualTitle")}
             className="flex-1 min-w-[200px] px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none font-mono"
           />
           <button
@@ -262,13 +263,14 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
         <div className="card !p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              <caption className="sr-only">{t("pages.sec.title")}</caption>
               <thead className="bg-surface-2 text-xs font-bold text-fg-muted">
                 <tr>
-                  <th className="px-4 py-3 text-start">{t("pages.sec.thDevice")}</th>
-                  <th className="px-4 py-3 text-start">{t("pages.sec.thVendor")}</th>
-                  <th className="px-4 py-3 text-start">{t("pages.sec.thSeverity")}</th>
-                  <th className="px-4 py-3 text-start">{t("pages.sec.thVulns")}</th>
-                  <th className="px-4 py-3 text-start">NVD</th>
+                  <th scope="col" className="px-4 py-3 text-start">{t("pages.sec.thDevice")}</th>
+                  <th scope="col" className="px-4 py-3 text-start">{t("pages.sec.thVendor")}</th>
+                  <th scope="col" className="px-4 py-3 text-start">{t("pages.sec.thSeverity")}</th>
+                  <th scope="col" className="px-4 py-3 text-start">{t("pages.sec.thVulns")}</th>
+                  <th scope="col" className="px-4 py-3 text-start">NVD</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

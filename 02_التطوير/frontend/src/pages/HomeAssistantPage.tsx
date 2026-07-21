@@ -124,8 +124,9 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
             ))}
         </div>
 
-        <label className="block text-sm text-fg-muted mb-1">{t("pages.ha.urlLabel")}</label>
+        <label htmlFor="ha-url" className="block text-sm text-fg-muted mb-1">{t("pages.ha.urlLabel")}</label>
         <input
+          id="ha-url"
           type="text"
           dir="ltr"
           value={url}
@@ -133,8 +134,9 @@ export function HomeAssistantPage({ onBack }: { onBack: () => void }) {
           placeholder="http://homeassistant.local:8123"
           className="input w-full mb-3"
         />
-        <label className="block text-sm text-fg-muted mb-1">{t("pages.ha.tokenLabel")}</label>
+        <label htmlFor="ha-token" className="block text-sm text-fg-muted mb-1">{t("pages.ha.tokenLabel")}</label>
         <input
+          id="ha-token"
           type="password"
           dir="ltr"
           value={token}

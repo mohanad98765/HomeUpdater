@@ -125,6 +125,7 @@ export function DeviceDetailPanel({
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder={t("detail.customNamePlaceholder")}
+                  aria-label={t("detail.customName")}
                   className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none"
                 />
                 <p className="text-xs text-fg-muted mt-1">{t("detail.customNameHint")}</p>
@@ -136,6 +137,7 @@ export function DeviceDetailPanel({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={t("detail.notesPlaceholder")}
+                  aria-label={t("detail.notes")}
                   rows={4}
                   className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none resize-y"
                 />

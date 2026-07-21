@@ -102,6 +102,14 @@ function App() {
 
   return (
     <div className="min-h-screen bg-bg text-fg flex flex-col">
+      {/* Skip link — first focusable element, jumps to the main region */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:start-2 focus:px-4 focus:py-2 focus:rounded-md focus:bg-primary focus:text-primary-fg focus:shadow-lg"
+      >
+        {t("a11y.skipToMain")}
+      </a>
+
       {/* شارة وضع الاختبار — للبناءات التطويرية فقط */}
       {isTest && (
         <div className="bg-warning text-white px-4 py-2 text-center text-sm font-bold flex items-center justify-center gap-2 shadow-md">
@@ -223,7 +231,7 @@ function App() {
       </header>
 
       {/* المحتوى */}
-      <main className="flex-1">
+      <main id="main-content" role="main" tabIndex={-1} className="flex-1 focus:outline-none">
         {page === "dashboard" && (
           <DashboardView
             healthQuery={health}

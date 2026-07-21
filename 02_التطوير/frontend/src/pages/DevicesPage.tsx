@@ -336,6 +336,7 @@ function NetworkInfoCard({
                   value={scanSubnet}
                   onChange={(e) => onChangeSubnet(e.target.value)}
                   placeholder="192.168.1.0/24"
+                  aria-label={t("network.scanRange")}
                   className={cn(
                     "px-3 py-1.5 rounded-md border bg-surface text-fg font-mono text-sm flex-1 max-w-xs",
                     isCidrValid ? "border-border focus:border-primary" : "border-danger"
@@ -347,6 +348,7 @@ function NetworkInfoCard({
                   disabled={!isCidrValid}
                   className="btn-primary !py-1.5 !px-2 inline-flex items-center gap-1 text-sm"
                   title={t("network.applyRange")}
+                  aria-label={t("network.applyRange")}
                 >
                   <Check className="w-4 h-4" />
                 </button>
@@ -354,6 +356,8 @@ function NetworkInfoCard({
                   type="button"
                   onClick={onCancelEdit}
                   className="btn-secondary !py-1.5 !px-2 inline-flex items-center gap-1 text-sm"
+                  title={t("detail.cancel")}
+                  aria-label={t("detail.cancel")}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -368,6 +372,7 @@ function NetworkInfoCard({
                   onClick={onStartEdit}
                   className="text-fg-muted hover:text-primary transition-colors"
                   title={t("network.editRange")}
+                  aria-label={t("network.editRange")}
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -520,15 +525,16 @@ function DeviceTable({
     <div className="card !p-0 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">{t("devices.title")}</caption>
           <thead className="bg-surface-2 text-xs font-bold text-fg-muted">
             <tr>
-              <th className="px-4 py-3 text-start">{t("devices.col.type")}</th>
-              <th className="px-4 py-3 text-start">{t("devices.col.host")}</th>
-              <th className="px-4 py-3 text-start">{t("devices.col.ip")}</th>
-              <th className="px-4 py-3 text-start font-mono">{t("devices.col.mac")}</th>
-              <th className="px-4 py-3 text-start">{t("devices.col.vendor")}</th>
-              <th className="px-4 py-3 text-start">{t("devices.col.status")}</th>
-              <th className="px-2 py-3" />
+              <th scope="col" className="px-4 py-3 text-start">{t("devices.col.type")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("devices.col.host")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("devices.col.ip")}</th>
+              <th scope="col" className="px-4 py-3 text-start font-mono">{t("devices.col.mac")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("devices.col.vendor")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("devices.col.status")}</th>
+              <th scope="col" className="px-2 py-3"><span className="sr-only">{t("detail.title")}</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">

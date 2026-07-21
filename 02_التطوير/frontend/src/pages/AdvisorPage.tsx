@@ -297,11 +297,12 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
           <div>
             <div className="flex items-center gap-2 mb-2">
               <KeyRound className="w-4 h-4 text-primary" />
-              <label className="text-sm font-medium">{t("pages.advisor.keyLabel")}</label>
+              <label htmlFor="advisor-key" className="text-sm font-medium">{t("pages.advisor.keyLabel")}</label>
             </div>
             <p className="text-xs text-fg-muted mb-2">{t("pages.advisor.keyHint")}</p>
             <div className="flex items-center gap-2 flex-wrap">
               <input
+                id="advisor-key"
                 type="password"
                 dir="ltr"
                 value={keyInput}
@@ -455,6 +456,7 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && sendChat()}
               placeholder={t("pages.advisor.chatPlaceholder")}
+              aria-label={t("pages.advisor.chatTitle")}
               className="input flex-1"
             />
             <button
@@ -462,6 +464,7 @@ h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20p
               onClick={sendChat}
               disabled={chat.isPending || !chatInput.trim()}
               className="btn-primary inline-flex items-center gap-2"
+              aria-label={t("a11y.send")}
             >
               <Send className="w-4 h-4" />
             </button>

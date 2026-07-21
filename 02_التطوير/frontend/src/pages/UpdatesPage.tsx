@@ -631,9 +631,10 @@ function UpdatesTable({
     <div className="card !p-0 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">{t("updates.title")}</caption>
           <thead className="bg-surface-2 text-xs font-bold text-fg-muted">
             <tr>
-              <th className="px-4 py-3">
+              <th scope="col" className="px-4 py-3">
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -642,10 +643,10 @@ function UpdatesTable({
                   aria-label={t("updates.col.select")}
                 />
               </th>
-              <th className="px-4 py-3 text-start">{t("updates.col.title")}</th>
-              <th className="px-4 py-3 text-start">{t("updates.col.kb")}</th>
-              <th className="px-4 py-3 text-start">{t("updates.col.severity")}</th>
-              <th className="px-4 py-3 text-start">{t("updates.col.size")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("updates.col.title")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("updates.col.kb")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("updates.col.severity")}</th>
+              <th scope="col" className="px-4 py-3 text-start">{t("updates.col.size")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">

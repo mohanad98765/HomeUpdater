@@ -141,6 +141,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
             <input
               className="input"
               dir="ltr"
+              aria-label={t("pages.winrm.ipPlaceholder")}
               placeholder={t("pages.winrm.ipPlaceholder")}
               value={form.host}
               onChange={(e) => setForm({ ...form, host: e.target.value })}
@@ -149,6 +150,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
               className="input"
               dir="ltr"
               type="number"
+              aria-label={t("pages.winrm.portPlaceholder")}
               placeholder={t("pages.winrm.portPlaceholder")}
               value={form.port}
               onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
@@ -156,6 +158,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
             <input
               className="input"
               dir="ltr"
+              aria-label={t("pages.winrm.usernameAdmin")}
               placeholder={t("pages.winrm.usernameAdmin")}
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -164,12 +167,14 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
               className="input"
               dir="ltr"
               type="password"
+              aria-label={t("pages.remote.password")}
               placeholder={t("pages.remote.password")}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
             <input
               className="input md:col-span-2"
+              aria-label={t("pages.remote.customName")}
               placeholder={t("pages.remote.customName")}
               value={form.custom_name}
               onChange={(e) => setForm({ ...form, custom_name: e.target.value })}
@@ -285,6 +290,7 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
                       onClick={() => remove.mutate(h.id)}
                       className="btn-secondary text-sm text-danger"
                       title={t("pages.remote.delete")}
+                      aria-label={t("pages.remote.delete")}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
