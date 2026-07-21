@@ -84,7 +84,7 @@ zeroconf==0.136.0
 paramiko==3.5.0
 
 # Phase 2.2/2.3 — vendor scrapers, Home Assistant REST (httpx moved to ACTIVE)
-requests==2.32.3
+requests==2.34.2
 beautifulsoup4==4.12.3
 
 # Phase O.5 — credential encryption / passphrase hashing (cryptography now ACTIVE)
