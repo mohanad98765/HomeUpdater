@@ -13,10 +13,18 @@ from __future__ import annotations
 import asyncio
 import shutil
 import socket
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import nmap
+# NOTE: `nmap` (python-nmap) is imported LAZILY inside the nmap code path, not at
+# module top. nmap is an OPTIONAL scanner — the shipped default is the pure-Python
+# scanner (discovery_python). A top-level import would make python-nmap a hard
+# load-time dependency, so if it weren't bundled the whole app would fail to load
+# ("error while loading the program"). `from __future__ import annotations` keeps
+# the `nmap.PortScanner` type hints below as strings, so they don't import it.
 from loguru import logger
+
+if TYPE_CHECKING:  # type-checker only — NOT imported at runtime
+    import nmap
 
 from ..config import settings
 from .discovery_python import discover_python
@@ -54,7 +62,16 @@ def _scan_budget(host_estimate: int, ceiling: int) -> int:
 # Public API
 # ---------------------------------------------------------------------------
 def _nmap_available() -> bool:
-    return shutil.which("nmap") is not None
+    """nmap is usable only if BOTH the binary is on PATH and the python-nmap
+    wrapper can be imported. Either missing -> fall back to the pure-Python scanner."""
+    if shutil.which("nmap") is None:
+        return False
+    try:
+        import nmap  # noqa: F401 — lazy: presence check only
+
+        return True
+    except ImportError:
+        return False
 
 
 def _choose_method() -> str:
@@ -182,6 +199,10 @@ def _do_scan(subnet: str, host_timeout: int) -> list[dict[str, Any]]:
 
     ``host_timeout`` is the adaptive per-host cap (nmap ``--host-timeout``); the
     whole-scan wall-clock bound is enforced by the caller's ``asyncio.wait``."""
+    try:
+        import nmap  # lazy: the app loads even if python-nmap isn't available
+    except ImportError as e:
+        raise DiscoveryError("nmap غير متاح — استخدم الماسح المدمج (python) من الإعدادات.") from e
     try:
         nm = nmap.PortScanner()
     except nmap.PortScannerError as e:

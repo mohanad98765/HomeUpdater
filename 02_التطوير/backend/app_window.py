@@ -170,6 +170,12 @@ def _run_browser_fallback(
 
 def main() -> None:
     _ensure_std_streams()  # MUST be first, before uvicorn/loguru/pythonnet
+
+    # Guarantee elevation (the app updates Windows/devices). No-op in the shipped
+    # exe (requireAdministrator manifest); relaunches a non-elevated source run.
+    from app.win_elevation import ensure_elevated
+
+    ensure_elevated()
     _mutex = _single_instance_or_exit()  # noqa: F841 — kept alive intentionally
 
     # A per-launch secret that authenticates the elevated API. Set it BEFORE the

@@ -149,6 +149,10 @@ def _run_adb_blocking(
             text=True,
             timeout=timeout,
             input=input_text,
+            # When we're NOT feeding stdin, pin it to DEVNULL: a windowed (no-console)
+            # build has no valid stdin handle, so an inherited one can make adb block
+            # or fail ("error while loading"). Matches the discovery/winget subprocess.
+            stdin=subprocess.DEVNULL if input_text is None else None,
             creationflags=_NO_WINDOW,
         )
     except subprocess.TimeoutExpired as exc:
@@ -156,6 +160,29 @@ def _run_adb_blocking(
     except OSError as exc:
         raise AndroidError(f"تعذّر تشغيل adb: {exc}") from exc
     return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+
+def adb_check() -> tuple[bool, str]:
+    """Startup health probe: is adb present and runnable? Lets the caller degrade
+    the Android feature gracefully instead of surfacing a generic load error."""
+    exe = _adb_exe()
+    if not exe:
+        return False, "adb.exe غير موجود في الحزمة (platform-tools)."
+    try:
+        rc, out, err = _run_adb_blocking(["version"], timeout=10)
+    except AndroidError as exc:
+        return False, str(exc)
+    return (rc == 0), (out or err or "").strip()
+
+
+def adb_state(serial: str) -> str:
+    """Explicit connection state before an op: 'device' | 'offline' |
+    'unauthorized' | 'unknown' — so errors are typed, not generic."""
+    try:
+        rc, out, _err = _run_adb_blocking(["-s", serial, "get-state"], timeout=8)
+    except AndroidError:
+        return "offline"
+    return (out or "unknown").strip() if rc == 0 else "offline"
 
 
 async def _in_executor(func, *args, **kwargs):
