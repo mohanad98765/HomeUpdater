@@ -160,6 +160,10 @@ class Settings(BaseSettings):
     # first scan/connect after a restart starts from the measured value, not the
     # cold guess. Purely a convenience — off just means everything starts cold.
     adaptive_timeout_persistence: bool = True
+    # Background scheduler: when enabled, run an automatic scan every
+    # scan_interval_minutes. Off by default — a home user opts in; a scan should
+    # not run unattended unless they asked for it.
+    scan_scheduler_enabled: bool = False
 
     model_config = SettingsConfigDict(
         env_prefix="HOMEUPDATER_",

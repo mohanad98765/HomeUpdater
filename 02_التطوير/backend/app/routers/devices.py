@@ -60,6 +60,18 @@ def _reap_scan_task(task: asyncio.Task) -> None:
     scan_progress.fail(f"توقّف المسح: {reason}")
 
 
+def start_scan(target: str) -> bool:
+    """Begin a background scan on ``target``; return False if one is already
+    running. Shared by POST /scan and the background scheduler."""
+    if scan_progress.is_running:
+        return False
+    scan_progress.begin(target)  # synchronous, so a second caller sees is_running
+    task = asyncio.create_task(_run_scan_bg(target))
+    _bg_tasks.add(task)
+    task.add_done_callback(_reap_scan_task)
+    return True
+
+
 # ===================================================================
 # Schemas (request bodies)
 # ===================================================================
@@ -329,12 +341,11 @@ async def trigger_scan(req: ScanRequest = ScanRequest()) -> dict:
 
     target = target_subnet or get_local_subnet()
     logger.info(f"POST /api/devices/scan -> background scan on {target}")
-    # Mark in-progress synchronously: rejects a second POST (409) and makes the
-    # UI's first /status poll already see the run.
-    scan_progress.begin(target)
-    task = asyncio.create_task(_run_scan_bg(target))
-    _bg_tasks.add(task)
-    task.add_done_callback(_reap_scan_task)
+    if not start_scan(target):
+        raise HTTPException(
+            status_code=409,
+            detail="مسح آخر قيد التنفيذ بالفعل / A scan is already running",
+        )
     return {"started": True, "subnet": target}
 
 

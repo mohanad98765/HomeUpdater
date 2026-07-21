@@ -46,6 +46,15 @@ class EncryptedString(TypeDecorator):
         return decrypt(value) if value else value
 
 
+# Device types HomeUpdater can actually update (Windows/Linux via winget/WUA/
+# WinRM/SSH, phones via adb). Everything else (router, smart_tv, iot, unknown) is
+# still discovered and shown, but flagged not-directly-managed so the UI can be
+# honest about it instead of implying it can update them (T15).
+_MANAGEABLE_TYPES = frozenset(
+    {"computer", "laptop", "desktop", "workstation", "server", "nas", "phone", "tablet", "android"}
+)
+
+
 class DeviceORM(Base):
     """A device known to live on the local network."""
 
@@ -87,6 +96,8 @@ class DeviceORM(Base):
             "device_type": self.device_type,
             "custom_name": self.custom_name,
             "notes": self.notes,
+            # T15: honest capability signal — can HomeUpdater update this device?
+            "manageable": self.device_type in _MANAGEABLE_TYPES,
             "status": "online" if self.is_online else "offline",
             "first_seen": self.first_seen.isoformat() if self.first_seen else None,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,

@@ -8,7 +8,9 @@ import platform
 import socket
 import subprocess
 import sys
+import time
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -18,6 +20,18 @@ from ..config import settings
 from ..services import notifications
 
 router = APIRouter()
+
+# T4 self-update: check GitHub Releases for a newer signed build. We only NOTIFY
+# and link to the signed installer — we never silently download+run an elevated
+# installer (that would train users to bypass SmartScreen, the exact protection
+# a spoofed installer relies on). Cached 1h; fails soft (checked=False) offline.
+_LATEST_RELEASE_API = "https://api.github.com/repos/mohanad98765/HomeUpdater/releases/latest"
+_update_cache: dict = {"at": 0.0, "data": None}
+
+
+def _ver_tuple(v: str) -> tuple[int, ...]:
+    parts = [int("".join(c for c in p if c.isdigit()) or 0) for p in str(v).split(".")]
+    return tuple(parts) or (0,)
 
 
 @router.post("/notify-test")
@@ -54,6 +68,47 @@ async def version():
         "build": settings.build_mode,
         "app_name_ar": settings.app_name_ar,
     }
+
+
+@router.get("/update-check")
+async def update_check() -> dict:
+    """Is a newer signed release available? Notify + link only — never auto-run.
+
+    Read-only call to the public GitHub Releases API, cached for an hour and
+    fail-soft: offline or on any error it returns ``checked=False`` so the UI
+    simply doesn't nag."""
+    now = time.monotonic()
+    cached = _update_cache["data"]
+    if cached is not None and now - _update_cache["at"] < 3600:
+        return cached
+
+    result = {
+        "current": __version__,
+        "latest": None,
+        "update_available": False,
+        "url": None,
+        "checked": True,
+    }
+    try:
+        timeout = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(
+                _LATEST_RELEASE_API,
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "HomeUpdater"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        latest = str(data.get("tag_name", "")).lstrip("vV")
+        result["latest"] = latest
+        result["url"] = data.get("html_url")
+        result["update_available"] = bool(latest) and _ver_tuple(latest) > _ver_tuple(__version__)
+    except Exception as exc:  # noqa: BLE001 — never let a self-update check break the app
+        logger.warning(f"update-check failed: {exc}")
+        result["checked"] = False
+
+    _update_cache["at"] = now
+    _update_cache["data"] = result
+    return result
 
 
 @router.get("/info")

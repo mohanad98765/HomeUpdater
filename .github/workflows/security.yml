@@ -1,0 +1,35 @@
+name: security
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: pip-audit (backend deps)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 02_التطوير/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      # Audits requirements.txt against the Python advisory DB (PyPI/OSV).
+      # Runs in its own workflow so a newly-disclosed transitive CVE surfaces as a
+      # red check without blocking the release build. Add `--ignore-vuln <ID>`
+      # for a reviewed, non-applicable advisory.
+      - name: Audit backend dependencies
+        run: pip-audit -r requirements.txt --progress-spinner off

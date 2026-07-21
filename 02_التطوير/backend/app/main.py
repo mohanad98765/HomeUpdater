@@ -83,8 +83,14 @@ async def lifespan(app: FastAPI):
 
         adaptive_persistence.load_from_disk()
 
+    # Background scan scheduler (opt-in via settings.scan_scheduler_enabled).
+    from .services import scheduler
+
+    scheduler.start()
+
     yield  # ──── application runs here ────
 
+    scheduler.stop()
     logger.info(f"Shutting down {settings.app_name}")
 
 

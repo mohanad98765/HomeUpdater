@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Python backend dependencies (security + version updates)
+  - package-ecosystem: "pip"
+    directory: "/02_التطوير/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "backend"
+
+  # Frontend (npm) dependencies
+  - package-ecosystem: "npm"
+    directory: "/02_التطوير/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "frontend"
+
+  # Keep the GitHub Actions themselves patched
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"

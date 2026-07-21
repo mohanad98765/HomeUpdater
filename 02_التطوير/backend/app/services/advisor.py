@@ -37,6 +37,22 @@ class AdvisorError(Exception):
 
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
 _KEY_FILE = "advisor_key.enc"
+_CONSENT_FILE = "advisor_consent.json"
+
+
+def has_consent() -> bool:
+    """Whether the user has explicitly consented to sending network summaries to
+    the Anthropic API (T11). Required before any advisor cloud call."""
+    return (get_data_dir() / _CONSENT_FILE).is_file()
+
+
+def record_consent() -> None:
+    (get_data_dir() / _CONSENT_FILE).write_text(json.dumps({"consented": True}), encoding="utf-8")
+
+
+def revoke_consent() -> None:
+    (get_data_dir() / _CONSENT_FILE).unlink(missing_ok=True)
+
 
 # Cost/latency guards for the (expensive) agentic calls.
 _REQUEST_TIMEOUT = 120.0  # per Claude API request (seconds)

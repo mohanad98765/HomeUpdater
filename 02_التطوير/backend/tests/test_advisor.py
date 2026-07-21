@@ -25,8 +25,17 @@ def test_status_unconfigured(client, monkeypatch):
 def test_analyze_requires_key(client, monkeypatch):
     monkeypatch.setattr(advisor.settings, "anthropic_api_key", "")
     monkeypatch.setattr(advisor, "get_api_key", lambda: "")
+    monkeypatch.setattr(advisor, "has_consent", lambda: True)  # consent given → key check runs
     r = client.post("/api/advisor/analyze", json={"lang": "en"}, headers=CSRF)
     assert r.status_code == 503
+
+
+def test_analyze_blocked_without_consent(client, monkeypatch):
+    """T11: the data-sharing consent gate precedes everything (even the key check)."""
+    monkeypatch.setattr(advisor, "has_consent", lambda: False)
+    r = client.post("/api/advisor/analyze", json={"lang": "en"}, headers=CSRF)
+    assert r.status_code == 403
+    assert r.json()["detail"]["error"] == "consent_required"
 
 
 def test_key_saved_encrypted_roundtrip(monkeypatch, tmp_path):
