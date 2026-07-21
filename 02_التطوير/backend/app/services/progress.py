@@ -53,6 +53,10 @@ class _ProgressState:
     devices_count: int = 0
     last_message: str = ""
     error: str | None = None
+    # Bumped every begin(). An abandoned nmap thread (its async caller gave up on
+    # a stalled scan and a NEW scan has since started) must not keep writing into
+    # the fresh run's feed — it checks this token and drops stale writes.
+    generation: int = 0
     log: deque[ProgressEvent] = field(default_factory=lambda: deque(maxlen=50))
     # Writer runs in an executor thread; readers hit /status concurrently.
     # The lock guards every append/clear/snapshot of `log` to avoid
@@ -62,6 +66,7 @@ class _ProgressState:
     # ---- mutators ------------------------------------------------
     def begin(self, subnet: str) -> None:
         self.is_running = True
+        self.generation += 1
         self.started_at = time.time()
         self.finished_at = None
         self.subnet = subnet

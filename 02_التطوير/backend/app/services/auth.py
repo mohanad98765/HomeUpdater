@@ -29,6 +29,7 @@ import hmac
 import json
 import os
 import secrets
+import time
 
 from loguru import logger
 
@@ -38,8 +39,19 @@ _AUTH_FILE = "auth.json"
 _ITERATIONS = 200_000
 _MIN_LEN = 6
 
-# Valid session tokens for this process run (cleared on restart).
-_sessions: set[str] = set()
+# Login brute-force throttle: after N consecutive failures, lock out briefly.
+_MAX_LOGIN_FAILS = 5
+_LOCKOUT_SECONDS = 30.0
+_login_fails = 0
+_login_locked_until = 0.0
+
+# Session tokens: kept in memory (cleared on restart) with an idle + absolute
+# expiry, so a captured/forgotten token can't stay valid for the whole (long,
+# elevated) process lifetime. token -> (created, last_seen), monotonic seconds.
+_SESSION_IDLE_SECONDS = 12 * 3600
+_SESSION_ABSOLUTE_SECONDS = 24 * 3600
+_MAX_SESSIONS = 32
+_sessions: dict[str, tuple[float, float]] = {}
 
 
 class AuthError(RuntimeError):
@@ -100,19 +112,67 @@ def change_password(current: str, new: str) -> None:
     set_password(new)
 
 
+# --- login brute-force throttle -------------------------------------------
+def login_locked_for() -> float:
+    """Seconds remaining on the login lockout (0 if not locked)."""
+    remaining = _login_locked_until - time.monotonic()
+    return remaining if remaining > 0 else 0.0
+
+
+def note_login_failure() -> None:
+    global _login_fails, _login_locked_until
+    _login_fails += 1
+    if _login_fails >= _MAX_LOGIN_FAILS:
+        _login_locked_until = time.monotonic() + _LOCKOUT_SECONDS
+        _login_fails = 0
+
+
+def note_login_success() -> None:
+    global _login_fails, _login_locked_until
+    _login_fails = 0
+    _login_locked_until = 0.0
+
+
 # --- session tokens -------------------------------------------------------
+def _prune_sessions() -> None:
+    now = time.monotonic()
+    dead = [
+        t
+        for t, (created, last_seen) in _sessions.items()
+        if now - created > _SESSION_ABSOLUTE_SECONDS or now - last_seen > _SESSION_IDLE_SECONDS
+    ]
+    for t in dead:
+        _sessions.pop(t, None)
+
+
 def create_session() -> str:
+    _prune_sessions()
+    if len(_sessions) >= _MAX_SESSIONS:  # drop the least-recently-seen session
+        oldest = min(_sessions, key=lambda t: _sessions[t][1])
+        _sessions.pop(oldest, None)
     token = secrets.token_urlsafe(32)
-    _sessions.add(token)
+    now = time.monotonic()
+    _sessions[token] = (now, now)
     return token
 
 
 def is_session_valid(token: str) -> bool:
-    return bool(token) and token in _sessions
+    if not token:
+        return False
+    rec = _sessions.get(token)
+    if rec is None:
+        return False
+    created, _last_seen = rec
+    now = time.monotonic()
+    if now - created > _SESSION_ABSOLUTE_SECONDS or now - rec[1] > _SESSION_IDLE_SECONDS:
+        _sessions.pop(token, None)
+        return False
+    _sessions[token] = (created, now)  # refresh the idle clock on use
+    return True
 
 
 def revoke_session(token: str) -> None:
-    _sessions.discard(token)
+    _sessions.pop(token, None)
 
 
 def revoke_all() -> None:

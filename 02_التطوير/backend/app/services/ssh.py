@@ -16,11 +16,17 @@ import asyncssh
 from .adaptive_timeout import AdaptiveNetworkTimeout
 
 CONNECT_TIMEOUT = 12  # cold-start / fallback connect timeout (seconds)
+# Command execution bounds. connect_timeout only covers the handshake, so without
+# these a remote command (apt waiting on a dpkg lock, a dropped peer) hangs the
+# request forever — and, via the advisor's shared update slot, 409s every later op.
+CMD_TIMEOUT = 60  # probe / check: quick commands
+APPLY_TIMEOUT = 1800  # apply: apt/dnf upgrade can legitimately run for a while
 # The connect timeout is learned per host:port: a LAN Raspberry Pi and a distant
 # host no longer share one fixed value. Floor kept generous (SSH handshake + auth
 # needs headroom); ceiling bounds the worst wait.
 _CONNECT_FLOOR = 5.0
 _CONNECT_CEIL = 30.0
+_MAX_ESTIMATORS = 256  # bound growth across many hosts (FIFO eviction)
 _CONNECT_ESTIMATORS: dict[str, AdaptiveNetworkTimeout] = {}
 
 
@@ -28,6 +34,8 @@ def _connect_estimator(host: str, port: int) -> AdaptiveNetworkTimeout:
     key = f"{host}:{port}"
     est = _CONNECT_ESTIMATORS.get(key)
     if est is None:
+        if len(_CONNECT_ESTIMATORS) >= _MAX_ESTIMATORS:
+            _CONNECT_ESTIMATORS.pop(next(iter(_CONNECT_ESTIMATORS)))  # drop oldest
         est = AdaptiveNetworkTimeout(
             rto_min=_CONNECT_FLOOR, rto_max=_CONNECT_CEIL, rto_initial=CONNECT_TIMEOUT
         )
@@ -137,6 +145,9 @@ async def _connect(
             password=password,
             known_hosts=known_hosts,
             connect_timeout=est.current(),
+            # Detect a silently dropped LAN peer instead of hanging (~60s).
+            keepalive_interval=15,
+            keepalive_count_max=4,
         )
     except asyncssh.PermissionDenied as exc:
         raise SSHError("Authentication failed — check the username/password") from exc
@@ -149,6 +160,20 @@ async def _connect(
         raise SSHError(f"Could not connect to {host}:{port}: {exc}") from exc
     est.on_sample(time.monotonic() - start)  # full success: a real connect-time sample
     return conn
+
+
+async def _run_cmd(conn, cmd: str, timeout: float, **kwargs):
+    """conn.run bounded by a timeout, with dropped-peer/timeout errors normalized.
+
+    asyncssh's connect_timeout does not bound command execution, so every command
+    gets an explicit deadline here — otherwise a stuck command hangs the request
+    forever and wedges the shared update slot (409 on every later op)."""
+    try:
+        return await conn.run(cmd, timeout=timeout, check=False, **kwargs)
+    except TimeoutError as exc:
+        raise SSHError(f"SSH command timed out after {int(timeout)}s") from exc
+    except asyncssh.Error as exc:
+        raise SSHError(f"SSH command failed: {exc}") from exc
 
 
 def _capture_host_key(conn) -> str:
@@ -169,7 +194,7 @@ async def probe(
     """
     async with await _connect(host, port, username, password, known_host_key) as conn:
         host_key = _capture_host_key(conn)
-        result = await conn.run("cat /etc/os-release", check=False)
+        result = await _run_cmd(conn, "cat /etc/os-release", CMD_TIMEOUT)
         kv = parse_os_release(result.stdout or "")
     os_id = (kv.get("ID") or "").lower()
     return {
@@ -190,10 +215,10 @@ async def check_updates(
 ) -> dict:
     async with await _connect(host, port, username, password, known_host_key) as conn:
         if pkg_manager == "apt":
-            result = await conn.run("apt list --upgradable 2>/dev/null", check=False)
+            result = await _run_cmd(conn, "apt list --upgradable 2>/dev/null", CMD_TIMEOUT)
             packages = parse_apt_upgradable(result.stdout or "")
         elif pkg_manager == "dnf":
-            result = await conn.run("dnf -q check-update", check=False)
+            result = await _run_cmd(conn, "dnf -q check-update", CMD_TIMEOUT)
             packages = parse_dnf_updates(result.stdout or "")
         else:
             raise SSHError("Unknown package manager — re-probe the host")
@@ -215,7 +240,7 @@ async def apply_updates(
     else:
         raise SSHError("Unknown package manager")
     async with await _connect(host, port, username, password, known_host_key) as conn:
-        result = await conn.run(cmd, input=(password or "") + "\n", check=False)
+        result = await _run_cmd(conn, cmd, APPLY_TIMEOUT, input=(password or "") + "\n")
     return {
         "exit_status": result.exit_status,
         "succeeded": result.exit_status == 0,

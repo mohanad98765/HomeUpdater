@@ -240,7 +240,12 @@ async def refresh_vendors(vendors: list[str], db: AsyncSession, ttl_hours: int =
             result = await lookup_cves(vendor, db, ttl_hours=ttl_hours)
             if not result.get("cached"):
                 refreshed += 1
-                await asyncio.sleep(_throttle.current())  # adaptive: widens if NVD pushed back
         except CVEError:
             errors += 1
+        # Every non-fresh vendor above issued a real NVD request (fresh ones were
+        # skipped). Pace EVERY one by the current AIMD delay — INCLUDING the
+        # rate-limited case, where lookup_cves already widened _throttle and then
+        # returned stale / raised. Gating this sleep on a fresh result (the old
+        # behaviour) let a 429/403 storm run back-to-back and defeated the backoff.
+        await asyncio.sleep(_throttle.current())
     return {"refreshed": refreshed, "errors": errors, "total_vendors": len(vendors)}

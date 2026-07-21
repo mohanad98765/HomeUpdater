@@ -30,8 +30,13 @@ from .update_progress import update_progress
 # Adaptive wall-clock ceilings for the opaque WUA COM calls (no intra-call
 # progress signal exists, so a stall-watchdog can't help — only a bound can).
 # They start generous and tighten toward each machine's real search/install time.
-_CHECK_CEILING = DurationCeiling(floor=120.0, ceiling=900.0, safety=3.0)  # search
-_INSTALL_CEILING = DurationCeiling(floor=600.0, ceiling=3600.0, safety=3.0)  # download+install
+# Ceilings sized so genuinely slow hardware still fits (an old HDD PC can need
+# well over an hour for a large cumulative update): a machine slower than the
+# ceiling could otherwise never install at all.
+_CHECK_CEILING = DurationCeiling(floor=120.0, ceiling=1800.0, safety=3.0)  # search (≤30m)
+_INSTALL_CEILING = DurationCeiling(
+    floor=600.0, ceiling=7200.0, safety=3.0
+)  # download+install (≤2h)
 
 
 def capture_ceilings() -> dict:
@@ -110,6 +115,9 @@ def _check_blocking(kind: str = "Software") -> list[UpdateInfo]:
     import pythoncom  # type: ignore[import-not-found]
 
     pythoncom.CoInitialize()
+    # If this run overruns its ceiling and is abandoned, a newer check/install may
+    # own update_progress; only write to it while we're the current generation.
+    gen = update_progress.generation
     try:
         session = _make_session()
         searcher = session.CreateUpdateSearcher()
@@ -121,7 +129,10 @@ def _check_blocking(kind: str = "Software") -> list[UpdateInfo]:
 
         updates: list[UpdateInfo] = []
         total = result.Updates.Count
-        update_progress.set_phase("checking", f"Found {total} pending update(s); reading details")
+        if update_progress.generation == gen:
+            update_progress.set_phase(
+                "checking", f"Found {total} pending update(s); reading details"
+            )
 
         for i in range(total):
             u = result.Updates.Item(i)
@@ -155,11 +166,12 @@ def _check_blocking(kind: str = "Software") -> list[UpdateInfo]:
                 release_date=release_date,
             )
             updates.append(info)
-            update_progress.update_progress(
-                completed=i + 1,
-                total=total,
-                message=f"Read details for: {info.title[:80]}",
-            )
+            if update_progress.generation == gen:  # drop writes once superseded
+                update_progress.update_progress(
+                    completed=i + 1,
+                    total=total,
+                    message=f"Read details for: {info.title[:80]}",
+                )
 
         return updates
     except Exception as exc:
@@ -182,6 +194,7 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
     import pythoncom  # type: ignore[import-not-found]
 
     pythoncom.CoInitialize()
+    gen = update_progress.generation  # drop progress writes if this run is superseded
     try:
         session = _make_session()
         # 1) Re-find the chosen updates by ID
@@ -246,15 +259,15 @@ def _install_blocking(update_ids: list[str]) -> dict[str, Any]:
 
         succeeded = sum(1 for x in results if x["succeeded"])
         reboot = bool(install_result.RebootRequired)
-        if reboot:
-            update_progress.reboot_required()
-
-        update_progress.update_progress(
-            completed=succeeded,
-            total=to_install.Count,
-            message=f"Installed {succeeded}/{to_install.Count}"
-            + (" (reboot required)" if reboot else ""),
-        )
+        if update_progress.generation == gen:  # drop writes once superseded
+            if reboot:
+                update_progress.reboot_required()
+            update_progress.update_progress(
+                completed=succeeded,
+                total=to_install.Count,
+                message=f"Installed {succeeded}/{to_install.Count}"
+                + (" (reboot required)" if reboot else ""),
+            )
 
         return {
             "installed": succeeded,
@@ -293,6 +306,9 @@ async def _run_bounded(fn, *args, ceiling: DurationCeiling, op: str):
     fut = loop.run_in_executor(None, fn, *args)
     done, _pending = await asyncio.wait({fut}, timeout=deadline)
     if not done:
+        # Record the overrun so the estimate grows toward the ceiling instead of
+        # staying stuck at the initial cold deadline forever.
+        ceiling.observe(deadline)
         raise WindowsUpdateError(
             f"{op} exceeded {int(deadline)}s and was abandoned — the Windows "
             f"Update service may be stuck. Reboot and retry if this recurs."

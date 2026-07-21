@@ -74,9 +74,16 @@ def test_duplicate_mac_in_one_scan_collapses():
     assert len(rows) == 1
 
 
+class _StubTask:
+    """Stand-in for the asyncio.Task so trigger_scan can add_done_callback/track it."""
+
+    def add_done_callback(self, _cb):
+        pass
+
+
 def _noop_task(coro):
     coro.close()  # don't actually launch a real network scan in the test
-    return None
+    return _StubTask()
 
 
 def test_scan_starts_in_background(client, monkeypatch):

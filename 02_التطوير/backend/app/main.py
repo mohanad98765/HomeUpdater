@@ -162,7 +162,11 @@ _AUTH_EXEMPT_PATHS = {
 
 
 def _needs_app_auth(path: str) -> bool:
-    return path.startswith("/api/") and path not in _AUTH_EXEMPT_PATHS
+    if path in _AUTH_EXEMPT_PATHS:
+        return False
+    # Cover the same doc/openapi/root paths the token gate protects, so a
+    # token-holder that hasn't logged in can't enumerate the API surface either.
+    return path.startswith("/api/") or path in _TOKEN_GATED_EXACT
 
 
 @app.middleware("http")

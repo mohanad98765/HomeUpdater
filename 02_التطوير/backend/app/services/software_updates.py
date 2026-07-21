@@ -95,7 +95,7 @@ async def _run(
                 break  # process exited on its own
             except TimeoutError:
                 if watchdog.stalled():
-                    proc.kill()
+                    await _terminate_tree(proc)
                     # Bound the drain: a spawned installer may inherit the pipe
                     # and hold it open, which would otherwise block forever and
                     # wedge update_progress.is_running=True (409 on every later op).
@@ -126,6 +126,30 @@ async def _run(
         b"".join(out).decode("utf-8", errors="replace"),
         b"".join(err).decode("utf-8", errors="replace"),
     )
+
+
+async def _terminate_tree(proc: asyncio.subprocess.Process) -> None:
+    """Kill the process AND its children. proc.kill() only signals winget.exe, so
+    the installer (MSI/EXE) winget spawned would keep running detached and finish
+    the install while HomeUpdater reports failure. taskkill /T kills the tree."""
+    if sys.platform == "win32" and proc.pid:
+        try:
+            tk = await asyncio.create_subprocess_exec(
+                "taskkill",
+                "/F",
+                "/T",
+                "/PID",
+                str(proc.pid),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(tk.wait(), timeout=10.0)
+        except Exception:  # noqa: BLE001 — best-effort; fall through to proc.kill()
+            pass
+    try:
+        proc.kill()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 _KNOWN_SOURCES = {"winget", "msstore"}
@@ -263,10 +287,11 @@ async def install_software_update(package_id: str) -> dict[str, Any]:
         "--silent",
         "--accept-source-agreements",
         "--accept-package-agreements",
-        # Kill only on 5 min of TOTAL silence (a stuck installer) or 30 min
-        # overall — never mid-progress, so a big-but-live install isn't cut short.
-        idle_timeout=300.0,
-        hard_ceiling=1800.0,
+        # Kill only on 10 min of TOTAL silence (a stuck installer) or 60 min
+        # overall — winget goes quiet during a large MSI's apply phase, so the
+        # window is generous to avoid cutting a big-but-live install short.
+        idle_timeout=600.0,
+        hard_ceiling=3600.0,
     )
     return {
         "package_id": package_id,

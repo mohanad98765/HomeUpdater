@@ -43,6 +43,7 @@ SECOND_PASS_MIN = 1.5
 
 # Per-subnet (CIDR) RTO estimators. In-memory for now; persistence warms these
 # across runs so a repeat scan starts from the measured value, not the cold guess.
+_MAX_ESTIMATORS = 256  # bound growth across many custom subnets (FIFO eviction)
 _PROBE_ESTIMATORS: dict[str, AdaptiveNetworkTimeout] = {}
 
 
@@ -51,6 +52,8 @@ def _probe_estimator(target: str) -> AdaptiveNetworkTimeout:
     cidr = str(ipaddress.IPv4Network(target, strict=False))
     est = _PROBE_ESTIMATORS.get(cidr)
     if est is None:
+        if len(_PROBE_ESTIMATORS) >= _MAX_ESTIMATORS:
+            _PROBE_ESTIMATORS.pop(next(iter(_PROBE_ESTIMATORS)))  # drop oldest
         est = AdaptiveNetworkTimeout(
             rto_min=PROBE_FLOOR, rto_max=PROBE_CEIL, rto_initial=PROBE_INITIAL
         )

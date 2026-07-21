@@ -51,18 +51,34 @@ async def login(body: PasswordBody) -> dict:
     """Verify the password and issue a session token."""
     if not auth.is_password_set():
         raise HTTPException(status_code=409, detail="لم تُعيَّن كلمة مرور بعد.")
+    locked = auth.login_locked_for()
+    if locked > 0:  # brute-force lockout
+        raise HTTPException(
+            status_code=429,
+            detail=f"محاولات دخول كثيرة. انتظر {int(locked) + 1} ثانية ثم أعِد المحاولة.",
+        )
     if not auth.verify_password(body.password):
+        auth.note_login_failure()
         raise HTTPException(status_code=401, detail="كلمة المرور غير صحيحة.")
+    auth.note_login_success()
     return {"token": auth.create_session()}
 
 
 @router.post("/change")
 async def change(body: ChangeBody, request: Request) -> dict:
     """Change the password (requires the current one). Invalidates other sessions."""
+    locked = auth.login_locked_for()
+    if locked > 0:  # the same throttle guards current-password guessing here
+        raise HTTPException(
+            status_code=429,
+            detail=f"محاولات كثيرة. انتظر {int(locked) + 1} ثانية ثم أعِد المحاولة.",
+        )
     try:
         auth.change_password(body.current, body.new)
     except auth.AuthError as exc:
+        auth.note_login_failure()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    auth.note_login_success()
     auth.revoke_all()  # force re-login everywhere after a password change
     return {"token": auth.create_session()}
 

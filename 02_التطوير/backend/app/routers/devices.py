@@ -40,6 +40,25 @@ from ..services.progress import scan_progress
 
 router = APIRouter()
 
+# Keep a strong reference to the background scan task: asyncio only holds a weak
+# ref, so without this the task can be garbage-collected mid-run, leaving
+# scan_progress.is_running=True forever (every later POST /scan -> 409).
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _reap_scan_task(task: asyncio.Task) -> None:
+    _bg_tasks.discard(task)
+    # If the task ended without completing the progress lifecycle (GC, cancel, or
+    # a crash after begin() but before finish/fail), don't strand the 409 gate.
+    if not scan_progress.is_running:
+        return
+    if task.cancelled():
+        reason = "أُلغيت العملية"
+    else:
+        exc = task.exception()
+        reason = str(exc) if exc else "انتهت دون إكمال"
+    scan_progress.fail(f"توقّف المسح: {reason}")
+
 
 # ===================================================================
 # Schemas (request bodies)
@@ -134,35 +153,86 @@ async def scan_status() -> dict:
 # ===================================================================
 # POST /api/devices/scan  -> trigger scan, persist results
 # ===================================================================
+def _same_identity(hostname_a: str, vendor_a: str, hostname_b: str, vendor_b: str) -> bool:
+    """Whether two observations plausibly describe the SAME physical device —
+    used before moving user edits (name/notes) between rows. Agree if hostnames
+    match, or a hostname side is empty; else fall back to vendor; else (no signal)
+    assume same rather than strand the user's rename."""
+    ha, hb = (hostname_a or "").strip().lower(), (hostname_b or "").strip().lower()
+    if ha and hb:
+        return ha == hb
+    va, vb = (vendor_a or "").strip().lower(), (vendor_b or "").strip().lower()
+    if va and vb:
+        return va == vb
+    return True
+
+
+def _apply_scan_fields(d: DeviceORM, raw: dict, now: datetime) -> None:
+    d.last_seen = now
+    d.is_online = True
+    d.ip = raw["ip"]
+    if raw["hostname"]:
+        d.hostname = raw["hostname"]  # keep the last good hostname
+    if raw["vendor"]:
+        d.vendor = raw["vendor"]
+    # Never regress a known type back to "unknown" (a scan that failed reverse-DNS
+    # would otherwise wipe a device's classification).
+    if raw["device_type"] and raw["device_type"] != "unknown":
+        d.device_type = raw["device_type"]
+
+
 async def _persist_scan(db: AsyncSession, result: dict, now: datetime) -> int:
     """Upsert scan results; mark missing devices offline. Returns NEW-row count.
 
-    Handles the two ARP quirks: MAC-less hosts (mac=None so several coexist) and
-    two IPs sharing one MAC (collapsed to one row via the ``existing`` map)."""
-    existing_q = await db.execute(select(DeviceORM))
-    existing = {(d.mac or d.ip): d for d in existing_q.scalars().all()}
-
-    found_keys: set[str] = set()
+    Identity handling beyond the two ARP quirks (MAC-less hosts coexist via
+    mac=None; two IPs behind one MAC collapse to one row):
+      * a host first seen MAC-less and later resolved to a MAC is UPGRADED in
+        place (keeps the user's name/notes) instead of duplicated;
+      * a MAC rotation (private-MAC / NIC change) at the same IP carries the
+        user's name/notes onto the new row and drops the stale duplicate;
+      * a recycled DHCP IP that now belongs to a DIFFERENT device resets that
+        row's user metadata instead of mislabelling the new device.
+    """
+    rows = list((await db.execute(select(DeviceORM))).scalars().all())
+    by_mac = {d.mac: d for d in rows if d.mac}
+    by_ip_macless = {d.ip: d for d in rows if not d.mac}
+    matched: set[int] = set()
+    created_by_ip: dict[str, DeviceORM] = {}
     new_count = 0
 
     for raw in result["devices"]:
-        key = raw["mac"] or raw["ip"]
-        found_keys.add(key)
+        mac = raw["mac"] or None
+        macless_at_ip = by_ip_macless.get(raw["ip"])
+        macless_free = macless_at_ip is not None and id(macless_at_ip) not in matched
 
-        if key in existing:
-            d = existing[key]
-            d.last_seen = now
-            d.is_online = True
-            d.ip = raw["ip"]
-            if raw["hostname"]:
-                d.hostname = raw["hostname"]
-            if raw["vendor"]:
-                d.vendor = raw["vendor"]
-            d.device_type = raw["device_type"]
+        if mac and mac in by_mac:
+            d = by_mac[mac]  # same device, matched by MAC
+            _apply_scan_fields(d, raw, now)
+            matched.add(id(d))
+        elif mac and macless_free:
+            # A previously MAC-less row at this IP is now resolved to a MAC.
+            d = macless_at_ip
+            d.mac = mac
+            _apply_scan_fields(d, raw, now)
+            by_mac[mac] = d
+            matched.add(id(d))
+        elif not mac and macless_free:
+            d = macless_at_ip
+            if (
+                (d.custom_name or d.notes)
+                and raw["hostname"]
+                and not _same_identity(d.hostname, d.vendor, raw["hostname"], raw["vendor"])
+            ):
+                # A different device now holds this recycled IP — fresh identity.
+                d.custom_name = ""
+                d.notes = ""
+                d.first_seen = now
+            _apply_scan_fields(d, raw, now)
+            matched.add(id(d))
         else:
             d = DeviceORM(
                 ip=raw["ip"],
-                mac=raw["mac"] or None,  # None (not "") so multiple MAC-less hosts coexist
+                mac=mac,  # None (not "") so multiple MAC-less hosts coexist
                 hostname=raw["hostname"] or "",
                 vendor=raw["vendor"] or "",
                 device_type=raw["device_type"],
@@ -171,11 +241,30 @@ async def _persist_scan(db: AsyncSession, result: dict, now: datetime) -> int:
                 last_seen=now,
             )
             db.add(d)
-            existing[key] = d
             new_count += 1
+            created_by_ip[raw["ip"]] = d
+            if mac:
+                by_mac[mac] = d
 
-    for key, d in existing.items():
-        if key not in found_keys:
+    for d in rows:
+        if id(d) in matched:
+            continue
+        superseder = created_by_ip.get(d.ip)
+        if (
+            superseder is not None
+            and superseder is not d
+            and _same_identity(d.hostname, d.vendor, superseder.hostname, superseder.vendor)
+        ):
+            # Same device came back with a new MAC at this IP: move the user's
+            # edits onto the live row and drop this stale duplicate.
+            if d.custom_name and not superseder.custom_name:
+                superseder.custom_name = d.custom_name
+            if d.notes and not superseder.notes:
+                superseder.notes = d.notes
+            if d.first_seen:  # the old row predates this scan, so keep its first_seen
+                superseder.first_seen = d.first_seen
+            await db.delete(d)
+        else:
             d.is_online = False
 
     await db.commit()
@@ -212,7 +301,8 @@ async def _run_scan_bg(target: str) -> None:
         f"subnet={result['subnet']} total={count} new={new_count}"
     )
     if settings.adaptive_timeout_persistence:
-        adaptive_persistence.save_to_disk()  # best-effort: warm-start the next scan
+        # Offload the file write so it can't block the event loop on slow storage.
+        await asyncio.to_thread(adaptive_persistence.save_to_disk)
 
 
 @router.post("/scan")
@@ -242,7 +332,9 @@ async def trigger_scan(req: ScanRequest = ScanRequest()) -> dict:
     # Mark in-progress synchronously: rejects a second POST (409) and makes the
     # UI's first /status poll already see the run.
     scan_progress.begin(target)
-    asyncio.create_task(_run_scan_bg(target))
+    task = asyncio.create_task(_run_scan_bg(target))
+    _bg_tasks.add(task)
+    task.add_done_callback(_reap_scan_task)
     return {"started": True, "subnet": target}
 
 

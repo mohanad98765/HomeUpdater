@@ -49,6 +49,10 @@ class _UpdateProgress:
     completed: int = 0
     last_message: str = ""
     error: str | None = None
+    # Bumped every begin(). An abandoned WUA COM thread (its async caller timed
+    # out and a NEW check/install has begun) must not write into the fresh run's
+    # feed — it checks this token and drops stale writes.
+    generation: int = 0
     log: deque[UpdateEvent] = field(default_factory=lambda: deque(maxlen=80))
     # Guards log append/clear/snapshot against the concurrent /status reader.
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
@@ -75,6 +79,7 @@ class _UpdateProgress:
 
     def begin(self, operation: str, total: int = 0) -> None:
         self.is_running = True
+        self.generation += 1
         self.operation = operation
         self.started_at = time.time()
         self.finished_at = None

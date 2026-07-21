@@ -211,9 +211,12 @@ def _do_scan(subnet: str, host_timeout: int) -> list[dict[str, Any]]:
         logger.exception("nmap scan failed")
         raise DiscoveryError(f"nmap scan failed: {e}") from e
 
+    # If this scan overran and was abandoned, a newer scan may now own the
+    # progress feed; only write to it while we're still the current generation.
+    gen = scan_progress.generation
     devices: list[dict[str, Any]] = []
     all_hosts = nm.all_hosts()
-    if all_hosts:
+    if all_hosts and scan_progress.generation == gen:
         scan_progress.set_phase(
             "resolving",
             f"Resolving hostnames for {len(all_hosts)} responding device(s)",
@@ -223,11 +226,12 @@ def _do_scan(subnet: str, host_timeout: int) -> list[dict[str, Any]]:
             entry = _parse_host(nm, ip)
             if entry:
                 devices.append(entry)
-                vendor_suffix = f"({entry['vendor']})" if entry["vendor"] else ""
-                scan_progress.update_count(
-                    len(devices),
-                    f"Found {entry['ip']} {vendor_suffix}".strip(),
-                )
+                if scan_progress.generation == gen:
+                    vendor_suffix = f"({entry['vendor']})" if entry["vendor"] else ""
+                    scan_progress.update_count(
+                        len(devices),
+                        f"Found {entry['ip']} {vendor_suffix}".strip(),
+                    )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(f"Could not parse host {ip}: {exc}")
 

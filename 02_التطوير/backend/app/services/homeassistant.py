@@ -25,6 +25,7 @@ _CONNECT_TIMEOUT = 5.0
 # update.install can block while the device actually updates — give the read leg
 # real room rather than the old flat 60s.
 _INSTALL_READ_TIMEOUT = 120.0
+_MAX_ESTIMATORS = 128  # bound growth across many HA URLs (FIFO eviction)
 _INSTANCE_ESTIMATORS: dict[str, AdaptiveNetworkTimeout] = {}
 
 
@@ -35,6 +36,8 @@ class HAError(RuntimeError):
 def _instance_estimator(base: str) -> AdaptiveNetworkTimeout:
     est = _INSTANCE_ESTIMATORS.get(base)
     if est is None:
+        if len(_INSTANCE_ESTIMATORS) >= _MAX_ESTIMATORS:
+            _INSTANCE_ESTIMATORS.pop(next(iter(_INSTANCE_ESTIMATORS)))  # drop oldest
         est = AdaptiveNetworkTimeout(rto_min=_HA_FLOOR, rto_max=_HA_CEIL, rto_initial=_HA_INITIAL)
         _INSTANCE_ESTIMATORS[base] = est
     return est
@@ -81,13 +84,14 @@ async def check(base_url: str, token: str) -> dict:
     if not base or not token:
         raise HAError("Home Assistant URL and token are required")
     est = _instance_estimator(base)
-    start = time.monotonic()
+    leg = 0.0
     try:
         async with httpx.AsyncClient(timeout=_quick_timeout(base)) as client:
             api = await client.get(f"{base}/api/", headers=_headers(token))
             if api.status_code == 401:
                 raise HAError("Invalid token (401)")
             api.raise_for_status()
+            leg = time.monotonic()  # time only the single final request…
             cfg = await client.get(f"{base}/api/config", headers=_headers(token))
             cfg.raise_for_status()
             data = cfg.json()
@@ -95,7 +99,9 @@ async def check(base_url: str, token: str) -> dict:
         raise
     except Exception as exc:
         raise HAError(f"Could not reach Home Assistant: {exc}") from exc
-    est.on_sample(time.monotonic() - start)  # learn this instance's latency
+    # …so the estimate matches the per-request quantity it's used as (a read
+    # timeout), instead of the sum of two GETs.
+    est.on_sample(time.monotonic() - leg)
     return {
         "connected": True,
         "version": data.get("version", ""),
