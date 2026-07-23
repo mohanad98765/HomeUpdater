@@ -54,8 +54,6 @@ The centerpiece is an **agentic AI advisor** (Claude, tool‑use loop): it reads
 | **📱 ربط Android لاسلكياً · Android pairing** | **🔒 قفل الدخول · Login lock** |
 | ![Android](screenshots/08-android.png) | ![Login](screenshots/10-login.png) |
 
-> 🆕 **قيد الإضافة بعد التصوير** · _pending capture from the running app_ (v1.4.7): خطوات الوكيل (`13-agent-steps.png`) · التطبيق بضغطة (`14-apply.png`) — تعرضان تحليل الذكاء الاصطناعي ونتائج تحديث حقيقية فتحتاجان التطبيق حيّاً؛ انظر [`DEMO_KIT`](00_دليل_المشروع/DEMO_KIT.md).
-
 ## التنزيل والتشغيل · Install
 
 1. نزّل `HomeUpdater-Setup-x.y.z.exe` من [صفحة الإصدارات](https://github.com/mohanad98765/HomeUpdater/releases/latest).
