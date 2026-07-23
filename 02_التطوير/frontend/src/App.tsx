@@ -20,6 +20,7 @@ import {
   MonitorDown,
   Sparkles,
   X,
+  HelpCircle,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -32,10 +33,14 @@ import { HomeAssistantPage } from "@/pages/HomeAssistantPage";
 import { LinuxPage } from "@/pages/LinuxPage";
 import { WindowsRemotePage } from "@/pages/WindowsRemotePage";
 import { AdvisorPage } from "@/pages/AdvisorPage";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 // ================================================================
 // محدِّث المنزل — App shell + navigation
 // ================================================================
+
+// First-run guided tour is shown once, then remembered via localStorage.
+const ONBOARDING_KEY = "hu_onboarding_v1";
 
 interface HealthResponse {
   status: string;
@@ -72,6 +77,29 @@ function App() {
   const [page, setPage] = useState<Page>("dashboard");
   // T4 — dismiss the "newer version available" banner for this session.
   const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  // First-run guided tour — auto-shown once, re-openable from the header help
+  // button. The parent owns the "seen" flag; the tour component is presentational.
+  const [showTour, setShowTour] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_KEY) !== "done";
+    } catch {
+      return false;
+    }
+  });
+  const markTourSeen = () => {
+    try {
+      localStorage.setItem(ONBOARDING_KEY, "done");
+    } catch {
+      /* private mode / storage disabled — just close */
+    }
+    setShowTour(false);
+  };
+  // Finishing drops the user straight into the first task: a network scan.
+  const finishTour = () => {
+    markTourSeen();
+    setPage("devices");
+  };
 
   const health = useQuery<HealthResponse>({
     queryKey: ["health"],
@@ -224,6 +252,15 @@ function App() {
               isError={health.isError}
               isSuccess={health.isSuccess}
             />
+            <button
+              type="button"
+              onClick={() => setShowTour(true)}
+              className="hidden sm:inline-flex items-center justify-center rounded-md p-2 text-fg-muted hover:text-fg hover:bg-surface-2 transition-colors"
+              aria-label={t("onboarding.openLabel")}
+              title={t("onboarding.openLabel")}
+            >
+              <HelpCircle className="w-5 h-5" />
+            </button>
             <LanguageToggle />
             <ThemeToggle />
           </div>
@@ -254,6 +291,9 @@ function App() {
         {t("info.footer")} · HomeUpdater {version.data?.version}
         {isTest && <span className="text-warning font-bold ms-1">· TEST BUILD</span>}
       </footer>
+
+      {/* First-run onboarding tour (shown once; re-openable from the header) */}
+      {showTour && <OnboardingTour onDismiss={markTourSeen} onFinish={finishTour} />}
     </div>
   );
 }
