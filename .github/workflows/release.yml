@@ -1,0 +1,113 @@
+name: release
+
+# Cut a signed installer + GitHub Release automatically when a version tag is
+# pushed (e.g. `git tag v1.4.8 && git push origin v1.4.8`), or run on demand.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build/release (e.g. v1.4.8)"
+        required: true
+
+permissions:
+  contents: write # needed to create the Release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      # Gate the signing step: 'true' only when the PFX secret is configured.
+      HAS_PFX: ${{ secrets.SIGNING_PFX_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # --- backend deps + QUALITY GATE (never release a red build) ---
+      - name: Install backend deps
+        working-directory: 02_التطوير/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Test + lint (gate)
+        working-directory: 02_التطوير/backend
+        env:
+          HOMEUPDATER_DATA_DIR: ${{ runner.temp }}\hu-ci
+        run: |
+          ruff check app tests
+          black --check app tests
+          pytest -q
+
+      # --- frontend build (bundled into the exe) ---
+      - name: Build frontend
+        working-directory: 02_التطوير/frontend
+        run: |
+          npm ci
+          npm run build
+
+      # --- package the app ---
+      - name: PyInstaller
+        working-directory: 02_التطوير/backend
+        run: pyinstaller HomeUpdater.spec --noconfirm
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        working-directory: 02_التطوير/installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" HomeUpdater.iss
+        shell: pwsh
+
+      # --- OPTIONAL code signing: only runs if the PFX secrets are configured ---
+      # Add repo secrets SIGNING_PFX_BASE64 (base64 of a .pfx) + SIGNING_PFX_PASSWORD
+      # to sign in CI. Without them the artifact is published UNSIGNED (still valid,
+      # but SmartScreen will warn) — the workflow does not fail.
+      - name: Sign exe + installer
+        if: ${{ env.HAS_PFX == 'true' }}
+        env:
+          PFX_PW: ${{ secrets.SIGNING_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          $pfx = "$env:RUNNER_TEMP\sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String("${{ secrets.SIGNING_PFX_BASE64 }}"))
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          $ver = (Get-Content "02_التطوير/backend/VERSION").Trim()
+          $targets = @("02_التطوير/backend/dist/HomeUpdater/HomeUpdater.exe",
+                       "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe")
+          foreach ($t in $targets) {
+            & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:PFX_PW $t
+          }
+          Remove-Item $pfx -Force
+
+      # --- publish the Release (idempotent: create or upload) ---
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ver = (Get-Content "02_التطوير/backend/VERSION").Trim()
+          $asset = "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe"
+          if (-not (Test-Path $asset)) { throw "installer not found: $asset" }
+          $sha = (Get-FileHash $asset -Algorithm SHA256).Hash
+          "HomeUpdater $env:TAG`n`nSHA-256: $sha" | Out-File notes.txt -Encoding utf8
+          # Create the release if missing, else just upload/replace the asset.
+          gh release view $env:TAG 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG $asset --title "HomeUpdater $env:TAG" --notes-file notes.txt --latest
+          } else {
+            gh release upload $env:TAG $asset --clobber
+          }
