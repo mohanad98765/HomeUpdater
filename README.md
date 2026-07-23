@@ -44,15 +44,17 @@ The centerpiece is an **agentic AI advisor** (Claude, tool‑use loop): it reads
 
 ## لقطات · Screenshots
 
-| 🤖 المستشار الذكي · AI Advisor | 🖥️ لوحة التحكم · Dashboard |
+| 🤖 المستشار الذكي · AI Advisor | 🔐 موافقة مشاركة البيانات · Data-sharing consent |
 |:---:|:---:|
-| ![Advisor](screenshots/05-advisor.png) | ![Dashboard](screenshots/01-dashboard.png) |
+| ![Advisor](screenshots/05-advisor.png) | ![Consent](screenshots/12-consent.png) |
+| **👋 الجولة الترحيبية · Onboarding tour** | **🖥️ لوحة التحكم · Dashboard** |
+| ![Onboarding](screenshots/11-onboarding.png) | ![Dashboard](screenshots/01-dashboard.png) |
 | **🛡️ الأمان (CVE) · Security** | **🌐 الأجهزة · Devices** |
 | ![Security](screenshots/04-security.png) | ![Devices](screenshots/02-devices.png) |
 | **📱 ربط Android لاسلكياً · Android pairing** | **🔒 قفل الدخول · Login lock** |
 | ![Android](screenshots/08-android.png) | ![Login](screenshots/10-login.png) |
 
-> 🆕 **قيد الإضافة بعد التصوير** · _pending capture from the running app_ (v1.4.7) — انظر [`DEMO_KIT`](00_دليل_المشروع/DEMO_KIT.md): الجولة الترحيبية (`11-onboarding.png`) · نافذة الموافقة (`12-consent.png`) · خطوات الوكيل (`13-agent-steps.png`) · التطبيق بضغطة (`14-apply.png`).
+> 🆕 **قيد الإضافة بعد التصوير** · _pending capture from the running app_ (v1.4.7): خطوات الوكيل (`13-agent-steps.png`) · التطبيق بضغطة (`14-apply.png`) — تعرضان تحليل الذكاء الاصطناعي ونتائج تحديث حقيقية فتحتاجان التطبيق حيّاً؛ انظر [`DEMO_KIT`](00_دليل_المشروع/DEMO_KIT.md).
 
 ## التنزيل والتشغيل · Install
 
