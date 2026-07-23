@@ -86,6 +86,15 @@ _One reference to record a rubric-winning demo and assemble the submission._
 | 08 | أندرويد · Android pairing | شاشة الإقران اللاسلكي | 🟢 موجودة |
 | 10 | الدخول · Login lock | شاشة إنشاء/إدخال كلمة المرور | 🟢 موجودة |
 
+**تسميات README للّقطات الجديدة** _(صياغة موني — مُراجَعة كمدير)_ · _README captions for the new shots (drafted by Mony, PM-curated):_
+
+| الملف الهدف · Target file | التسمية · Caption |
+|---|---|
+| `screenshots/11-onboarding.png` | الجولة الترحيبية · Onboarding Tour |
+| `screenshots/12-consent.png` | موافقة مشاركة البيانات · Data-sharing consent |
+| `screenshots/13-agent-steps.png` | خطوات المستشار · Agentic steps |
+| `screenshots/14-apply.png` | تطبيق بضغطة · One-click apply |
+
 ---
 
 ## 04 — نصوص التقديم الجاهزة · Paste-ready copy
