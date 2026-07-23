@@ -44,13 +44,15 @@ The centerpiece is an **agentic AI advisor** (Claude, tool‑use loop): it reads
 
 ## لقطات · Screenshots
 
-| لوحة التحكم · Dashboard | المستشار الذكي · AI Advisor |
-|---|---|
-| ![Dashboard](screenshots/01-dashboard.png) | ![Advisor](screenshots/05-advisor.png) |
-| **الأمان (CVE) · Security** | **الأجهزة · Devices** |
+| 🤖 المستشار الذكي · AI Advisor | 🖥️ لوحة التحكم · Dashboard |
+|:---:|:---:|
+| ![Advisor](screenshots/05-advisor.png) | ![Dashboard](screenshots/01-dashboard.png) |
+| **🛡️ الأمان (CVE) · Security** | **🌐 الأجهزة · Devices** |
 | ![Security](screenshots/04-security.png) | ![Devices](screenshots/02-devices.png) |
-| **ربط Android لاسلكياً · Android pairing** | **قفل الدخول · Login lock** |
+| **📱 ربط Android لاسلكياً · Android pairing** | **🔒 قفل الدخول · Login lock** |
 | ![Android](screenshots/08-android.png) | ![Login](screenshots/10-login.png) |
+
+> 🆕 **قيد الإضافة بعد التصوير** · _pending capture from the running app_ (v1.4.7) — انظر [`DEMO_KIT`](00_دليل_المشروع/DEMO_KIT.md): الجولة الترحيبية (`11-onboarding.png`) · نافذة الموافقة (`12-consent.png`) · خطوات الوكيل (`13-agent-steps.png`) · التطبيق بضغطة (`14-apply.png`).
 
 ## التنزيل والتشغيل · Install
 
