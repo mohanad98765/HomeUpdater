@@ -20,18 +20,16 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      # Gate the signing step: 'true' only when the PFX secret is configured.
-      HAS_PFX: ${{ secrets.SIGNING_PFX_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
 
       # --- backend deps + QUALITY GATE (never release a red build) ---
       - name: Install backend deps
@@ -62,6 +60,60 @@ jobs:
         working-directory: 02_التطوير/backend
         run: pyinstaller HomeUpdater.spec --noconfirm
 
+      # --- code signing: SELF-SIGNED by default so the installer is never
+      #     unsigned. If repo secrets SIGNING_PFX_BASE64 (+ SIGNING_PFX_PASSWORD)
+      #     are set, CI signs with that TRUSTED cert instead. A trusted OV cert
+      #     builds SmartScreen reputation over time; only an EV cert clears the
+      #     warning from the first download. Self-signed always warns.
+      - name: Prepare signing certificate
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.SIGNING_PFX_BASE64 }}
+          PFX_PW: ${{ secrets.SIGNING_PFX_PASSWORD }}
+        run: |
+          $pfx = "$env:RUNNER_TEMP\sign.pfx"
+          if ($env:PFX_B64) {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_B64))
+            $pw = $env:PFX_PW
+            "SIGN_MODE=trusted" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert `
+              -Subject "CN=HomeUpdater (self-signed), O=HomeUpdater" `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -KeyUsage DigitalSignature -KeyExportPolicy Exportable `
+              -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(3)
+            $pw = [Guid]::NewGuid().ToString("N")
+            $sec = ConvertTo-SecureString $pw -AsPlainText -Force
+            Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $sec | Out-Null
+            Remove-Item ("Cert:\CurrentUser\My\" + $cert.Thumbprint) -Force
+            "SIGN_MODE=self-signed" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          }
+          Write-Host "::add-mask::$pw"
+          "SIGN_PFX_PW=$pw" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) { throw "signtool.exe not found on the runner" }
+          "SIGNTOOL=$signtool" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      # Sign the app exe BEFORE packaging, so the exe inside the installer is
+      # signed too (not just the installer wrapper). Timestamping tries several
+      # RFC-3161 authorities so a single TSA outage can't fail a public release.
+      - name: Sign app executable
+        shell: pwsh
+        run: |
+          function Invoke-Sign([string]$file) {
+            $tsas = @("http://timestamp.digicert.com","http://timestamp.sectigo.com","http://timestamp.globalsign.com/tsa/r6advanced1")
+            foreach ($ts in $tsas) {
+              & "$env:SIGNTOOL" sign /fd SHA256 /td SHA256 /tr $ts /f "$env:RUNNER_TEMP\sign.pfx" /p "$env:SIGN_PFX_PW" $file
+              if ($LASTEXITCODE -eq 0) { return }
+              Write-Host "::warning::timestamp via $ts failed; trying next"
+            }
+            Write-Host "::warning::all timestamp servers failed; signing $file without a timestamp"
+            & "$env:SIGNTOOL" sign /fd SHA256 /f "$env:RUNNER_TEMP\sign.pfx" /p "$env:SIGN_PFX_PW" $file
+            if ($LASTEXITCODE -ne 0) { throw "signing failed: $file" }
+          }
+          Invoke-Sign "02_التطوير/backend/dist/HomeUpdater/HomeUpdater.exe"
+
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
@@ -71,27 +123,25 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" HomeUpdater.iss
         shell: pwsh
 
-      # --- OPTIONAL code signing: only runs if the PFX secrets are configured ---
-      # Add repo secrets SIGNING_PFX_BASE64 (base64 of a .pfx) + SIGNING_PFX_PASSWORD
-      # to sign in CI. Without them the artifact is published UNSIGNED (still valid,
-      # but SmartScreen will warn) — the workflow does not fail.
-      - name: Sign exe + installer
-        if: ${{ env.HAS_PFX == 'true' }}
-        env:
-          PFX_PW: ${{ secrets.SIGNING_PFX_PASSWORD }}
+      # Sign the built installer (the file users download + run). Same
+      # multi-TSA fallback so a timestamp outage can't fail the release.
+      - name: Sign installer
         shell: pwsh
         run: |
-          $pfx = "$env:RUNNER_TEMP\sign.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String("${{ secrets.SIGNING_PFX_BASE64 }}"))
-          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
-            Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          $ver = (Get-Content "02_التطوير/backend/VERSION").Trim()
-          $targets = @("02_التطوير/backend/dist/HomeUpdater/HomeUpdater.exe",
-                       "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe")
-          foreach ($t in $targets) {
-            & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:PFX_PW $t
+          function Invoke-Sign([string]$file) {
+            $tsas = @("http://timestamp.digicert.com","http://timestamp.sectigo.com","http://timestamp.globalsign.com/tsa/r6advanced1")
+            foreach ($ts in $tsas) {
+              & "$env:SIGNTOOL" sign /fd SHA256 /td SHA256 /tr $ts /f "$env:RUNNER_TEMP\sign.pfx" /p "$env:SIGN_PFX_PW" $file
+              if ($LASTEXITCODE -eq 0) { return }
+              Write-Host "::warning::timestamp via $ts failed; trying next"
+            }
+            Write-Host "::warning::all timestamp servers failed; signing $file without a timestamp"
+            & "$env:SIGNTOOL" sign /fd SHA256 /f "$env:RUNNER_TEMP\sign.pfx" /p "$env:SIGN_PFX_PW" $file
+            if ($LASTEXITCODE -ne 0) { throw "signing failed: $file" }
           }
-          Remove-Item $pfx -Force
+          $ver = (Get-Content "02_التطوير/backend/VERSION").Trim()
+          Invoke-Sign "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe"
+          Remove-Item "$env:RUNNER_TEMP\sign.pfx" -Force
 
       # --- publish the Release (idempotent: create or upload) ---
       - name: Publish GitHub Release
@@ -103,7 +153,8 @@ jobs:
           $asset = "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe"
           if (-not (Test-Path $asset)) { throw "installer not found: $asset" }
           $sha = (Get-FileHash $asset -Algorithm SHA256).Hash
-          "HomeUpdater $env:TAG`n`nSHA-256: $sha" | Out-File notes.txt -Encoding utf8
+          $signNote = if ($env:SIGN_MODE -eq 'trusted') { "Signed with a trusted certificate." } else { "Self-signed (SmartScreen may warn: More info -> Run anyway)." }
+          "HomeUpdater $env:TAG`n`nSHA-256: $sha`nSigning: $signNote" | Out-File notes.txt -Encoding utf8
           # Create the release if missing, else just upload/replace the asset.
           gh release view $env:TAG 2>$null
           if ($LASTEXITCODE -ne 0) {

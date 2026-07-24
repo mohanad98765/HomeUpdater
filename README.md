@@ -74,6 +74,17 @@ The centerpiece is an **agentic AI advisor** (Claude, tool‑use loop): it reads
 
 تشفير الاعتمادات عند التخزين (Fernet + DPAPI) · قفل التطبيق بكلمة مرور مُجزّأة · مصادقة الـ API المحلي (توكن جلسة + CSRF + حماية DNS‑rebinding) · تحقّق هوية المضيف (SSH TOFU + WinRM TLS) · توقيع الكود · فحص ثغرات NVD.
 
+## التوقيع الرقمي · Code signing
+
+كل مثبِّت يُبنى في CI **موقَّع رقمياً تلقائياً** (SHA‑256 + طابع زمني RFC‑3161). افتراضياً يكون التوقيع **ذاتيّاً (self‑signed)** — فيحمل المثبِّت توقيعاً واسم ناشر، لكن SmartScreen قد يُظهر تحذيراً لأن الشهادة ليست من جهة تصديق موثوقة (CA): «More info → Run anyway». لتقليل التحذير أو إزالته، أضِف شهادة توقيع كود **موثوقة** كسِرَّين في المستودع، فيوقّع CI بها تلقائياً بدل التوقيع الذاتي — علماً أن شهادة **OV** تبني سُمعة SmartScreen تدريجياً مع تراكم التنزيلات (يبقى التحذير حتى تكفي)، بينما شهادة **EV** تُزيل التحذير من أوّل تنزيل:
+
+```bash
+gh secret set SIGNING_PFX_BASE64 < cert.b64   # ملف .pfx مُرمَّز بـ base64
+gh secret set SIGNING_PFX_PASSWORD            # كلمة مرور الشهادة (تُدخَل بأمان)
+```
+
+**English:** every CI‑built installer is **automatically signed** (SHA‑256 + RFC‑3161 timestamp). By default the signature is **self‑signed**, so the installer carries a signature and publisher name but SmartScreen may still warn — it isn't from a trusted CA («More info → Run anyway»). Adding a **trusted** code‑signing certificate as the two repo secrets above makes CI sign with it instead: an **OV** cert builds SmartScreen reputation over time (the warning persists until enough downloads accrue), while an **EV** cert clears the warning from the first download.
+
 ## التقنيات · Tech stack
 
 **Backend:** Python · FastAPI · SQLAlchemy (async) · Alembic · pywinrm · asyncssh · Anthropic SDK
