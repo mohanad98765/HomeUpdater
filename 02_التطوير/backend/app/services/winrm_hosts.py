@@ -94,7 +94,17 @@ def _friendly_error(exc: Exception) -> str:
     msg = str(exc)
     low = msg.lower()
     if "InvalidCredentials" in name or "401" in msg or "unauthorized" in low:
-        return "فشل المصادقة — تحقّق من اسم المستخدم/كلمة المرور (استخدم حساب مسؤول)."
+        # A 401 is NOT always a wrong password. The target rejects the *network*
+        # logon (type 3) for several reasons that look identical from here — and
+        # RDP still working proves nothing, since RDP is a different logon right.
+        # Point the user at the real suspects instead of only blaming the password.
+        return (
+            "فشل المصادقة (401). تأكّد أن الحساب مسؤول على الجهاز الهدف وبصيغة "
+            "اسم‑الجهاز\\المستخدم. وإن كانت البيانات صحيحة فقد يكون الهدف: يمنع "
+            "«تسجيل الدخول عبر الشبكة» للحسابات المحلّية بسياسة أمان (شائع في أجهزة "
+            "العمل المُدارة)، أو يُقيّد NTLM، أو الحساب مقفل مؤقّتًا بعد محاولات فاشلة. "
+            "افحص الحدث 4625 في سجلّ الأمان على الجهاز الهدف لمعرفة السبب الدقيق."
+        )
     if (
         "ConnectionError" in name
         or "max retries" in low

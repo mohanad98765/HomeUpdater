@@ -65,6 +65,22 @@ def test_friendly_error_auth():
     assert "المصادقة" in msg
 
 
+def test_friendly_error_auth_names_the_non_password_causes():
+    """A 401 is not always a wrong password: the target may deny network logon
+    for local accounts (hardened/work PCs), restrict NTLM, or have locked the
+    account. The message must name those and point at event 4625, or users chase
+    a password that was never wrong."""
+
+    class InvalidCredentialsError(Exception):
+        pass
+
+    msg = winrm._friendly_error(InvalidCredentialsError("401"))
+    assert "الشبكة" in msg  # network-logon policy
+    assert "NTLM" in msg
+    assert "مقفل" in msg  # account lockout
+    assert "4625" in msg  # where to find the real reason
+
+
 def test_friendly_error_connection():
     err = ConnectionError("Max retries exceeded: actively refused")
     msg = winrm._friendly_error(err)
