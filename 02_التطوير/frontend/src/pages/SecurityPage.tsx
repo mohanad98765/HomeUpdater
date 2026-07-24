@@ -102,7 +102,9 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
         ? `${d.vendor} — ${d.top_cve} (${d.top_severity ?? ""}، ${d.cve_total ?? 0} ثغرة)`
         : `${d.vendor} — لا ثغرات معروفة`,
     );
-    return rows.length ? `أجهزة الشبكة ومورّدوها والثغرات المعروفة:\n${rows.join("\n")}` : "";
+    return rows.length
+      ? `أجهزة الشبكة ومورّدوها والثغرات المعروفة:\n${rows.join("\n")}`
+      : "لم تُفحَص الشبكة بعد. قدّم نصائح عامّة لتأمين شبكة منزليّة (Wi‑Fi، كلمات المرور، تحديث أجهزة التوجيه وإنترنت الأشياء).";
   }, [flagged, withVendor]);
 
   return (
@@ -118,7 +120,7 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
           <p className="text-xs text-fg-muted">{t("pages.sec.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {withVendor.length > 0 && <SolveProblemButton context={solveContext} />}
+          <SolveProblemButton context={solveContext} />{/* ظاهر دائمًا */}
           <button
             type="button"
             onClick={() => refresh.mutate()}

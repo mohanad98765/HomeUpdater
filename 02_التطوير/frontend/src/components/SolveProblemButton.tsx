@@ -26,7 +26,7 @@ export function SolveProblemButton({ context }: { context: string }) {
     setPct(null);
     try {
       const res = await solveProblem(choice, {
-        question: "اشرح خطورة هذه الثغرات وكيف أعالجها خطوة بخطوة.",
+        question: "بناءً على المعطيات أعلاه، اشرح المخاطر الأمنيّة وكيف أعالجها خطوة بخطوة.",
         context,
         onToken: (d) => setAnswer((a) => a + d), // بثّ فوريّ
         onProgress: (f) => setPct(Math.round(f * 100)), // تقدّم تنزيل النموذج المحليّ
