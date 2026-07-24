@@ -77,3 +77,8 @@ secret.key
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# --- Personal documents (CVs, certificates, IDs) — NEVER commit / publish ---
+# Private career docs kept locally in the repo folder for convenience.
+شهاداتي/
+*.docx
