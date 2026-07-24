@@ -21,6 +21,7 @@ import {
   Sparkles,
   X,
   HelpCircle,
+  LifeBuoy,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -33,6 +34,7 @@ import { HomeAssistantPage } from "@/pages/HomeAssistantPage";
 import { LinuxPage } from "@/pages/LinuxPage";
 import { WindowsRemotePage } from "@/pages/WindowsRemotePage";
 import { AdvisorPage } from "@/pages/AdvisorPage";
+import { SupportPage } from "@/pages/SupportPage";
 import { OnboardingTour } from "@/components/OnboardingTour";
 
 // ================================================================
@@ -60,6 +62,11 @@ interface UpdateCheck {
   url: string | null;
   checked: boolean;
 }
+interface UpgradeNotice {
+  upgraded: boolean;
+  previous: string | null;
+  current: string | null;
+}
 
 type Page =
   | "dashboard"
@@ -70,7 +77,8 @@ type Page =
   | "homeassistant"
   | "linux"
   | "winrm"
-  | "advisor";
+  | "advisor"
+  | "support";
 
 function App() {
   const { t } = useTranslation();
@@ -125,6 +133,41 @@ function App() {
   const showUpdateBanner =
     !updateDismissed && !!update?.checked && update.update_available && !!update.url;
 
+  // Post-upgrade toast: after the signed installer replaced files + relaunched,
+  // the backend reports the version went up. Show "upgraded from X to Y" once,
+  // then remember it per-version in localStorage so it never nags again.
+  const [upgradeDismissed, setUpgradeDismissed] = useState(false);
+  const upgradeNotice = useQuery<UpgradeNotice>({
+    queryKey: ["upgrade-notice"],
+    queryFn: () => apiFetch<UpgradeNotice>("/api/system/upgrade-notice"),
+    staleTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const upgraded = upgradeNotice.data;
+  const upgradeSeenKey = upgraded?.current ? `hu_upgrade_seen_${upgraded.current}` : "";
+  const upgradeAlreadySeen = (() => {
+    try {
+      return !!upgradeSeenKey && localStorage.getItem(upgradeSeenKey) === "1";
+    } catch {
+      return false;
+    }
+  })();
+  const showUpgradeToast =
+    !upgradeDismissed &&
+    !upgradeAlreadySeen &&
+    !!upgraded?.upgraded &&
+    !!upgraded.previous &&
+    !!upgraded.current;
+  const dismissUpgrade = () => {
+    try {
+      if (upgradeSeenKey) localStorage.setItem(upgradeSeenKey, "1");
+    } catch {
+      /* private mode — session dismiss still applies */
+    }
+    setUpgradeDismissed(true);
+  };
+
   // Only development builds carry the test banner; a release build hides it.
   const isTest = health.data?.build_mode === "test";
 
@@ -163,6 +206,24 @@ function App() {
           <button
             type="button"
             onClick={() => setUpdateDismissed(true)}
+            className="ms-1 rounded p-0.5 hover:bg-black/10 transition-colors"
+            aria-label={t("banner.dismiss")}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* رسالة إتمام الترقية — تظهر مرّة بعد تحديث التطبيق (لا تنزيل/تصعيد صلاحيات) */}
+      {showUpgradeToast && (
+        <div className="bg-success text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-3 shadow-md">
+          <Sparkles className="w-4 h-4 flex-shrink-0" />
+          <span>
+            {t("banner.upgraded", { previous: upgraded!.previous, current: upgraded!.current })}
+          </span>
+          <button
+            type="button"
+            onClick={dismissUpgrade}
             className="ms-1 rounded p-0.5 hover:bg-black/10 transition-colors"
             aria-label={t("banner.dismiss")}
           >
@@ -244,6 +305,12 @@ function App() {
               icon={Sparkles}
               label={t("nav.advisor")}
             />
+            <NavTab
+              active={page === "support"}
+              onClick={() => setPage("support")}
+              icon={LifeBuoy}
+              label={t("nav.support")}
+            />
           </nav>
 
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -284,6 +351,7 @@ function App() {
         {page === "linux" && <LinuxPage onBack={() => setPage("dashboard")} />}
         {page === "winrm" && <WindowsRemotePage onBack={() => setPage("dashboard")} />}
         {page === "advisor" && <AdvisorPage onBack={() => setPage("dashboard")} />}
+        {page === "support" && <SupportPage onBack={() => setPage("dashboard")} />}
       </main>
 
       {/* التذييل */}

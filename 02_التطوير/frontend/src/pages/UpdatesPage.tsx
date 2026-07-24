@@ -352,7 +352,8 @@ function WUAUpdatesView({ kind }: { kind: "windows" | "drivers" }) {
           <span className="font-semibold text-fg">Android</span> (لاسلكياً عبر ADB)،{" "}
           <span className="font-semibold text-fg">لينكس/SSH</span>، و<span className="font-semibold text-fg">المنزل الذكي</span>{" "}
           (Home Assistant). تحديث أجهزة <span dir="ltr">Windows</span> أخرى <span className="font-semibold text-fg">عن بُعد</span>{" "}
-          يتطلّب تفعيل <span dir="ltr">WinRM</span> على كل جهاز — ميزة مخطَّطة (المرحلة 1.6).
+          متاح من تبويب <span className="font-semibold text-fg">«أجهزة Windows البعيدة»</span> (يتطلّب تفعيل{" "}
+          <span dir="ltr">WinRM</span> على الجهاز الهدف).
         </div>
       </div>
 

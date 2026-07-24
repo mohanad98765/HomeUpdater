@@ -53,6 +53,41 @@ def _ensure_windows() -> None:
         raise SoftwareUpdateError("winget is only available on Windows")
 
 
+# winget / MSI exit codes that are NOT install failures. A plain ``rc == 0``
+# check wrongly marks these as failed, so the package is persisted
+# is_installed=False and reappears as "pending" on every later check — the root
+# cause of a persistent "the update keeps failing" report.
+#   3010 (0x00000BC2) ERROR_SUCCESS_REBOOT_REQUIRED  — installed; reboot to finish
+#   1641 (0x00000669) ERROR_SUCCESS_REBOOT_INITIATED — installed; reboot started
+#   0x8A15002B        APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE — nothing to do
+# An HRESULT with the high bit set arrives as a signed int32 (0x8A15002B ->
+# -1978335189), so normalise to the unsigned DWORD before comparing.
+_REBOOT_REQUIRED_CODES = frozenset({3010, 1641})
+_WINGET_NOOP_CODES = frozenset({0x8A15002B})
+
+
+def _as_dword(rc: int) -> int:
+    """Normalise a process exit code to an unsigned 32-bit value."""
+    return rc & 0xFFFFFFFF
+
+
+def _classify_winget_rc(rc: int) -> tuple[bool, bool]:
+    """Return ``(succeeded, reboot_required)`` for a winget exit code.
+
+    Only a genuine failure code yields succeeded=False. 0 is success; the
+    reboot-required codes and "update not applicable" are benign non-failures
+    that a raw ``rc == 0`` would misread as failures.
+    """
+    code = _as_dword(rc)
+    if code == 0:
+        return True, False
+    if code in _REBOOT_REQUIRED_CODES:
+        return True, True
+    if code in _WINGET_NOOP_CODES:
+        return True, False
+    return False, False
+
+
 async def _run(
     *args: str,
     idle_timeout: float = 180.0,
@@ -293,10 +328,12 @@ async def install_software_update(package_id: str) -> dict[str, Any]:
         idle_timeout=600.0,
         hard_ceiling=3600.0,
     )
+    succeeded, reboot_required = _classify_winget_rc(rc)
     return {
         "package_id": package_id,
         "exit_code": rc,
-        "succeeded": rc == 0,
+        "succeeded": succeeded,
+        "reboot_required": reboot_required,
         "stdout_tail": stdout[-500:] if stdout else "",
         "stderr_tail": stderr[-500:] if stderr else "",
     }
@@ -307,6 +344,7 @@ async def install_many(package_ids: list[str]) -> dict[str, Any]:
     update_progress.begin("install-software", total=len(package_ids))
     results = []
     succeeded = 0
+    reboot_required = False
     for i, pkg_id in enumerate(package_ids, 1):
         update_progress.update_progress(
             completed=i - 1,
@@ -320,15 +358,19 @@ async def install_many(package_ids: list[str]) -> dict[str, Any]:
                 "package_id": pkg_id,
                 "exit_code": -1,
                 "succeeded": False,
+                "reboot_required": False,
                 "stderr_tail": str(exc),
             }
         results.append(r)
         if r.get("succeeded"):
             succeeded += 1
+        if r.get("reboot_required"):
+            reboot_required = True
 
     update_progress.finish(f"Installed {succeeded}/{len(package_ids)}")
     return {
         "installed": succeeded,
         "total": len(package_ids),
+        "reboot_required": reboot_required,
         "results": results,
     }

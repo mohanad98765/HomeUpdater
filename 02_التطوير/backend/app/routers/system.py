@@ -111,6 +111,21 @@ async def update_check() -> dict:
     return result
 
 
+@router.get("/upgrade-notice")
+async def upgrade_notice() -> dict:
+    """Was the app upgraded since the previous run? Read once by the UI on load.
+
+    Populated at startup by services/version_state: ``{upgraded, previous,
+    current}``. ``upgraded`` is True only when the persisted last-seen version is
+    older than the current build — i.e. the signed installer replaced files and
+    relaunched. The UI shows the "upgraded from X to Y" toast once, then
+    suppresses it locally.
+    """
+    from ..services import version_state
+
+    return version_state.get_notice()
+
+
 @router.get("/info")
 async def system_info():
     """System info - used by frontend to show 'This computer' identity."""

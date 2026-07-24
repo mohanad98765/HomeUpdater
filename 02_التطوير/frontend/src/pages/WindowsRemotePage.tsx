@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Info,
   Server,
+  Settings2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -42,6 +43,15 @@ interface UpdateCheck {
   total: number;
   packages: { name: string; id: string; current: string; available: string }[];
 }
+interface DiscoveredDevice {
+  id: number;
+  ip: string;
+  hostname: string;
+  vendor: string;
+  device_type: string;
+  custom_name: string;
+  manageable?: boolean;
+}
 
 export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
@@ -54,7 +64,16 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
     queryFn: () => apiFetch("/api/winrm/hosts"),
   });
 
+  // Discovered devices power the picker so the user selects a machine instead of
+  // typing an IP from memory.
+  const devices = useQuery<{ devices: DiscoveredDevice[]; total: number }>({
+    queryKey: ["devices"],
+    queryFn: () => apiFetch("/api/devices"),
+  });
+  const discovered = devices.data?.devices ?? [];
+
   const [showForm, setShowForm] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState({
     host: "",
     port: 5985,
@@ -137,24 +156,39 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
       {showForm && (
         <div className="card mb-6">
           <h3 className="font-bold mb-3">{t("pages.winrm.newDevice")}</h3>
+
+          {/* Pick a discovered device — fills the host + name for you */}
+          <label htmlFor="winrm-pick" className="text-xs font-bold text-fg-muted mb-1 block">
+            {t("pages.winrm.pickDevice")}
+          </label>
+          <select
+            id="winrm-pick"
+            className="input w-full mb-3"
+            dir="ltr"
+            aria-label={t("pages.winrm.pickDevice")}
+            value={discovered.some((d) => d.ip === form.host) ? form.host : ""}
+            onChange={(e) => {
+              const ip = e.target.value;
+              const dev = discovered.find((d) => d.ip === ip);
+              setForm({
+                ...form,
+                host: ip,
+                custom_name: dev
+                  ? dev.custom_name || dev.hostname || dev.vendor || form.custom_name
+                  : form.custom_name,
+              });
+            }}
+          >
+            <option value="">{t("pages.winrm.pickDevicePlaceholder")}</option>
+            {discovered.map((d) => (
+              <option key={d.id} value={d.ip}>
+                {(d.custom_name || d.hostname || d.vendor || d.ip) + " — " + d.ip}
+              </option>
+            ))}
+          </select>
+
+          {/* The two credentials you always need */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              className="input"
-              dir="ltr"
-              aria-label={t("pages.winrm.ipPlaceholder")}
-              placeholder={t("pages.winrm.ipPlaceholder")}
-              value={form.host}
-              onChange={(e) => setForm({ ...form, host: e.target.value })}
-            />
-            <input
-              className="input"
-              dir="ltr"
-              type="number"
-              aria-label={t("pages.winrm.portPlaceholder")}
-              placeholder={t("pages.winrm.portPlaceholder")}
-              value={form.port}
-              onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
-            />
             <input
               className="input"
               dir="ltr"
@@ -172,43 +206,73 @@ export function WindowsRemotePage({ onBack }: { onBack: () => void }) {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
-            <input
-              className="input md:col-span-2"
-              aria-label={t("pages.remote.customName")}
-              placeholder={t("pages.remote.customName")}
-              value={form.custom_name}
-              onChange={(e) => setForm({ ...form, custom_name: e.target.value })}
-            />
-            <label className="md:col-span-2 flex items-center gap-2 text-sm text-fg-muted">
+          </div>
+
+          {/* Advanced — manual host, port, HTTPS, name (collapsed by default) */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((s) => !s)}
+            className="mt-3 text-xs text-fg-muted hover:text-fg inline-flex items-center gap-1"
+          >
+            <Settings2 className="w-3.5 h-3.5" /> {t("pages.winrm.advanced")}
+          </button>
+          {showAdvanced && (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
               <input
-                type="checkbox"
-                checked={form.use_https}
-                onChange={(e) => {
-                  const https = e.target.checked;
-                  // Only auto-adjust the port if it's still a default — never
-                  // clobber a custom port the user typed.
-                  const port =
-                    form.port === 5985 || form.port === 5986
-                      ? https
-                        ? 5986
-                        : 5985
-                      : form.port;
-                  setForm({ ...form, use_https: https, port, verify_tls: https && form.verify_tls });
-                }}
+                className="input"
+                dir="ltr"
+                aria-label={t("pages.winrm.ipPlaceholder")}
+                placeholder={t("pages.winrm.ipPlaceholder")}
+                value={form.host}
+                onChange={(e) => setForm({ ...form, host: e.target.value })}
               />
-              {t("pages.winrm.useHttps")}
-            </label>
-            {form.use_https && (
+              <input
+                className="input"
+                dir="ltr"
+                type="number"
+                aria-label={t("pages.winrm.portPlaceholder")}
+                placeholder={t("pages.winrm.portPlaceholder")}
+                value={form.port}
+                onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
+              />
+              <input
+                className="input md:col-span-2"
+                aria-label={t("pages.remote.customName")}
+                placeholder={t("pages.remote.customName")}
+                value={form.custom_name}
+                onChange={(e) => setForm({ ...form, custom_name: e.target.value })}
+              />
               <label className="md:col-span-2 flex items-center gap-2 text-sm text-fg-muted">
                 <input
                   type="checkbox"
-                  checked={form.verify_tls}
-                  onChange={(e) => setForm({ ...form, verify_tls: e.target.checked })}
+                  checked={form.use_https}
+                  onChange={(e) => {
+                    const https = e.target.checked;
+                    // Only auto-adjust the port if it's still a default — never
+                    // clobber a custom port the user typed.
+                    const port =
+                      form.port === 5985 || form.port === 5986
+                        ? https
+                          ? 5986
+                          : 5985
+                        : form.port;
+                    setForm({ ...form, use_https: https, port, verify_tls: https && form.verify_tls });
+                  }}
                 />
-                {t("pages.winrm.verifyTls")}
+                {t("pages.winrm.useHttps")}
               </label>
-            )}
-          </div>
+              {form.use_https && (
+                <label className="md:col-span-2 flex items-center gap-2 text-sm text-fg-muted">
+                  <input
+                    type="checkbox"
+                    checked={form.verify_tls}
+                    onChange={(e) => setForm({ ...form, verify_tls: e.target.checked })}
+                  />
+                  {t("pages.winrm.verifyTls")}
+                </label>
+              )}
+            </div>
+          )}
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"

@@ -27,6 +27,7 @@ const resources = {
         linux: "لينكس",
         winrm: "Windows بعيد",
         advisor: "المستشار الذكي",
+        support: "الدعم",
       },
       auth: {
         setupTitle: "أنشئ كلمة مرور",
@@ -45,6 +46,18 @@ const resources = {
         forgot: "نسيت كلمة المرور؟ احذف ملف auth.json من مجلد بيانات التطبيق لإعادة التعيين.",
       },
       pages: {
+        support: {
+          title: "مساعد الاستخدام",
+          subtitle: "اسأل عن أي ميزة أو مشكلة في التطبيق",
+          intro: "مساعد ذكي مخصّص لهذا التطبيق فقط — يشرح الميزات ويحلّ المشكلات الشائعة. لا يُرسِل بيانات شبكتك.",
+          needsKey: "يحتاج المساعد مفتاح Anthropic — أضِفه من صفحة «المستشار الذكي».",
+          placeholder: "اكتب سؤالك… (مثال: كيف أضيف جهاز ويندوز بعيد؟)",
+          thinking: "يفكّر…",
+          failed: "تعذّر الرد:",
+          exHowScan: "كيف أفحص شبكتي؟",
+          exAddWinrm: "كيف أضيف جهاز ويندوز بعيد؟",
+          exUpdateFail: "لماذا يفشل التحديث؟",
+        },
         advisor: {
           title: "المستشار الذكي",
           subtitle: "تحليل بالذكاء الاصطناعي لأولويات التحديث",
@@ -166,6 +179,9 @@ const resources = {
         winrm: {
           title: "حواسيب Windows البعيدة",
           newDevice: "جهاز Windows بعيد جديد (WinRM)",
+          pickDevice: "اختر جهازًا مكتشفًا",
+          pickDevicePlaceholder: "— اختر من الأجهزة المكتشفة —",
+          advanced: "خيارات متقدّمة (إدخال يدويّ)",
           ipPlaceholder: "عنوان IP (مثال 192.168.1.60)",
           portPlaceholder: "المنفذ (5985)",
           usernameAdmin: "اسم المستخدم (مسؤول)",
@@ -431,6 +447,7 @@ const resources = {
       banner: {
         testMode: "وضع الاختبار · TEST MODE — البرنامج قيد التطوير، لا تَستخدمه للإنتاج",
         updateAvailable: "يتوفّر إصدار أحدث ({{latest}})",
+        upgraded: "تمت ترقية التطبيق من {{previous}} إلى {{current}}",
         updateDownload: "تنزيل",
         dismiss: "إغلاق",
       },
@@ -493,6 +510,7 @@ const resources = {
         linux: "Linux",
         winrm: "Remote Windows",
         advisor: "AI Advisor",
+        support: "Help",
       },
       auth: {
         setupTitle: "Create a password",
@@ -511,6 +529,18 @@ const resources = {
         forgot: "Forgot it? Delete auth.json in the app data folder to reset.",
       },
       pages: {
+        support: {
+          title: "Help assistant",
+          subtitle: "Ask about any feature or problem",
+          intro: "An AI assistant scoped to this app only — it explains features and fixes common problems. It never sends your network data.",
+          needsKey: "The assistant needs an Anthropic key — add it on the AI Advisor page.",
+          placeholder: "Type your question… (e.g. how do I add a remote Windows PC?)",
+          thinking: "Thinking…",
+          failed: "Couldn't answer:",
+          exHowScan: "How do I scan my network?",
+          exAddWinrm: "How do I add a remote Windows PC?",
+          exUpdateFail: "Why does an update fail?",
+        },
         advisor: {
           title: "AI Advisor",
           subtitle: "AI analysis of your update priorities",
@@ -632,6 +662,9 @@ const resources = {
         winrm: {
           title: "Remote Windows computers",
           newDevice: "New remote Windows device (WinRM)",
+          pickDevice: "Pick a discovered device",
+          pickDevicePlaceholder: "— choose from discovered devices —",
+          advanced: "Advanced (manual entry)",
           ipPlaceholder: "IP address (e.g. 192.168.1.60)",
           portPlaceholder: "Port (5985)",
           usernameAdmin: "Username (admin)",
@@ -897,6 +930,7 @@ const resources = {
       banner: {
         testMode: "TEST MODE — App is under development, do not use for production",
         updateAvailable: "A newer version ({{latest}}) is available",
+        upgraded: "Updated from {{previous}} to {{current}}",
         updateDownload: "Download",
         dismiss: "Dismiss",
       },
@@ -959,6 +993,7 @@ const resources = {
         linux: "Linux",
         winrm: "Windows distant",
         advisor: "Conseiller IA",
+        support: "Aide",
       },
       auth: {
         setupTitle: "Créer un mot de passe",
@@ -977,6 +1012,18 @@ const resources = {
         forgot: "Oublié ? Supprimez le fichier auth.json dans le dossier de données de l'application pour réinitialiser.",
       },
       pages: {
+        support: {
+          title: "Assistant d'aide",
+          subtitle: "Posez une question sur une fonction ou un problème",
+          intro: "Un assistant IA limité à cette application — il explique les fonctions et résout les problèmes courants. Il n'envoie jamais vos données réseau.",
+          needsKey: "L'assistant a besoin d'une clé Anthropic — ajoutez-la sur la page Conseiller IA.",
+          placeholder: "Écrivez votre question… (ex. : comment ajouter un PC Windows distant ?)",
+          thinking: "Réflexion…",
+          failed: "Réponse impossible :",
+          exHowScan: "Comment analyser mon réseau ?",
+          exAddWinrm: "Comment ajouter un PC Windows distant ?",
+          exUpdateFail: "Pourquoi une mise à jour échoue-t-elle ?",
+        },
         advisor: {
           title: "Conseiller IA",
           subtitle: "Analyse IA de vos priorités de mise à jour",
@@ -1098,6 +1145,9 @@ const resources = {
         winrm: {
           title: "Ordinateurs Windows distants",
           newDevice: "Nouvel appareil Windows distant (WinRM)",
+          pickDevice: "Choisir un appareil détecté",
+          pickDevicePlaceholder: "— choisir parmi les appareils détectés —",
+          advanced: "Avancé (saisie manuelle)",
           ipPlaceholder: "Adresse IP (par ex. 192.168.1.60)",
           portPlaceholder: "Port (5985)",
           usernameAdmin: "Nom d'utilisateur (admin)",
@@ -1363,6 +1413,7 @@ const resources = {
       banner: {
         testMode: "MODE TEST — Application en développement, ne pas utiliser en production",
         updateAvailable: "Une nouvelle version ({{latest}}) est disponible",
+        upgraded: "Mis à jour de {{previous}} à {{current}}",
         updateDownload: "Télécharger",
         dismiss: "Fermer",
       },
@@ -1425,6 +1476,7 @@ const resources = {
         linux: "Linux",
         winrm: "Windows remoto",
         advisor: "Asesor IA",
+        support: "Ayuda",
       },
       auth: {
         setupTitle: "Crea una contraseña",
@@ -1443,6 +1495,18 @@ const resources = {
         forgot: "¿La olvidaste? Elimina el archivo auth.json de la carpeta de datos de la aplicación para restablecerla.",
       },
       pages: {
+        support: {
+          title: "Asistente de ayuda",
+          subtitle: "Pregunta sobre cualquier función o problema",
+          intro: "Un asistente de IA limitado a esta aplicación: explica funciones y resuelve problemas comunes. Nunca envía los datos de tu red.",
+          needsKey: "El asistente necesita una clave de Anthropic: agrégala en la página Asesor IA.",
+          placeholder: "Escribe tu pregunta… (p. ej., ¿cómo agrego un PC Windows remoto?)",
+          thinking: "Pensando…",
+          failed: "No se pudo responder:",
+          exHowScan: "¿Cómo analizo mi red?",
+          exAddWinrm: "¿Cómo agrego un PC Windows remoto?",
+          exUpdateFail: "¿Por qué falla una actualización?",
+        },
         advisor: {
           title: "Asesor IA",
           subtitle: "Análisis con IA de tus prioridades de actualización",
@@ -1564,6 +1628,9 @@ const resources = {
         winrm: {
           title: "Equipos Windows remotos",
           newDevice: "Nuevo dispositivo Windows remoto (WinRM)",
+          pickDevice: "Elegir un dispositivo detectado",
+          pickDevicePlaceholder: "— elegir entre los dispositivos detectados —",
+          advanced: "Avanzado (entrada manual)",
           ipPlaceholder: "Dirección IP (p. ej. 192.168.1.60)",
           portPlaceholder: "Puerto (5985)",
           usernameAdmin: "Nombre de usuario (admin)",
@@ -1829,6 +1896,7 @@ const resources = {
       banner: {
         testMode: "MODO PRUEBA — App en desarrollo, no usar en producción",
         updateAvailable: "Hay una versión más reciente ({{latest}}) disponible",
+        upgraded: "Actualizado de {{previous}} a {{current}}",
         updateDownload: "Descargar",
         dismiss: "Descartar",
       },
@@ -1891,6 +1959,7 @@ const resources = {
         linux: "Linux",
         winrm: "Uzak Windows",
         advisor: "Yapay Zekâ Danışmanı",
+        support: "Yardım",
       },
       auth: {
         setupTitle: "Parola oluşturun",
@@ -1909,6 +1978,18 @@ const resources = {
         forgot: "Unuttunuz mu? Sıfırlamak için uygulama veri klasöründeki auth.json dosyasını silin.",
       },
       pages: {
+        support: {
+          title: "Yardım asistanı",
+          subtitle: "Herhangi bir özellik veya sorun hakkında sorun",
+          intro: "Yalnızca bu uygulamaya özel bir yapay zekâ asistanı — özellikleri açıklar ve yaygın sorunları çözer. Ağ verilerinizi asla göndermez.",
+          needsKey: "Asistanın bir Anthropic anahtarına ihtiyacı var — Yapay Zekâ Danışmanı sayfasından ekleyin.",
+          placeholder: "Sorunuzu yazın… (ör. uzak bir Windows PC nasıl eklenir?)",
+          thinking: "Düşünüyor…",
+          failed: "Yanıt verilemedi:",
+          exHowScan: "Ağımı nasıl tararım?",
+          exAddWinrm: "Uzak Windows PC nasıl eklenir?",
+          exUpdateFail: "Güncelleme neden başarısız olur?",
+        },
         advisor: {
           title: "Yapay Zekâ Danışmanı",
           subtitle: "Güncelleme önceliklerinizin yapay zekâ analizi",
@@ -2030,6 +2111,9 @@ const resources = {
         winrm: {
           title: "Uzak Windows bilgisayarları",
           newDevice: "Yeni uzak Windows cihazı (WinRM)",
+          pickDevice: "Keşfedilen bir cihaz seç",
+          pickDevicePlaceholder: "— keşfedilen cihazlardan seç —",
+          advanced: "Gelişmiş (elle giriş)",
           ipPlaceholder: "IP adresi (örn. 192.168.1.60)",
           portPlaceholder: "Port (5985)",
           usernameAdmin: "Kullanıcı adı (yönetici)",
@@ -2295,6 +2379,7 @@ const resources = {
       banner: {
         testMode: "TEST MODU — Uygulama geliştirme aşamasında, üretimde kullanmayın",
         updateAvailable: "Daha yeni bir sürüm ({{latest}}) mevcut",
+        upgraded: "{{previous}} sürümünden {{current}} sürümüne güncellendi",
         updateDownload: "İndir",
         dismiss: "Kapat",
       },
@@ -2357,6 +2442,7 @@ const resources = {
         linux: "Linux",
         winrm: "ریموٹ Windows",
         advisor: "AI مشیر",
+        support: "مدد",
       },
       auth: {
         setupTitle: "پاس ورڈ بنائیں",
@@ -2375,6 +2461,18 @@ const resources = {
         forgot: "بھول گئے؟ دوبارہ ترتیب دینے کے لیے ایپ ڈیٹا فولڈر سے auth.json فائل حذف کریں۔",
       },
       pages: {
+        support: {
+          title: "مدد اسسٹنٹ",
+          subtitle: "کسی بھی فیچر یا مسئلے کے بارے میں پوچھیں",
+          intro: "صرف اِس ایپ کے لیے مخصوص AI اسسٹنٹ — فیچرز سمجھاتا ہے اور عام مسائل حل کرتا ہے۔ آپ کے نیٹ ورک ڈیٹا کو کبھی نہیں بھیجتا۔",
+          needsKey: "اسسٹنٹ کو Anthropic کلید درکار ہے — اسے AI مشیر کے صفحے سے شامل کریں۔",
+          placeholder: "اپنا سوال لکھیں… (مثلاً: دور دراز ونڈوز PC کیسے شامل کریں؟)",
+          thinking: "سوچ رہا ہے…",
+          failed: "جواب نہیں دیا جا سکا:",
+          exHowScan: "میں اپنا نیٹ ورک کیسے اسکین کروں؟",
+          exAddWinrm: "دور دراز ونڈوز PC کیسے شامل کریں؟",
+          exUpdateFail: "اپ ڈیٹ کیوں ناکام ہوتا ہے؟",
+        },
         advisor: {
           title: "AI مشیر",
           subtitle: "آپ کی اپڈیٹ ترجیحات کا AI تجزیہ",
@@ -2496,6 +2594,9 @@ const resources = {
         winrm: {
           title: "ریموٹ Windows کمپیوٹرز",
           newDevice: "نیا ریموٹ Windows آلہ (WinRM)",
+          pickDevice: "دریافت شدہ ڈیوائس منتخب کریں",
+          pickDevicePlaceholder: "— دریافت شدہ ڈیوائسز میں سے منتخب کریں —",
+          advanced: "ایڈوانسڈ (دستی اندراج)",
           ipPlaceholder: "IP ایڈریس (مثلاً 192.168.1.60)",
           portPlaceholder: "پورٹ (5985)",
           usernameAdmin: "صارف نام (admin)",
@@ -2761,6 +2862,7 @@ const resources = {
       banner: {
         testMode: "ٹیسٹ موڈ — ایپ ترقی کے مرحلے میں ہے، پروڈکشن میں استعمال نہ کریں",
         updateAvailable: "ایک نیا ورژن ({{latest}}) دستیاب ہے",
+        upgraded: "ایپ کو {{previous}} سے {{current}} پر اپ ڈیٹ کر دیا گیا",
         updateDownload: "ڈاؤن لوڈ کریں",
         dismiss: "برخاست کریں",
       },

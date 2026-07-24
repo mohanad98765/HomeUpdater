@@ -77,6 +77,18 @@ async def lifespan(app: FastAPI):
     # Phase 1.3: create tables on first run
     await init_db()
 
+    # Detect an already-applied upgrade (installer replaced files + relaunched)
+    # and, if the version went up since the last run, fire a one-time toast.
+    from .services import notifications, version_state
+
+    notice = version_state.detect_and_record(__version__)
+    if notice["upgraded"]:
+        logger.info(f"Upgrade detected: {notice['previous']} -> {notice['current']}")
+        notifications.notify(
+            f"{settings.app_name} — {settings.app_name_ar}",
+            f"تم ترقية التطبيق من {notice['previous']} إلى {notice['current']}",
+        )
+
     # Warm-start the adaptive network timeouts from disk (best-effort).
     if settings.adaptive_timeout_persistence:
         from .services import adaptive_persistence

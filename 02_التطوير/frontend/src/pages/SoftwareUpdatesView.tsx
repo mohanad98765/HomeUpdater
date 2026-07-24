@@ -189,10 +189,22 @@ export function SoftwareUpdatesView() {
         <ProgressCard progress={progress.data} />
       )}
 
-      {/* Install summary */}
+      {/* Install summary — green only when every package installed; a partial
+          result (installed < total) must surface as a warning, not fake success. */}
       {install.data && !install.isPending && (
-        <div className="mb-6 p-4 rounded-lg border border-success/30 bg-success/10 text-success flex items-start gap-3">
-          <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div
+          className={cn(
+            "mb-6 p-4 rounded-lg border flex items-start gap-3",
+            install.data.installed === install.data.total
+              ? "border-success/30 bg-success/10 text-success"
+              : "border-warning/30 bg-warning/10 text-warning"
+          )}
+        >
+          {install.data.installed === install.data.total ? (
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          )}
           <p className="font-bold">
             {t("updates.installSuccess", {
               installed: install.data.installed,

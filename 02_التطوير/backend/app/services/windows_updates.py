@@ -52,10 +52,6 @@ def restore_ceilings(data: dict) -> None:
     _INSTALL_CEILING.load_dict(data.get("install", {}))
 
 
-# Severity values returned by Microsoft Update — keep as strings for the UI.
-SEVERITY_LEVELS = ("Critical", "Important", "Moderate", "Low", "Unspecified")
-
-
 @dataclass
 class UpdateInfo:
     """One pending Windows update."""

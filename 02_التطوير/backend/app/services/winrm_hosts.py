@@ -27,7 +27,6 @@ from loguru import logger
 from .software_updates import _parse_winget_table
 
 DEFAULT_PORT = 5985
-DEFAULT_HTTPS_PORT = 5986
 OP_TIMEOUT = 25  # seconds — probe/check (quick round-trips)
 # `winget upgrade --all` legitimately runs for minutes; give each WS-Man poll a
 # longer operation window so the install path isn't the same budget as a probe.

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import SessionLocal, get_db
-from ..services import advisor
+from ..services import advisor, support_assistant
 from ..services.update_progress import update_progress
 
 router = APIRouter()
@@ -162,6 +162,27 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)) -> dict:
     try:
         return await advisor.chat(db, [m.model_dump() for m in body.messages])
     except advisor.AdvisorError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/support/status")
+async def support_status() -> dict:
+    """Whether the in-app help assistant is usable (shares the advisor's key)."""
+    return {"configured": support_assistant.is_configured()}
+
+
+@router.post("/support")
+async def support(body: ChatRequest) -> dict:
+    """In-app help assistant — answers HomeUpdater usage/troubleshooting questions.
+
+    Scoped strictly to this app; sends NO network data, so it is deliberately NOT
+    behind the T11 network-data consent gate. Reuses the advisor's API key.
+    """
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="No message.")
+    try:
+        return await support_assistant.support_chat([m.model_dump() for m in body.messages])
+    except support_assistant.SupportError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 

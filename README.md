@@ -9,7 +9,7 @@
 ![release](https://img.shields.io/github/v/release/mohanad98765/HomeUpdater?label=release)
 ![platform](https://img.shields.io/badge/platform-Windows-0078D6)
 ![languages](https://img.shields.io/badge/UI-6%20languages%20(RTL)-success)
-![tests](https://img.shields.io/badge/tests-289%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-322%20passing-brightgreen)
 ![signed](https://img.shields.io/badge/installer-code%20signed-blue)
 
 [**⬇️ تنزيل آخر إصدار / Download the latest installer**](https://github.com/mohanad98765/HomeUpdater/releases/latest)
