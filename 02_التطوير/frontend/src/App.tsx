@@ -22,6 +22,7 @@ import {
   X,
   HelpCircle,
   LifeBuoy,
+  SlidersHorizontal,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -35,6 +36,7 @@ import { LinuxPage } from "@/pages/LinuxPage";
 import { WindowsRemotePage } from "@/pages/WindowsRemotePage";
 import { AdvisorPage } from "@/pages/AdvisorPage";
 import { SupportPage } from "@/pages/SupportPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { OnboardingTour } from "@/components/OnboardingTour";
 
 // ================================================================
@@ -78,7 +80,8 @@ type Page =
   | "linux"
   | "winrm"
   | "advisor"
-  | "support";
+  | "support"
+  | "settings";
 
 function App() {
   const { t } = useTranslation();
@@ -328,6 +331,20 @@ function App() {
             >
               <HelpCircle className="w-5 h-5" />
             </button>
+            <button
+              type="button"
+              onClick={() => setPage("settings")}
+              className={cn(
+                "inline-flex items-center justify-center rounded-md p-2 transition-colors",
+                page === "settings"
+                  ? "text-primary bg-surface-2"
+                  : "text-fg-muted hover:text-fg hover:bg-surface-2",
+              )}
+              aria-label={t("settings.title")}
+              title={t("settings.title")}
+            >
+              <SlidersHorizontal className="w-5 h-5" />
+            </button>
             <LanguageToggle />
             <ThemeToggle />
           </div>
@@ -352,6 +369,12 @@ function App() {
         {page === "winrm" && <WindowsRemotePage onBack={() => setPage("dashboard")} />}
         {page === "advisor" && <AdvisorPage onBack={() => setPage("dashboard")} />}
         {page === "support" && <SupportPage onBack={() => setPage("dashboard")} />}
+        {page === "settings" && (
+          <SettingsPage
+            onBack={() => setPage("dashboard")}
+            onOpenAdvisor={() => setPage("advisor")}
+          />
+        )}
       </main>
 
       {/* التذييل */}

@@ -190,3 +190,33 @@ def load_settings() -> Settings:
 
 
 settings = load_settings()
+
+# Keys the in-app Settings page may change at runtime. A strict whitelist so a
+# request can never rewrite security-sensitive keys (session_token, database_url,
+# encryption_passphrase, anthropic_api_key…).
+USER_EDITABLE_SETTINGS = frozenset(
+    {"scan_method", "scan_scheduler_enabled", "scan_interval_minutes"}
+)
+
+
+def save_settings(updates: dict) -> dict:
+    """Apply whitelisted settings to the live ``settings`` object AND persist them
+    to config.json so they survive a restart. Non-whitelisted keys are ignored.
+    Returns the applied subset. The file write is best-effort (never raises)."""
+    applied = {k: v for k, v in updates.items() if k in USER_EDITABLE_SETTINGS}
+    for k, v in applied.items():
+        setattr(settings, k, v)  # `settings` is a mutable pydantic instance
+    if applied:
+        config_file = get_appdata_dir() / "config.json"
+        data = {}
+        try:
+            if config_file.exists():
+                data = json.loads(config_file.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        data.update(applied)
+        try:
+            config_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — persistence must not break the request
+            logger.warning(f"could not persist settings to config.json: {exc}")
+    return applied

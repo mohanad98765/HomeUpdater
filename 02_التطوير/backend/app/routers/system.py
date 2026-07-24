@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -124,6 +125,45 @@ async def upgrade_notice() -> dict:
     from ..services import version_state
 
     return version_state.get_notice()
+
+
+class SettingsUpdate(BaseModel):
+    """Partial update of the user-editable settings (all optional)."""
+
+    scan_method: Literal["auto", "python", "nmap"] | None = None
+    scan_scheduler_enabled: bool | None = None
+    scan_interval_minutes: int | None = Field(default=None, ge=5, le=1440)
+
+
+def _current_settings() -> dict:
+    return {
+        "scan_method": settings.scan_method,
+        "scan_scheduler_enabled": settings.scan_scheduler_enabled,
+        "scan_interval_minutes": settings.scan_interval_minutes,
+    }
+
+
+@router.get("/settings")
+async def get_settings() -> dict:
+    """The user-editable settings shown on the in-app Settings page."""
+    return _current_settings()
+
+
+@router.post("/settings")
+async def update_settings(body: SettingsUpdate) -> dict:
+    """Persist changed settings (whitelisted) + apply them live. If the scan
+    scheduler toggle or interval changed, restart the scheduler so it takes
+    effect immediately."""
+    from ..config import save_settings
+
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    applied = save_settings(updates)
+    if "scan_scheduler_enabled" in applied or "scan_interval_minutes" in applied:
+        from ..services import scheduler
+
+        scheduler.stop()
+        scheduler.start()  # idempotent + no-op when disabled
+    return {**_current_settings(), "applied": sorted(applied)}
 
 
 @router.get("/info")
