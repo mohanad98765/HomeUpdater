@@ -59,7 +59,8 @@ def test_missing_key_raises(monkeypatch):
 
 
 def test_returns_reply_and_uses_the_support_scope(monkeypatch):
-    fake = _wire(monkeypatch, [_Resp([_Block(type="text", text="Open the Devices page and scan.")])])
+    resp = _Resp([_Block(type="text", text="Open the Devices page and scan.")])
+    fake = _wire(monkeypatch, [resp])
     result = asyncio.run(_ask())
     assert result["reply"] == "Open the Devices page and scan."
     assert result["model"] == "claude-opus-4-8"

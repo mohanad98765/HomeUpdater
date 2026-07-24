@@ -29,7 +29,23 @@ jobs:
 
       # Audits requirements.txt against the Python advisory DB (PyPI/OSV).
       # Runs in its own workflow so a newly-disclosed transitive CVE surfaces as a
-      # red check without blocking the release build. Add `--ignore-vuln <ID>`
-      # for a reviewed, non-applicable advisory.
+      # red check without blocking the release build.
+      #
+      # Reviewed, non-applicable advisories are ignored below (revisit each when a
+      # fix ships). Groups:
+      #   • dev-only tooling (black, pytest) — never shipped inside the installer.
+      #   • RESERVED + not imported (paramiko, scapy) — no runtime exposure, and no
+      #     fixed release exists yet.
+      #   • starlette — the API binds loopback only (127.0.0.1) for a single local
+      #     user; the client-facing advisories are outside the threat model, and the
+      #     remaining fixes require starlette 1.x, which no current fastapi allows.
       - name: Audit backend dependencies
-        run: pip-audit -r requirements.txt --progress-spinner off
+        run: |
+          pip-audit -r requirements.txt --progress-spinner off \
+            --ignore-vuln PYSEC-2026-2120 --ignore-vuln PYSEC-2026-2121 \
+            --ignore-vuln PYSEC-2026-1845 \
+            --ignore-vuln PYSEC-2026-2858 \
+            --ignore-vuln GHSA-cq46-m9x9-j8w2 \
+            --ignore-vuln PYSEC-2026-161 --ignore-vuln PYSEC-2026-1942 \
+            --ignore-vuln PYSEC-2026-2280 --ignore-vuln PYSEC-2026-2281 \
+            --ignore-vuln PYSEC-2026-248 --ignore-vuln PYSEC-2026-249

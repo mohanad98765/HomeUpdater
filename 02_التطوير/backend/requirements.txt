@@ -12,7 +12,12 @@
 # ===================== ACTIVE ===================================
 
 # --- Core Web Framework ---
-fastapi==0.115.5
+fastapi==0.116.1
+# starlette is fastapi's ASGI core; pin the patched version explicitly (fastapi
+# 0.116.x allows <0.48). Newer starlette advisories need 1.x, which no current
+# fastapi supports — those are ignored-with-review in .github/workflows/security.yml
+# (loopback-only, single local-user API).
+starlette==0.47.2
 uvicorn[standard]==0.32.1
 pydantic==2.10.3
 pydantic-settings==2.6.1
@@ -46,12 +51,12 @@ httpx==0.28.1
 
 # --- SSH (Linux host updates) ---
 asyncssh==2.18.0
-cryptography==44.0.0  # required by asyncssh
+cryptography==48.0.1  # required by asyncssh; patched (was 44.0.0, 5 advisories)
 
 # --- Windows Native Integration (WUA COM API + tray icon) ---
 pywin32==308; sys_platform == "win32"
 pystray==0.19.5
-Pillow==11.0.0
+Pillow==12.3.0  # patched (was 11.0.0, 24 advisories)
 
 # --- Native app window (WebView2 shell instead of a browser tab) ---
 pywebview==5.4
@@ -77,14 +82,19 @@ ruff==0.8.4
 # environment already has them and the audit knows they are intentional.
 
 # Phase 1.2+/2 — advanced discovery (mDNS / SSDP)
+# scapy has an open advisory (GHSA-cq46-m9x9-j8w2) with no released fix; it is
+# NOT imported yet (RESERVED) so there is no runtime exposure — ignored-with-review
+# in security.yml until a fix ships.
 scapy==2.6.1
-zeroconf==0.136.0
+zeroconf==0.149.16  # patched (was 0.136.0, 5 advisories)
 
-# Phase 2.1 — legacy SSH client (asyncssh moved to ACTIVE)
+# Phase 2.1 — legacy SSH client (asyncssh moved to ACTIVE). paramiko has an open
+# advisory (PYSEC-2026-2858) with no released fix; NOT imported (RESERVED), so no
+# runtime exposure — ignored-with-review in security.yml until a fix ships.
 paramiko==3.5.0
 
 # Phase 2.2/2.3 — vendor scrapers, Home Assistant REST (httpx moved to ACTIVE)
-requests==2.32.3
+requests==2.33.0  # patched (was 2.32.3); also a transitive dep of pywinrm/requests-ntlm
 beautifulsoup4==4.12.3
 
 # Phase O.5 — credential encryption / passphrase hashing (cryptography now ACTIVE)
