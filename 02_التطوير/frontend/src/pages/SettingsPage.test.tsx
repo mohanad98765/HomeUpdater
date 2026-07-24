@@ -18,6 +18,8 @@ interface ScanSettings {
 
 let scanSettings: ScanSettings;
 let lastPost: Record<string, unknown> | null;
+let lastChange: Record<string, unknown> | null;
+let changeFails: boolean;
 
 function res(status: number, body: unknown, ok = status < 400): Response {
   return { ok, status, json: async () => body } as unknown as Response;
@@ -33,6 +35,11 @@ function router(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       return Promise.resolve(res(200, { ...scanSettings, applied: Object.keys(lastPost!) }));
     }
     return Promise.resolve(res(200, scanSettings));
+  }
+  if (u.includes("/api/auth/change")) {
+    lastChange = JSON.parse(String(init!.body));
+    if (changeFails) return Promise.resolve(res(400, { detail: "Current password is incorrect." }));
+    return Promise.resolve(res(200, { token: "new-token-xyz" }));
   }
   return Promise.resolve(res(200, {}));
 }
@@ -73,7 +80,10 @@ beforeAll(async () => {
 beforeEach(() => {
   scanSettings = { scan_method: "auto", scan_scheduler_enabled: false, scan_interval_minutes: 30 };
   lastPost = null;
+  lastChange = null;
+  changeFails = false;
   localStorage.clear();
+  sessionStorage.clear();
   localStorage.setItem("homeupdater.language", "en");
 });
 
@@ -153,5 +163,63 @@ describe("SettingsPage", () => {
     renderPage({ onBack });
     fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  // --- change password ---
+  it("changes the password via POST and stores the new session token", async () => {
+    renderPage();
+    fireEvent.change(await screen.findByLabelText("Current password"), {
+      target: { value: "oldpass" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "newpass1" } });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "newpass1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Change password/ }));
+
+    expect(await screen.findByText("Password changed")).toBeInTheDocument();
+    expect(lastChange).toEqual({ current: "oldpass", new: "newpass1" });
+    expect(sessionStorage.getItem("hu_auth_token")).toBe("new-token-xyz");
+  });
+
+  it("blocks mismatched new passwords without calling the API", async () => {
+    renderPage();
+    fireEvent.change(await screen.findByLabelText("Current password"), {
+      target: { value: "oldpass" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "newpass1" } });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "different1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Change password/ }));
+
+    expect(await screen.findByText("Passwords don't match.")).toBeInTheDocument();
+    expect(lastChange).toBeNull();
+  });
+
+  it("keeps the change button disabled until a valid new password is entered", async () => {
+    renderPage();
+    const btn = screen.getByRole("button", { name: /Change password/ });
+    expect(btn).toBeDisabled();
+    fireEvent.change(await screen.findByLabelText("Current password"), { target: { value: "old" } });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "short" } }); // < 6
+    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "short" } });
+    expect(btn).toBeDisabled();
+  });
+
+  it("surfaces a backend error when the current password is wrong", async () => {
+    changeFails = true;
+    renderPage();
+    fireEvent.change(await screen.findByLabelText("Current password"), {
+      target: { value: "wrong" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "newpass1" } });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "newpass1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Change password/ }));
+
+    expect(await screen.findByText(/Change failed/)).toBeInTheDocument();
+    expect(sessionStorage.getItem("hu_auth_token")).toBeNull();
   });
 });

@@ -11,8 +11,9 @@ import {
   Sparkles,
   Loader2,
   Check,
+  KeyRound,
 } from "lucide-react";
-import { apiFetch, cn } from "@/lib/utils";
+import { apiFetch, cn, setAuthToken } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 import { useTheme } from "@/lib/theme";
 
@@ -72,6 +73,35 @@ export function SettingsPage({
     (form.scan_method !== settingsQuery.data.scan_method ||
       form.scan_scheduler_enabled !== settingsQuery.data.scan_scheduler_enabled ||
       form.scan_interval_minutes !== settingsQuery.data.scan_interval_minutes);
+
+  // --- Change the app password (requires the current one). The backend revokes
+  // all other sessions and returns a fresh token we must store to stay logged in.
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwError, setPwError] = useState("");
+
+  const changePw = useMutation<{ token: string }, Error>({
+    mutationFn: () =>
+      apiFetch<{ token: string }>("/api/auth/change", {
+        method: "POST",
+        body: JSON.stringify({ current: pwCurrent, new: pwNew }),
+      }),
+    onSuccess: (data) => {
+      setAuthToken(data.token); // keep this session alive after revoke_all()
+      setPwCurrent("");
+      setPwNew("");
+      setPwConfirm("");
+    },
+  });
+
+  const canChangePw = pwCurrent.length >= 1 && pwNew.length >= 6 && pwConfirm.length >= 6;
+  const submitPw = () => {
+    setPwError("");
+    if (pwNew.length < 6) return setPwError(t("settings.pwTooShort"));
+    if (pwNew !== pwConfirm) return setPwError(t("settings.pwMismatch"));
+    changePw.mutate();
+  };
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-8">
@@ -272,6 +302,87 @@ export function SettingsPage({
             </div>
           </div>
         )}
+      </section>
+
+      {/* تغيير كلمة المرور */}
+      <section className="card mb-5">
+        <div className="flex items-center gap-2 mb-2">
+          <KeyRound className="w-4 h-4 text-primary" />
+          <h3 className="font-display font-bold">{t("settings.pwSection")}</h3>
+        </div>
+        <p className="text-sm text-fg-muted mb-4">{t("settings.pwHint")}</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canChangePw && !changePw.isPending) submitPw();
+          }}
+          className="space-y-3 max-w-sm"
+        >
+          <div>
+            <label htmlFor="pw-current" className="text-sm font-medium block mb-1">
+              {t("settings.pwCurrent")}
+            </label>
+            <input
+              id="pw-current"
+              type="password"
+              autoComplete="current-password"
+              className="input w-full"
+              value={pwCurrent}
+              onChange={(e) => setPwCurrent(e.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="pw-new" className="text-sm font-medium block mb-1">
+              {t("settings.pwNew")}
+            </label>
+            <input
+              id="pw-new"
+              type="password"
+              autoComplete="new-password"
+              className="input w-full"
+              value={pwNew}
+              onChange={(e) => setPwNew(e.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="pw-confirm" className="text-sm font-medium block mb-1">
+              {t("settings.pwConfirm")}
+            </label>
+            <input
+              id="pw-confirm"
+              type="password"
+              autoComplete="new-password"
+              className="input w-full"
+              value={pwConfirm}
+              onChange={(e) => setPwConfirm(e.target.value)}
+            />
+            <p className="text-xs text-fg-muted mt-1">{t("settings.pwMinHint")}</p>
+          </div>
+
+          {(pwError || changePw.isError) && (
+            <p className="text-sm text-danger">
+              {pwError || `${t("settings.pwFailed")} ${changePw.error?.message ?? ""}`}
+            </p>
+          )}
+          {changePw.isSuccess && !pwError && (
+            <p className="text-sm text-success inline-flex items-center gap-1">
+              <Check className="w-4 h-4" /> {t("settings.pwSaved")}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={!canChangePw || changePw.isPending}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            {changePw.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <KeyRound className="w-4 h-4" />
+            )}
+            {changePw.isPending ? t("settings.pwSaving") : t("settings.pwSave")}
+          </button>
+        </form>
       </section>
 
       {/* المستشار الذكي */}
