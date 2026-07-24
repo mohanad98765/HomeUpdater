@@ -186,16 +186,18 @@ def main() -> None:
     token = os.environ.get("HOMEUPDATER_SESSION_TOKEN") or secrets.token_urlsafe(32)
     os.environ["HOMEUPDATER_SESSION_TOKEN"] = token
 
+    from app import __version__
     from app.config import find_free_port, settings
 
     # If the configured port is taken (a leftover/old instance, another program),
     # move to the next free one instead of failing to load.
     port = find_free_port(settings.port, settings.host)
     ui_host = "127.0.0.1" if settings.host in ("0.0.0.0", "::") else settings.host
-    # Token in the URL *fragment* (#), not the query (?): fragments are never sent
-    # to the server nor in Referer headers, so the secret never rides an HTTP
-    # request or a log. The SPA reads it from location.hash and clears it.
-    real_url = f"http://{ui_host}:{port}/#t={token}"
+    # ?_v=<version> busts WebView2's persistent HTTP cache on every upgrade — the
+    # URL changes with the version, so a fresh index.html (and its new hashed JS)
+    # is always fetched instead of a stale cached UI. Token stays in the *fragment*
+    # (#), never sent to the server nor logged; the SPA reads it from location.hash.
+    real_url = f"http://{ui_host}:{port}/?_v={__version__}#t={token}"
 
     # WebView2 user-data folder must be writable even under Program Files.
     storage = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / APP_NAME / "WebView2"

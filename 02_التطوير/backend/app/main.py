@@ -294,10 +294,29 @@ async def api_root():
 # app is one server. In development there is no build, so "/" returns the JSON
 # welcome and the Vite dev server serves the UI. Mounted LAST so it never
 # shadows the /api/* routers or /docs.
+class _RevalidatingStatic(StaticFiles):
+    """StaticFiles that makes clients revalidate before reusing a cached file.
+
+    The native WebView2 window keeps a PERSISTENT HTTP cache across app updates
+    (private_mode=False + storage_path). With no Cache-Control header, WebView2
+    heuristically caches index.html and keeps serving the OLD UI after an upgrade
+    — while the backend still reports the new version (the exact "I installed the
+    new build but the UI is unchanged" bug). `no-cache` forces a cheap ETag
+    revalidation on localhost, so the current index.html and its new
+    content-hashed JS always load. (no-cache = revalidate, not no-store, so
+    unchanged assets are still a cheap 304.)
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 _frontend_dist = _get_frontend_dist()
 if _frontend_dist is not None:
     logger.info(f"Serving frontend build from {_frontend_dist}")
-    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
+    app.mount("/", _RevalidatingStatic(directory=str(_frontend_dist), html=True), name="frontend")
 else:
 
     @app.get("/")
