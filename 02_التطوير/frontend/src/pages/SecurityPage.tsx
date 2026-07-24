@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
+import { SolveProblemButton } from "@/components/SolveProblemButton";
 
 // ================================================================
 // صفحة الأمان — الثغرات المعروفة لكل جهاز (حسب المصنّع، من NVD)
@@ -92,6 +93,18 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
   const withVendor = useMemo(() => devices.filter((d) => d.vendor), [devices]);
   const flagged = useMemo(() => withVendor.filter((d) => (d.cve_total ?? 0) > 0), [withVendor]);
 
+  // سياق «حل المشكلة»: المصنّعون وثغراتهم المعروفة (المُعرَّضون أولًا)، للذكاء
+  // الاصطناعيّ ليشرح ويقترح المعالجة. نُقدّم المُعرَّضين ثمّ نكمل بالبقيّة.
+  const solveContext = useMemo(() => {
+    const ordered = [...flagged, ...withVendor.filter((d) => (d.cve_total ?? 0) === 0)];
+    const rows = ordered.slice(0, 15).map((d) =>
+      d.top_cve
+        ? `${d.vendor} — ${d.top_cve} (${d.top_severity ?? ""}، ${d.cve_total ?? 0} ثغرة)`
+        : `${d.vendor} — لا ثغرات معروفة`,
+    );
+    return rows.length ? `أجهزة الشبكة ومورّدوها والثغرات المعروفة:\n${rows.join("\n")}` : "";
+  }, [flagged, withVendor]);
+
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       {/* Top bar */}
@@ -104,25 +117,28 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
           <h2 className="text-xl font-display font-bold">{t("pages.sec.title")}</h2>
           <p className="text-xs text-fg-muted">{t("pages.sec.subtitle")}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => refresh.mutate()}
-          disabled={refresh.isPending || withVendor.length === 0}
-          title={withVendor.length === 0 ? t("pages.sec.scanDisabledHint") : t("pages.sec.scanHint")}
-          className="btn-primary inline-flex items-center gap-2"
-        >
-          {refresh.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {t("pages.sec.scanning")}
-            </>
-          ) : (
-            <>
-              <RefreshCw className="w-4 h-4" />
-              {t("pages.sec.scan")}
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {withVendor.length > 0 && <SolveProblemButton context={solveContext} />}
+          <button
+            type="button"
+            onClick={() => refresh.mutate()}
+            disabled={refresh.isPending || withVendor.length === 0}
+            title={withVendor.length === 0 ? t("pages.sec.scanDisabledHint") : t("pages.sec.scanHint")}
+            className="btn-secondary inline-flex items-center gap-2"
+          >
+            {refresh.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {t("pages.sec.scanning")}
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                {t("pages.sec.scan")}
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Explanation */}
