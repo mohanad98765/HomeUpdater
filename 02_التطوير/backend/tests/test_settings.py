@@ -78,16 +78,10 @@ def test_post_settings_persists_and_reflects(client):
 
 
 def test_post_settings_interval_out_of_range_422(client):
-    assert (
-        client.post("/api/system/settings", json={"scan_interval_minutes": 3}, headers=CSRF).status_code
-        == 422
-    )
-    assert (
-        client.post(
-            "/api/system/settings", json={"scan_interval_minutes": 5000}, headers=CSRF
-        ).status_code
-        == 422
-    )
+    low = client.post("/api/system/settings", json={"scan_interval_minutes": 3}, headers=CSRF)
+    high = client.post("/api/system/settings", json={"scan_interval_minutes": 5000}, headers=CSRF)
+    assert low.status_code == 422
+    assert high.status_code == 422
 
 
 def test_post_settings_bad_method_422(client):
