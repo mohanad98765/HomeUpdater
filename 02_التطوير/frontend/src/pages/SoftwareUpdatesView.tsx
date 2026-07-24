@@ -214,19 +214,31 @@ export function SoftwareUpdatesView() {
         </div>
       )}
 
-      {/* Errors */}
+      {/* Errors — friendly framing + a one-click retry. */}
       {(check.isError || install.isError) && (
-        <div className="mb-6 p-4 rounded-lg border border-danger/30 bg-danger/10 text-danger flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-bold mb-1">
-              {t(check.isError ? "updates.checkFailed" : "updates.installFailed")}
-            </p>
-            <p className="text-sm font-mono">
-              {(check.error || install.error) instanceof Error
-                ? (check.error || install.error)!.message
-                : ""}
-            </p>
+        <div className="mb-6 p-4 rounded-lg border border-danger/30 bg-danger/10 text-danger">
+          <div className="flex items-start gap-3 flex-wrap">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-bold mb-1">
+                {t(check.isError ? "updates.checkFailed" : "updates.installFailed")}
+              </p>
+              <p className="text-sm mb-1">{t("updates.transientHint")}</p>
+              {(check.error || install.error) instanceof Error && (
+                <p className="text-xs font-mono text-danger/80 break-words">
+                  {(check.error || install.error)!.message}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => (check.isError ? check.mutate() : install.mutate())}
+              disabled={check.isPending || install.isPending}
+              className="btn-secondary text-sm inline-flex items-center gap-2 flex-shrink-0"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {t("updates.retry")}
+            </button>
           </div>
         </div>
       )}

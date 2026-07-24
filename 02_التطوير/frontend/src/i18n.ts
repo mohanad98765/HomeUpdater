@@ -385,6 +385,8 @@ const resources = {
         confirmInstall: "هل أنت متأكِّد من تثبيت {{count}} تحديث؟ قد يَستغرق عدَّة دقائق وقد يَتطلَّب إعادة تشغيل الجهاز.",
         installSuccess: "تَمَّ تثبيت {{installed}}/{{total}} تحديث بنجاح",
         installFailed: "فشل التثبيت",
+        retry: "أعد المحاولة",
+        transientHint: "قد تكون خدمة التحديث مشغولة مؤقّتًا — جرّب مرّة أخرى، وإن تكرّر أعِد تشغيل الجهاز.",
         checkFailed: "فشل التحقُّق من التحديثات",
         rebootMsg: "⚠️ إعادة تشغيل مطلوبة لإكمال التثبيت",
         progress: {
@@ -840,6 +842,8 @@ const resources = {
         confirmInstall: "Install {{count}} update(s)? This may take several minutes and could require a reboot.",
         installSuccess: "Installed {{installed}}/{{total}} successfully",
         installFailed: "Install failed",
+        retry: "Retry",
+        transientHint: "The update service may be briefly busy — try again; if it persists, restart your PC.",
         checkFailed: "Update check failed",
         rebootMsg: "⚠️ Reboot required to finish installing",
         progress: {
@@ -1295,6 +1299,8 @@ const resources = {
         confirmInstall: "Installer {{count}} mise(s) à jour ? Cela peut prendre plusieurs minutes et nécessiter un redémarrage.",
         installSuccess: "{{installed}}/{{total}} installée(s) avec succès",
         installFailed: "Échec de l'installation",
+        retry: "Réessayer",
+        transientHint: "Le service de mise à jour est peut-être momentanément occupé — réessayez ; si cela persiste, redémarrez le PC.",
         checkFailed: "Échec de la recherche de mises à jour",
         rebootMsg: "⚠️ Redémarrage requis pour terminer l'installation",
         progress: {
@@ -1750,6 +1756,8 @@ const resources = {
         confirmInstall: "¿Instalar {{count}} actualización(es)? Puede tardar varios minutos y podría requerir un reinicio.",
         installSuccess: "{{installed}}/{{total}} instaladas correctamente",
         installFailed: "Error en la instalación",
+        retry: "Reintentar",
+        transientHint: "El servicio de actualización puede estar ocupado un momento — inténtalo de nuevo; si persiste, reinicia el PC.",
         checkFailed: "Error al buscar actualizaciones",
         rebootMsg: "⚠️ Se requiere reiniciar para terminar la instalación",
         progress: {
@@ -2205,6 +2213,8 @@ const resources = {
         confirmInstall: "{{count}} güncelleme yüklensin mi? Bu işlem birkaç dakika sürebilir ve yeniden başlatma gerektirebilir.",
         installSuccess: "{{installed}}/{{total}} başarıyla yüklendi",
         installFailed: "Yükleme başarısız",
+        retry: "Yeniden dene",
+        transientHint: "Güncelleme hizmeti kısa süreliğine meşgul olabilir — tekrar deneyin; sürerse bilgisayarı yeniden başlatın.",
         checkFailed: "Güncelleme denetimi başarısız",
         rebootMsg: "⚠️ Yüklemeyi tamamlamak için yeniden başlatma gerekli",
         progress: {
@@ -2660,6 +2670,8 @@ const resources = {
         confirmInstall: "{{count}} اپڈیٹ انسٹال کریں؟ اس میں کئی منٹ لگ سکتے ہیں اور ری اسٹارٹ درکار ہو سکتا ہے۔",
         installSuccess: "{{installed}}/{{total}} کامیابی سے انسٹال ہوئیں",
         installFailed: "انسٹال ناکام",
+        retry: "دوبارہ کوشش کریں",
+        transientHint: "اپ ڈیٹ سروس عارضی طور پر مصروف ہو سکتی ہے — دوبارہ کوشش کریں؛ اگر برقرار رہے تو کمپیوٹر ری اسٹارٹ کریں۔",
         checkFailed: "اپڈیٹ چیک ناکام",
         rebootMsg: "⚠️ انسٹالیشن مکمل کرنے کے لیے ری اسٹارٹ درکار",
         progress: {
