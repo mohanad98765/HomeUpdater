@@ -14,6 +14,14 @@
 
 [**⬇️ تنزيل آخر إصدار / Download the latest installer**](https://github.com/mohanad98765/HomeUpdater/releases/latest)
 
+[**▶️ شاهد العرض التوضيحي · Watch the demo**](screenshots/HomeUpdater-demo.mp4)
+
+<br>
+
+<a href="screenshots/Kanz%20AI%20Certified.png"><img src="screenshots/Kanz%20AI%20Certified.png" width="520" alt="Kanz AI Certified — HomeUpdater · KANZ-ADV-4015" /></a>
+
+<sub>🏅 معتمَد من برنامج كنز للذكاء الاصطناعي · Certified by the Kanz AI Program — `KANZ-ADV-4015`</sub>
+
 </div>
 
 ---
