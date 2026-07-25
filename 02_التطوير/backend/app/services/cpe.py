@@ -169,49 +169,126 @@ UNMAPPABLE: dict[str, str] = {
     ),
 }
 
-# Registry-discovered products are keyed by an ARP id that embeds a per-version MSI
-# GUID, so exclusions for them are keyed by DISPLAY NAME instead. Same contract as
-# UNMAPPABLE: every line says what was checked in NVD's CPE dictionary and why the
-# product still cannot be matched. Verified 2026-07-25.
-UNMAPPABLE_NAMES: dict[str, str] = {
-    "MSI Afterburner 4.6.7 Beta 2": (
-        "cpe:2.3:a:msi:afterburner exists, but the reported version '4.6.7 Beta 2' is"
-        " not a comparable number — a pre-release tag cannot be ordered against NVD."
+
+# Registry-discovered products have no stable id (the ARP key embeds a per-version
+# MSI GUID), so their exclusions are keyed by DISPLAY NAME — and the pattern must be
+# version-AGNOSTIC. v1.11.0 shipped these as exact names, which broke the moment this
+# machine upgraded: the entry "HomeUpdater 1.10.6" stopped matching "HomeUpdater
+# 1.11.0" and the product silently fell back to "not investigated" in the report.
+# Anchored prefixes fix that; ``sample`` records a real observed name so a test can
+# bump its version and prove the classification does not move.
+# Same contract as UNMAPPABLE: each reason states what was checked in NVD's CPE
+# dictionary. Verified 2026-07-25.
+@dataclass(frozen=True)
+class ExclusionRule:
+    kind: str  # "name" (anchored regex) | "id_suffix" (lowercase literal)
+    pattern: str
+    reason: str
+    sample: str = ""
+
+
+EXCLUSION_RULES: tuple[ExclusionRule, ...] = (
+    ExclusionRule(
+        # Our own AppId, pinned in the Inno script ("do NOT change between releases"),
+        # so this is stable in a way the display name never was.
+        "id_suffix",
+        "{8f3a1c7e-2b4d-4e6a-9c1f-5d7e8a9b0c1d}_is1",
+        "This application itself — no CPE, and self-reporting would be circular.",
+        sample="ARP"
+        + chr(92)
+        + "Machine"
+        + chr(92)
+        + "X64"
+        + chr(92)
+        + "{8F3A1C7E-2B4D-4E6A-9C1F-5D7E8A9B0C1D}_is1",
     ),
-    "uTorrent Web": (
+    ExclusionRule(
+        "name",
+        r"^msi afterburner\b",
+        "cpe:2.3:a:msi:afterburner exists, but the reported version carries a"
+        " pre-release tag ('4.6.7 Beta 2') that cannot be ordered against NVD.",
+        sample="MSI Afterburner 4.6.7 Beta 2",
+    ),
+    ExclusionRule(
+        "name",
+        r"^utorrent web\b",
         "Only an unversioned cpe:2.3:a:utorrent:web entry exists (version field '-'),"
-        " so every record would match every build — indicative, never precise."
+        " so every record would match every build — indicative, never precise.",
+        sample="uTorrent Web",
     ),
-    "Microsoft 365 - ar-sa": (
+    ExclusionRule(
+        "name",
+        r"^microsoft 365\b",
         "cpe:2.3:a:microsoft:365_apps numbers releases as 2401.17231.20236 (Click-to-Run"
-        " channel), while the install reports 16.0.20131.20154 — two different schemes."
+        " channel), while the install reports 16.0.x — two different schemes.",
+        sample="Microsoft 365 - ar-sa",
     ),
-    "Windows Software Development Kit - Windows 10.0.26100.8249": (
+    ExclusionRule(
+        "name",
+        r"^windows software development kit\b",
         "cpe:2.3:a:microsoft:windows_software_development_kit uses 10.0.26100.x; the"
-        " registry reports 10.1.26100.8249, and rewriting 10.1 -> 10.0 would be a guess."
+        " registry reports 10.1.26100.x, and rewriting 10.1 -> 10.0 would be a guess.",
+        sample="Windows Software Development Kit - Windows 10.0.26100.8249",
     ),
-    "Windows SDK AddOn": "No CPE for the SDK add-on; its 10.1.0.0 is not an SDK build number.",
-    "Microsoft Visual Studio Installer": "No CPE exists for the installer component (searched).",
-    "Microsoft Teams Meeting Add-in for Microsoft Office": (
-        "No CPE for the Office add-in (searched 'teams meeting': 0 results)."
+    ExclusionRule(
+        "name",
+        r"^windows sdk addon\b",
+        "No CPE for the SDK add-on; its 10.1.0.0 is not an SDK build number.",
+        sample="Windows SDK AddOn",
     ),
-    "NVIDIA App 11.0.8.299": (
+    ExclusionRule(
+        "name",
+        r"^microsoft visual studio installer\b",
+        "No CPE exists for the Visual Studio installer component (searched).",
+        sample="Microsoft Visual Studio Installer",
+    ),
+    ExclusionRule(
+        "name",
+        r"^microsoft teams meeting add-?in\b",
+        "No CPE for the Office add-in (searched 'teams meeting': 0 results).",
+        sample="Microsoft Teams Meeting Add-in for Microsoft Office",
+    ),
+    ExclusionRule(
+        "name",
+        r"^nvidia app\b",
         "The nvidia:install_application / *_runtime_environment entries are different"
-        " products; no CPE covers the NVIDIA App control panel."
+        " products; no CPE covers the NVIDIA App control panel.",
+        sample="NVIDIA App 11.0.8.299",
     ),
-    "NVIDIA FrameView SDK 1.8.12612.38276700": "No CPE exists (searched 'frameview': 0 results).",
-    "NVIDIA برنامج تشغيل صوت HD 1.4.5.7": (
-        "The HD Audio driver ships with the graphics package but has no CPE of its own;"
-        " nvidia:gpu_display_driver covers the display driver, not this component."
+    ExclusionRule(
+        "name",
+        r"^nvidia frameview\b",
+        "No CPE exists for FrameView (searched 'frameview': 0 results).",
+        sample="NVIDIA FrameView SDK 1.8.12612.38276700",
     ),
-    "Wifi6 802.11ax USB Adapter version 4.0.0.2": (
-        "An OEM adapter driver with no vendor string to search on and no CPE."
+    ExclusionRule(
+        # The HD Audio driver's name is localized; anchor on the vendor plus the
+        # component words that stay put, and keep the id suffix as the reliable half.
+        "id_suffix",
+        "_hdaudio.driver",
+        "The HD Audio driver ships inside the graphics package but has no CPE of its"
+        " own; nvidia:gpu_display_driver covers the display driver, not this component.",
+        sample="ARP"
+        + chr(92)
+        + "Machine"
+        + chr(92)
+        + "X64"
+        + chr(92)
+        + "{B2FE1952}_HDAudio.Driver",
     ),
-    "فحص حالة كمبيوتر بنظام Windows": (
-        "PC Health Check: no CPE exists (searched 'pc health check': 0 results)."
+    ExclusionRule(
+        "name",
+        r"^wifi6 ",
+        "An OEM adapter driver with no vendor string to search on and no CPE.",
+        sample="Wifi6 802.11ax USB Adapter version 4.0.0.2",
     ),
-    "HomeUpdater 1.10.6": "This application itself — no CPE, and self-reporting would be circular.",
-}
+    ExclusionRule(
+        "name",
+        r"^(pc health check|فحص حالة كمبيوتر)",
+        "PC Health Check: no CPE exists (searched 'pc health check': 0 results).",
+        sample="فحص حالة كمبيوتر بنظام Windows",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -352,6 +429,19 @@ def _fallback_entry(product_id: str, name: str) -> CpeEntry | None:
     return None
 
 
+def _exclusion_rule(product_id: str, name: str) -> ExclusionRule | None:
+    """First documented exclusion matching this product, by id suffix or by name."""
+    pid = (product_id or "").lower()
+    nm = (name or "").strip()
+    for rule in EXCLUSION_RULES:
+        if rule.kind == "id_suffix":
+            if pid.endswith(rule.pattern):
+                return rule
+        elif nm and re.search(rule.pattern, nm, re.IGNORECASE):
+            return rule
+    return None
+
+
 def resolve(product_id: str, raw_version: str, name: str = "") -> CpeIdentity | None:
     """Map an installed product to a CPE identity, or ``None`` if we can't.
 
@@ -376,7 +466,10 @@ def entry_for(product_id: str, name: str = "") -> CpeEntry | None:
 
 def exclusion_detail(product_id: str, name: str = "") -> str:
     """The documented reason a product cannot be matched — id-keyed or name-keyed."""
-    return UNMAPPABLE.get(product_id) or UNMAPPABLE_NAMES.get((name or "").strip(), "")
+    if product_id in UNMAPPABLE:
+        return UNMAPPABLE[product_id]
+    rule = _exclusion_rule(product_id, name)
+    return rule.reason if rule else ""
 
 
 def unmatched_reason(product_id: str, raw_version: str, name: str = "") -> str:
@@ -407,10 +500,16 @@ def classify_unmapped(product_id: str, name: str = "") -> str:
     """
     if product_id in CPE_MAP or _fallback_entry(product_id, name) is not None:
         return "mapped"
-    if product_id in UNMAPPABLE or name.strip() in UNMAPPABLE_NAMES:
+    if product_id in UNMAPPABLE:
         return "documented_exclusion"
+    # Store packages are classified BEFORE the name rules on purpose: being an MSIX
+    # identity is a structural fact about the version, and a prefix rule written for a
+    # desktop product would otherwise claim a same-named Store app with the wrong
+    # reason (measured: "Microsoft 365 Copilot" was captured by the Office rule).
     if product_id.startswith("MSIX" + "\\") or product_id.startswith("MSIX/"):
         return "store_package"
+    if _exclusion_rule(product_id, name) is not None:
+        return "documented_exclusion"
     return "not_investigated"
 
 

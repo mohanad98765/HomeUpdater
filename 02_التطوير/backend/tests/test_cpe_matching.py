@@ -156,11 +156,47 @@ def test_every_fallback_rule_is_well_formed():
         assert e.version_parts in (None, 3, 4), e
 
 
-def test_documented_name_exclusions_all_carry_a_reason():
-    assert cpe.UNMAPPABLE_NAMES, "the name-keyed exclusion table must not be empty"
-    for name, reason in cpe.UNMAPPABLE_NAMES.items():
-        assert name.strip() == name and name, name
-        assert len(reason) > 25, (name, reason)
+def test_documented_exclusion_rules_all_carry_a_reason_and_a_sample():
+    assert cpe.EXCLUSION_RULES, "the exclusion rule table must not be empty"
+    for rule in cpe.EXCLUSION_RULES:
+        assert rule.kind in {"name", "id_suffix"}, rule
+        assert len(rule.reason) > 25, rule
+        assert rule.sample, "every rule needs a real observed sample for the tests"
+        if rule.kind == "name":
+            assert rule.pattern.startswith("^"), f"anchor the pattern: {rule.pattern}"
+        else:
+            assert rule.pattern == rule.pattern.lower(), rule
+
+
+def test_exclusions_survive_a_version_bump():
+    """v1.11.0 keyed these on the exact display name, so upgrading this machine broke
+    its own entry: 'HomeUpdater 1.10.6' stopped matching 'HomeUpdater 1.11.0' and the
+    product reappeared as 'not investigated' in an exported report. Every rule is now
+    checked against its real sample AND against a version-bumped variant."""
+    for rule in cpe.EXCLUSION_RULES:
+        if rule.kind == "id_suffix":
+            assert cpe.classify_unmapped(rule.sample, "Whatever 9.9.9") == "documented_exclusion"
+            continue
+        for name in (rule.sample, f"{rule.sample.rstrip('0123456789. ')} 99.99.99"):
+            assert cpe.classify_unmapped("ARP" + chr(92) + "x" + chr(92) + "{g}", name) == (
+                "documented_exclusion"
+            ), f"{rule.pattern} lost {name!r}"
+            assert cpe.exclusion_detail("ARP" + chr(92) + "x" + chr(92) + "{g}", name), name
+
+
+def test_our_own_app_is_excluded_by_its_pinned_appid_not_its_name():
+    """The installer pins AppId across releases; the display name carries the version."""
+    for version in ("1.10.6", "1.11.0", "2.0.0"):
+        pid = (
+            "ARP"
+            + chr(92)
+            + "Machine"
+            + chr(92)
+            + "X64"
+            + chr(92)
+            + "{8F3A1C7E-2B4D-4E6A-9C1F-5D7E8A9B0C1D}_is1"
+        )
+        assert cpe.classify_unmapped(pid, f"HomeUpdater {version}") == "documented_exclusion"
 
 
 # --- the honest denominator --------------------------------------------------
