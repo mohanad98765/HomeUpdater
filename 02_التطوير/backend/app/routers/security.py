@@ -123,20 +123,16 @@ async def precise_findings(
     matched: list[dict] = []
     unmatched: list[dict] = []
     for row in rows:
-        identity = cpe.resolve(row.product_id, row.version)
+        identity = cpe.resolve(row.product_id, row.version, row.name)
         if identity is None:
             unmatched.append(
                 {
                     "product_id": row.product_id,
                     "name": row.name,
                     "version": row.version,
-                    "reason": (
-                        "no_cpe_mapping"
-                        if row.product_id not in cpe.CPE_MAP
-                        else "version_not_comparable"
-                    ),
+                    "reason": cpe.unmatched_reason(row.product_id, row.version, row.name),
                     # Why there is no coverage, when we investigated and know.
-                    "detail": cpe.UNMAPPABLE.get(row.product_id, ""),
+                    "detail": cpe.exclusion_detail(row.product_id, row.name),
                 }
             )
             continue
@@ -166,7 +162,7 @@ async def precise_findings(
             )
             continue
 
-        entry = cpe.entry_for(row.product_id)
+        entry = cpe.entry_for(row.product_id, row.name)
         cves = cached.get("cves", [])
         # Re-judged on every read (not from the cached 'precision'), so a cache written
         # before this rule existed is corrected without waiting for a 24h TTL.
@@ -194,5 +190,5 @@ async def precise_findings(
         "match_mode": "cpe",
         "matched": matched,
         "unmatched": unmatched,
-        "coverage": cpe.coverage([r.product_id for r in rows]),
+        "coverage": cpe.coverage([(r.product_id, r.name) for r in rows]),
     }

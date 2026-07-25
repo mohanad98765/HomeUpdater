@@ -162,6 +162,55 @@ UNMAPPABLE: dict[str, str] = {
     "Python.Launcher": (
         "No distinct product; mapping to python:python would duplicate every finding."
     ),
+    "WinAppRuntime.Main.1.8": (
+        "winget reports the whole MSIX identity in the version column"
+        " ('MSIX\\\\MicrosoftCorporationII.WinAppRuntime.Main.1.8_8000.921.1539.0_x64…'),"
+        " and windows_app is the Remote Desktop client, not the App SDK."
+    ),
+}
+
+# Registry-discovered products are keyed by an ARP id that embeds a per-version MSI
+# GUID, so exclusions for them are keyed by DISPLAY NAME instead. Same contract as
+# UNMAPPABLE: every line says what was checked in NVD's CPE dictionary and why the
+# product still cannot be matched. Verified 2026-07-25.
+UNMAPPABLE_NAMES: dict[str, str] = {
+    "MSI Afterburner 4.6.7 Beta 2": (
+        "cpe:2.3:a:msi:afterburner exists, but the reported version '4.6.7 Beta 2' is"
+        " not a comparable number — a pre-release tag cannot be ordered against NVD."
+    ),
+    "uTorrent Web": (
+        "Only an unversioned cpe:2.3:a:utorrent:web entry exists (version field '-'),"
+        " so every record would match every build — indicative, never precise."
+    ),
+    "Microsoft 365 - ar-sa": (
+        "cpe:2.3:a:microsoft:365_apps numbers releases as 2401.17231.20236 (Click-to-Run"
+        " channel), while the install reports 16.0.20131.20154 — two different schemes."
+    ),
+    "Windows Software Development Kit - Windows 10.0.26100.8249": (
+        "cpe:2.3:a:microsoft:windows_software_development_kit uses 10.0.26100.x; the"
+        " registry reports 10.1.26100.8249, and rewriting 10.1 -> 10.0 would be a guess."
+    ),
+    "Windows SDK AddOn": "No CPE for the SDK add-on; its 10.1.0.0 is not an SDK build number.",
+    "Microsoft Visual Studio Installer": "No CPE exists for the installer component (searched).",
+    "Microsoft Teams Meeting Add-in for Microsoft Office": (
+        "No CPE for the Office add-in (searched 'teams meeting': 0 results)."
+    ),
+    "NVIDIA App 11.0.8.299": (
+        "The nvidia:install_application / *_runtime_environment entries are different"
+        " products; no CPE covers the NVIDIA App control panel."
+    ),
+    "NVIDIA FrameView SDK 1.8.12612.38276700": "No CPE exists (searched 'frameview': 0 results).",
+    "NVIDIA برنامج تشغيل صوت HD 1.4.5.7": (
+        "The HD Audio driver ships with the graphics package but has no CPE of its own;"
+        " nvidia:gpu_display_driver covers the display driver, not this component."
+    ),
+    "Wifi6 802.11ax USB Adapter version 4.0.0.2": (
+        "An OEM adapter driver with no vendor string to search on and no CPE."
+    ),
+    "فحص حالة كمبيوتر بنظام Windows": (
+        "PC Health Check: no CPE exists (searched 'pc health check': 0 results)."
+    ),
+    "HomeUpdater 1.10.6": "This application itself — no CPE, and self-reporting would be circular.",
 }
 
 
@@ -227,13 +276,89 @@ def _fit_parts(version: str, parts: int) -> str:
     return ".".join(seg + ["0"] * (parts - len(seg)))
 
 
-def resolve(product_id: str, raw_version: str) -> CpeIdentity | None:
+@dataclass(frozen=True)
+class FallbackRule:
+    """Match a product that has no stable id — by display name, or by id suffix.
+
+    winget ids are stable, so ``CPE_MAP`` keys on them. Products discovered through
+    the Windows registry (``ARP\\Machine\\...``) are not: for MSI installers the id
+    embeds the ProductCode GUID, which **changes with every version** (measured:
+    Node.js), so a mapping keyed on it would silently stop matching after the next
+    update — the worst kind of failure, because coverage would drop with no error.
+    ``kind="name"`` matches the display name (anchored regex, case-insensitive) and
+    ``kind="id_suffix"`` matches the tail of the id (for vendors whose GUID is fixed
+    and whose component is identified by the suffix, and whose display name is
+    localized — NVIDIA's driver is "برنامج تشغيل الرسومات" on this machine).
+    """
+
+    kind: str
+    pattern: str
+    entry: CpeEntry
+
+
+# Every rule below was checked against NVD's CPE dictionary; the note says what was
+# found, so a future reader can re-verify instead of trusting the line.
+FALLBACK_RULES: tuple[FallbackRule, ...] = (
+    # cpe:2.3:a:nodejs:node.js — 1658 dictionary entries, versions 0.10.x … 24.x.
+    FallbackRule("name", r"^node\.js$", CpeEntry("nodejs", "node.js", version_parts=3)),
+    # cpe:2.3:a:usbpcap_project:usbpcap — 20 entries; 1.5.4.0 (this build) is one.
+    FallbackRule("name", r"^usbpcap\b", CpeEntry("usbpcap_project", "usbpcap", version_parts=4)),
+    # cpe:2.3:a:nmap:npcap — the dictionary holds only 0.992, so an install of 1.88
+    # legitimately matches nothing today; the vendor/product pair is right, and a
+    # future range-based record will apply.
+    FallbackRule(
+        "name",
+        r"^npcap$",
+        CpeEntry("nmap", "npcap", caveat="NVD's dictionary lists only npcap 0.992"),
+    ),
+    # cpe:2.3:a:devolutions:unigetui — titles read "Devolutions UniGetUI 2026.2.1.0",
+    # same 2026.x numbering as the install; medium because the vendor string is the
+    # sponsor, not the original author.
+    FallbackRule(
+        "name",
+        r"^unigetui$",
+        CpeEntry(
+            "devolutions",
+            "unigetui",
+            version_parts=4,
+            confidence="medium",
+            caveat="NVD lists UniGetUI under the vendor 'devolutions'",
+        ),
+    ),
+    # cpe:2.3:a:nvidia:gpu_display_driver — many versions (390.x … 5xx); the id
+    # suffix is used because the display name is localized. No 6xx entries exist
+    # yet, so a 610.74 install matches only range-based records — correct, not blind.
+    FallbackRule(
+        "id_suffix",
+        "_display.driver",
+        CpeEntry(
+            "nvidia",
+            "gpu_display_driver",
+            caveat="NVD has no 6xx driver entries yet; only ranged records can match",
+        ),
+    ),
+)
+
+
+def _fallback_entry(product_id: str, name: str) -> CpeEntry | None:
+    pid = (product_id or "").lower()
+    nm = (name or "").strip()
+    for rule in FALLBACK_RULES:
+        if rule.kind == "id_suffix":
+            if pid.endswith(rule.pattern):
+                return rule.entry
+        elif re.search(rule.pattern, nm, re.IGNORECASE):
+            return rule.entry
+    return None
+
+
+def resolve(product_id: str, raw_version: str, name: str = "") -> CpeIdentity | None:
     """Map an installed product to a CPE identity, or ``None`` if we can't.
 
     ``None`` means one of: the product isn't in the curated map, or its version
     isn't comparable. Both are reported honestly as "not precisely matched".
     """
-    entry = CPE_MAP.get(product_id)
+    entry = CPE_MAP.get(product_id) or _fallback_entry(product_id, name)
     if entry is None:
         return None
     version = normalize_version(raw_version)
@@ -244,22 +369,76 @@ def resolve(product_id: str, raw_version: str) -> CpeIdentity | None:
     return CpeIdentity(vendor=entry.vendor, product=entry.product, version=version)
 
 
-def entry_for(product_id: str) -> CpeEntry | None:
+def entry_for(product_id: str, name: str = "") -> CpeEntry | None:
     """The curated entry (confidence + caveat) so the UI/report can show them."""
-    return CPE_MAP.get(product_id)
+    return CPE_MAP.get(product_id) or _fallback_entry(product_id, name)
 
 
-def coverage(product_ids: list[str]) -> dict:
+def exclusion_detail(product_id: str, name: str = "") -> str:
+    """The documented reason a product cannot be matched — id-keyed or name-keyed."""
+    return UNMAPPABLE.get(product_id) or UNMAPPABLE_NAMES.get((name or "").strip(), "")
+
+
+def unmatched_reason(product_id: str, raw_version: str, name: str = "") -> str:
+    """Why this product produced no CPE identity — specific enough to act on.
+
+    ``no_cpe_mapping`` used to be returned for every case, which lumped "we looked
+    and NVD has nothing" together with "nobody has looked yet" and with the 57 Store
+    packages NVD does not track. Those need different answers from the reader.
+    """
+    if CPE_MAP.get(product_id) or _fallback_entry(product_id, name):
+        return "version_not_comparable"
+    kind = classify_unmapped(product_id, name)
+    if kind in ("documented_exclusion", "store_package"):
+        return kind
+    return "no_cpe_mapping"
+
+
+def classify_unmapped(product_id: str, name: str = "") -> str:
+    """WHY a product is not precisely matchable — the honest denominator.
+
+    Measured on a real Windows 11 machine: 95 of 115 inventoried products had no
+    CPE mapping, but 57 of those are **Microsoft Store / inbox packages** whose
+    version is a package-identity number (``11.2605.9.0`` for the Calculator) that
+    NVD does not track at all, and 19 more are documented traps. Reporting one flat
+    "17% coverage" invited the wrong conclusion — that the curated map is lazy —
+    when the real answer is that most of the estate is not addressable by CPE.
+    Only ``not_investigated`` is a gap that more work can close.
+    """
+    if product_id in CPE_MAP or _fallback_entry(product_id, name) is not None:
+        return "mapped"
+    if product_id in UNMAPPABLE or name.strip() in UNMAPPABLE_NAMES:
+        return "documented_exclusion"
+    if product_id.startswith("MSIX" + "\\") or product_id.startswith("MSIX/"):
+        return "store_package"
+    return "not_investigated"
+
+
+def coverage(products: list[tuple[str, str]] | list[str]) -> dict:
     """How much of an inventory the curated map can precisely match.
 
     Surfaced to the UI/report so the gap is visible instead of implied: a report
-    that silently covers 30% of an estate is worse than one that says so.
+    that silently covers 30% of an estate is worse than one that says so. The raw
+    ``percent`` stays the headline — the breakdown explains it, it does not replace
+    it, and ``addressable_percent`` is reported next to it, never instead of it.
+
+    Accepts ``(product_id, name)`` pairs; a bare list of ids still works, but then
+    the name-based rules cannot apply and coverage reads lower than reality.
     """
-    total = len(product_ids)
-    mapped = sum(1 for pid in product_ids if pid in CPE_MAP)
+    pairs = [(p, "") if isinstance(p, str) else (p[0], p[1] or "") for p in products]
+    total = len(pairs)
+    buckets = {"mapped": 0, "documented_exclusion": 0, "store_package": 0, "not_investigated": 0}
+    for pid, nm in pairs:
+        buckets[classify_unmapped(pid, nm)] += 1
+    mapped = buckets["mapped"]
+    addressable = mapped + buckets["not_investigated"]
     return {
         "total": total,
         "mapped": mapped,
         "unmapped": total - mapped,
         "percent": round(100.0 * mapped / total, 1) if total else 0.0,
+        # Of the products a CPE mapping could ever cover, how many are covered.
+        "addressable_total": addressable,
+        "addressable_percent": round(100.0 * mapped / addressable, 1) if addressable else 0.0,
+        "by_reason": buckets,
     }

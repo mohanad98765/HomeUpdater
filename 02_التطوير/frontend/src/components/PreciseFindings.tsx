@@ -68,6 +68,14 @@ interface Precise {
     mapped: number;
     unmapped: number;
     percent: number;
+    addressable_total: number;
+    addressable_percent: number;
+    by_reason: {
+      mapped: number;
+      documented_exclusion: number;
+      store_package: number;
+      not_investigated: number;
+    };
   };
 }
 
@@ -174,15 +182,29 @@ export function PreciseFindings() {
           </div>
         </div>
 
-        {/* التغطية — تُعرَض دائمًا حتى لا يُوحي التقرير بشمولٍ لا يملكه */}
+        {/* التغطية — تُعرَض دائمًا حتى لا يُوحي التقرير بشمولٍ لا يملكه.
+            والنسبة الخام تبقى أوّلًا: التفصيل يشرحها ولا يحلّ محلّها. */}
         {cov && (
-          <p className="text-xs text-fg-muted mt-3">
-            {t("pages.sec.precise.coverage", {
-              mapped: cov.mapped,
-              total: cov.total,
-              percent: cov.percent,
-            })}
-          </p>
+          <>
+            <p className="text-xs text-fg-muted mt-3">
+              {t("pages.sec.precise.coverage", {
+                mapped: cov.mapped,
+                total: cov.total,
+                percent: cov.percent,
+              })}
+            </p>
+            {cov.by_reason && (
+              <p className="text-xs text-fg-subtle mt-1">
+                {t("pages.sec.precise.coverageBreakdown", {
+                  store: cov.by_reason.store_package,
+                  documented: cov.by_reason.documented_exclusion,
+                  gap: cov.by_reason.not_investigated,
+                  addressable: cov.addressable_total,
+                  addressablePercent: cov.addressable_percent,
+                })}
+              </p>
+            )}
+          </>
         )}
         {checkNvd.isError && (
           <p className="text-sm text-danger mt-2">

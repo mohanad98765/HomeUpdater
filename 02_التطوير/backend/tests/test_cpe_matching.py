@@ -113,6 +113,95 @@ def test_four_part_products_are_not_trimmed():
     assert chrome is not None and chrome.version == "150.0.7871.187"
 
 
+# --- products discovered through the registry (no stable id) ----------------
+def test_registry_products_are_matched_by_name_not_by_msi_guid():
+    """Node.js's ARP id embeds the MSI ProductCode, which changes every release, so
+    a mapping keyed on it would stop matching after the next update."""
+    guid_id = "ARP" + chr(92) + "Machine" + chr(92) + "X64" + chr(92) + "{8E3EF5A2-585E-453B}"
+    identity = cpe.resolve(guid_id, "24.16.0", "Node.js")
+    assert identity is not None
+    assert identity.cpe_name == "cpe:2.3:a:nodejs:node.js:24.16.0:*:*:*:*:*:*:*"
+    # …and the same id with a different name must NOT inherit the mapping
+    assert cpe.resolve(guid_id, "1.0.0", "Some Other Program") is None
+
+
+def test_no_arp_id_is_ever_keyed_in_the_curated_map():
+    """Guard the rule above: an ARP id in CPE_MAP is a mapping that will rot."""
+    for key in cpe.CPE_MAP:
+        assert not key.upper().startswith("ARP" + chr(92)), key
+
+
+def test_localized_product_is_matched_by_id_suffix():
+    """The NVIDIA driver's display name is localized (Arabic here), so the rule keys
+    on the component suffix of NVIDIA's fixed GUID instead."""
+    pid = "ARP" + chr(92) + "Machine" + chr(92) + "X64" + chr(92) + "{B2FE1952-0186}_Display.Driver"
+    identity = cpe.resolve(pid, "610.74", "NVIDIA برنامج تشغيل الرسومات 610.74")
+    assert identity is not None
+    assert identity.cpe_name.startswith("cpe:2.3:a:nvidia:gpu_display_driver:610.74")
+
+
+def test_fallback_version_is_fitted_to_the_dictionary_scheme():
+    """NVD lists UniGetUI as 2026.2.1.0 (4 parts); the install reports 3."""
+    identity = cpe.resolve("ARP" + chr(92) + "x" + chr(92) + "{1}", "2026.2.2", "UniGetUI")
+    assert identity is not None and identity.version == "2026.2.2.0"
+
+
+def test_every_fallback_rule_is_well_formed():
+    for rule in cpe.FALLBACK_RULES:
+        assert rule.kind in {"name", "id_suffix"}, rule
+        e = rule.entry
+        assert e.vendor == e.vendor.lower() and ":" not in e.vendor, e
+        assert e.product == e.product.lower() and ":" not in e.product, e
+        assert e.confidence in {"high", "medium"}, e
+        assert e.version_parts in (None, 3, 4), e
+
+
+def test_documented_name_exclusions_all_carry_a_reason():
+    assert cpe.UNMAPPABLE_NAMES, "the name-keyed exclusion table must not be empty"
+    for name, reason in cpe.UNMAPPABLE_NAMES.items():
+        assert name.strip() == name and name, name
+        assert len(reason) > 25, (name, reason)
+
+
+# --- the honest denominator --------------------------------------------------
+def test_coverage_separates_store_packages_from_the_real_gap():
+    """Measured reality: most of a Windows 11 inventory is Store/inbox packages whose
+    identity version NVD does not track. Reporting one flat percentage read as
+    'the map is lazy' when the truth is 'this estate is not CPE-addressable'."""
+    store = "MSIX" + chr(92) + "Microsoft.WindowsCalculator_11.2605.9.0_x64__8wekyb3d8bbwe"
+    products = [
+        ("7zip.7zip", "7-Zip"),
+        ("Microsoft.Teams", "Microsoft Teams"),  # documented exclusion
+        (store, "الحاسبة في Windows"),
+        ("Some.Unknown.Thing", "Unknown Thing"),
+    ]
+    cov = cpe.coverage(products)
+    assert cov["by_reason"] == {
+        "mapped": 1,
+        "documented_exclusion": 1,
+        "store_package": 1,
+        "not_investigated": 1,
+    }
+    assert sum(cov["by_reason"].values()) == cov["total"]
+    assert cov["percent"] == 25.0, "the raw percentage must stay the headline"
+    assert cov["addressable_total"] == 2 and cov["addressable_percent"] == 50.0
+
+
+def test_unmatched_reason_is_specific_enough_to_act_on():
+    store = "MSIX" + chr(92) + "Microsoft.Paint_11.2605.71.0_x64__8wekyb3d8bbwe"
+    assert cpe.unmatched_reason(store, "11.2605.71.0", "الرسام") == "store_package"
+    assert cpe.unmatched_reason("Microsoft.Teams", "26183.1", "Teams") == "documented_exclusion"
+    assert cpe.unmatched_reason("Nope.Nope", "1.0", "Nope") == "no_cpe_mapping"
+    # a product we CAN identify but whose version is unusable is a different problem
+    assert cpe.unmatched_reason("7zip.7zip", "Unknown", "7-Zip") == "version_not_comparable"
+
+
+def test_coverage_still_accepts_a_bare_id_list():
+    """Backwards compatible: older callers pass ids only (name rules then can't fire)."""
+    cov = cpe.coverage(["7zip.7zip", "Nope.Nope"])
+    assert cov["total"] == 2 and cov["mapped"] == 1
+
+
 def test_coverage_reports_the_gap_honestly():
     ids = list(cpe.CPE_MAP)[:2] + ["Nope.One", "Nope.Two"]
     cov = cpe.coverage(ids)

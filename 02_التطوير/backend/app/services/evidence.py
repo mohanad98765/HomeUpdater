@@ -140,18 +140,14 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
     matched: list[dict] = []
     unmatched: list[dict] = []
     for row in inventory:
-        identity = cpe.resolve(row.product_id, row.version)
+        identity = cpe.resolve(row.product_id, row.version, row.name)
         if identity is None:
             unmatched.append(
                 {
                     "product_id": row.product_id,
                     "version": row.version,
-                    "reason": (
-                        "no_cpe_mapping"
-                        if row.product_id not in cpe.CPE_MAP
-                        else "version_not_comparable"
-                    ),
-                    "detail": cpe.UNMAPPABLE.get(row.product_id, ""),
+                    "reason": cpe.unmatched_reason(row.product_id, row.version, row.name),
+                    "detail": cpe.exclusion_detail(row.product_id, row.name),
                 }
             )
             continue
@@ -203,7 +199,7 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
         "licensee": licensee,
         "scope": {"machines": 1, "note": "the machine running HomeUpdater"},
         "inventory_total": len(inventory),
-        "coverage": cpe.coverage([r.product_id for r in inventory]),
+        "coverage": cpe.coverage([(r.product_id, r.name) for r in inventory]),
         "matched": matched,
         "unmatched": unmatched,
         "findings_total": sum(len(m["findings"]) for m in matched),
