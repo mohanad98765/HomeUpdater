@@ -12,13 +12,15 @@ import time
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import __version__
 from ..config import settings
-from ..services import notifications
+from ..db import get_db
+from ..services import audit, notifications
 
 router = APIRouter()
 
@@ -150,7 +152,7 @@ async def get_settings() -> dict:
 
 
 @router.post("/settings")
-async def update_settings(body: SettingsUpdate) -> dict:
+async def update_settings(body: SettingsUpdate, db: AsyncSession = Depends(get_db)) -> dict:
     """Persist changed settings (whitelisted) + apply them live. If the scan
     scheduler toggle or interval changed, restart the scheduler so it takes
     effect immediately."""
@@ -158,6 +160,12 @@ async def update_settings(body: SettingsUpdate) -> dict:
 
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     applied = save_settings(updates)
+    # A settings change is an audit event: an auditor asks what the configuration
+    # was at the time of a finding, and when it last changed.
+    if applied:
+        await audit.record_safe(
+            db, "settings_change", actor="user", target="app-settings", detail=applied
+        )
     if "scan_scheduler_enabled" in applied or "scan_interval_minutes" in applied:
         from ..services import scheduler
 

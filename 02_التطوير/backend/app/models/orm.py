@@ -323,6 +323,60 @@ class InstalledSoftwareORM(Base):
         }
 
 
+class AuditEventORM(Base):
+    """An append-only, hash-chained record of what the app did.
+
+    Each row's ``entry_hash`` covers the row's own fields AND the previous row's
+    hash, so the rows form a chain. Editing or deleting any row breaks every hash
+    after it, which a verification pass detects.
+
+    Be precise about the guarantee: this **detects** tampering, it does not
+    prevent it — anyone with write access to the SQLite file can rewrite the whole
+    chain. It is meaningful because it makes silent, partial edits (the realistic
+    case: deleting one embarrassing row) impossible to hide.
+
+    Nothing secret is ever recorded: credential USE is logged, credentials are not.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # Monotonic position in the chain, independent of the autoincrement id.
+    seq: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    # The EXACT timestamp string that went into the hash. SQLite drops the tzinfo
+    # on read ("…+00:00" comes back naive), so recomputing from `at` never matches
+    # and verification would report tampering on every honest row — a chain that
+    # always cries wolf hides a real break. Hash the stored bytes, like `detail`.
+    at_iso: Mapped[str] = mapped_column(String(40), default="")
+
+    # scan | inventory | cve_check | update_install | credential_use | settings_change
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    actor: Mapped[str] = mapped_column(String(64), default="app")  # app | user | scheduler
+    target: Mapped[str] = mapped_column(String(255), default="")  # device/host/product
+    outcome: Mapped[str] = mapped_column(String(32), default="ok")  # ok | failed | denied
+    # Canonical JSON of the non-secret details. Kept as text so the hash covers
+    # exactly the bytes that were stored.
+    detail: Mapped[str] = mapped_column(Text, default="{}")
+
+    prev_hash: Mapped[str] = mapped_column(String(64), default="")
+    entry_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "seq": self.seq,
+            "at": self.at_iso or (self.at.isoformat() if self.at else None),
+            "kind": self.kind,
+            "actor": self.actor,
+            "target": self.target,
+            "outcome": self.outcome,
+            "detail": json.loads(self.detail or "{}"),
+            "prev_hash": self.prev_hash,
+            "entry_hash": self.entry_hash,
+        }
+
+
 class CVECacheORM(Base):
     """Cached NVD vulnerability lookup for a vendor keyword.
 

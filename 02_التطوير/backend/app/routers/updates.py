@@ -26,7 +26,7 @@ from ..models.orm import (
     SoftwarePackageORM,
     WindowsUpdateORM,
 )
-from ..services import notifications
+from ..services import audit, notifications
 from ..services.software_updates import (
     SoftwareUpdateError,
     install_many,
@@ -263,6 +263,23 @@ async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) 
             row.install_result = r["result_code"]
             row.is_installed = bool(r["succeeded"])
     await db.commit()
+    # الحدث الأهمّ في حزمة الدليل: أيّ تحديث ثُبِّت ومتى ونتيجته — هذا ما يُطالَب
+    # بإثباته أمام المُراجِع، فيُسجَّل نجاحًا كان أو فشلًا.
+    installed = int(result.get("installed", 0) or 0)
+    total = int(result.get("total", len(update_ids)) or 0)
+    await audit.record_safe(
+        db,
+        "update_install",
+        target="this-pc",
+        outcome="ok" if installed == total else "failed",
+        detail={
+            "kind": kind,
+            "requested": total,
+            "installed": installed,
+            "reboot_required": bool(result.get("reboot_required", False)),
+            "update_ids": update_ids[:50],
+        },
+    )
     return result
 
 
@@ -344,6 +361,14 @@ async def refresh_inventory(db: AsyncSession = Depends(get_db)) -> dict:
                 removed += 1
 
     await db.commit()
+    # أثرٌ للتدقيق: ماذا جُرِد ومتى — أساس أي تقرير أصول لاحق.
+    await audit.record_safe(
+        db,
+        "inventory",
+        target="this-pc",
+        outcome="degraded" if degraded else "ok",
+        detail={"total": len(items), "new": new_count, "removed": removed},
+    )
     return {
         "total": len(items),
         "new": new_count,
