@@ -13,11 +13,22 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
 from ..crypto import decrypt, encrypt
+
+# Update/package rows are scoped to the machine they belong to. ``device_id == 0``
+# means THIS PC (the hub the app runs on) — the only case that existed before the
+# fleet work, so every legacy row keeps working unchanged. Fleet rows carry the
+# real ``devices.id``.
+#
+# Why a 0 sentinel and not a nullable FK: in SQLite (and per the SQL standard)
+# NULLs are DISTINCT inside a UNIQUE index, so ``(NULL, 'Chrome')`` could be
+# inserted twice and the hub's own rows would silently duplicate. A NOT NULL
+# sentinel makes the composite uniqueness actually hold.
+HUB_DEVICE_ID = 0
 
 
 class Base(DeclarativeBase):
@@ -156,12 +167,21 @@ class AndroidDeviceORM(Base):
 
 
 class SoftwarePackageORM(Base):
-    """A winget package that has an upgrade available."""
+    """A winget package that has an upgrade available, on one specific machine."""
 
     __tablename__ = "software_packages"
+    # Uniqueness is PER DEVICE — two machines may legitimately sit on different
+    # versions of the same package. It used to be globally unique on package_id,
+    # which made a fleet impossible to even represent.
+    __table_args__ = (
+        UniqueConstraint("device_id", "package_id", name="uq_software_packages_device_package"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    package_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    device_id: Mapped[int] = mapped_column(
+        Integer, default=HUB_DEVICE_ID, server_default="0", index=True
+    )
+    package_id: Mapped[str] = mapped_column(String(255), index=True)
     name: Mapped[str] = mapped_column(String(255), default="")
     current_version: Mapped[str] = mapped_column(String(64), default="")
     available_version: Mapped[str] = mapped_column(String(64), default="")
@@ -175,6 +195,7 @@ class SoftwarePackageORM(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "device_id": self.device_id,
             "package_id": self.package_id,
             "name": self.name,
             "current_version": self.current_version,
@@ -194,14 +215,23 @@ class WindowsUpdateORM(Base):
     """
 
     __tablename__ = "windows_updates"
+    # Per device AND per kind: the same update_id can be pending on many machines.
+    __table_args__ = (
+        UniqueConstraint(
+            "device_id", "kind", "update_id", name="uq_windows_updates_device_kind_update"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(
+        Integer, default=HUB_DEVICE_ID, server_default="0", index=True
+    )
 
     # "windows" or "driver" — added Phase 1.5
     kind: Mapped[str] = mapped_column(String(16), default="windows", index=True)
 
     # Microsoft's stable identifier
-    update_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    update_id: Mapped[str] = mapped_column(String(64), index=True)
 
     # Display
     title: Mapped[str] = mapped_column(String(500), default="")
@@ -224,6 +254,7 @@ class WindowsUpdateORM(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "device_id": self.device_id,
             "kind": self.kind,
             "update_id": self.update_id,
             "title": self.title,
@@ -238,6 +269,57 @@ class WindowsUpdateORM(Base):
             "install_result": self.install_result,
             "release_date": self.release_date,
             "last_checked": self.last_checked.isoformat() if self.last_checked else None,
+        }
+
+
+class InstalledSoftwareORM(Base):
+    """What is actually INSTALLED on a machine — the inventory, not the backlog.
+
+    ``software_packages`` only ever held packages that HAVE an upgrade available,
+    so the app knew what was out of date and never what was present. Without an
+    installed product+version there is nothing to match a CVE against precisely
+    (CPE needs product AND version), and no asset inventory to report on — both
+    are prerequisites for evidence-grade output.
+
+    One row per (device, product). A product installed twice (e.g. x86 + x64)
+    collapses to one row; that is a deliberate simplification for now.
+    """
+
+    __tablename__ = "installed_software"
+    __table_args__ = (
+        UniqueConstraint("device_id", "product_id", name="uq_installed_software_device_product"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(
+        Integer, default=HUB_DEVICE_ID, server_default="0", index=True
+    )
+
+    # Stable id from the source catalog (winget package id, MSI product code, …)
+    product_id: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    version: Mapped[str] = mapped_column(String(64), default="")
+    publisher: Mapped[str] = mapped_column(String(255), default="")
+    # Where the fact came from: winget | msi | store | wmi | agent
+    source: Mapped[str] = mapped_column(String(32), default="winget")
+    # Filled once CPE matching lands (step 3); empty until then.
+    cpe: Mapped[str] = mapped_column(String(255), default="")
+
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "device_id": self.device_id,
+            "product_id": self.product_id,
+            "name": self.name,
+            "version": self.version,
+            "publisher": self.publisher,
+            "source": self.source,
+            "cpe": self.cpe,
+            "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
         }
 
 

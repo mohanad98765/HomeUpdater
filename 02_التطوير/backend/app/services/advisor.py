@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import crypto
 from ..config import get_data_dir, settings
 from ..models.orm import (
+    HUB_DEVICE_ID,
     DeviceORM,
     SoftwarePackageORM,
     SSHHostORM,
@@ -161,7 +162,10 @@ async def _tool_list_pending_updates(db: AsyncSession) -> dict:
     apps = (
         (
             await db.execute(
-                select(SoftwarePackageORM).where(SoftwarePackageORM.is_installed.is_(False))
+                select(SoftwarePackageORM).where(
+                    SoftwarePackageORM.device_id == HUB_DEVICE_ID,
+                    SoftwarePackageORM.is_installed.is_(False),
+                )
             )
         )
         .scalars()
@@ -178,7 +182,14 @@ async def _tool_list_pending_updates(db: AsyncSession) -> dict:
         if a.available_version
     ]
     win = (
-        (await db.execute(select(WindowsUpdateORM).where(WindowsUpdateORM.is_installed.is_(False))))
+        (
+            await db.execute(
+                select(WindowsUpdateORM).where(
+                    WindowsUpdateORM.device_id == HUB_DEVICE_ID,
+                    WindowsUpdateORM.is_installed.is_(False),
+                )
+            )
+        )
         .scalars()
         .all()
     )
@@ -447,9 +458,7 @@ async def chat(db: AsyncSession, history: list[dict]) -> dict:
         {"role": m["role"], "content": str(m["content"])}
         for m in history
         if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()
-    ][
-        -20:
-    ]  # keep the last ~20 turns
+    ][-20:]  # keep the last ~20 turns
     while messages and messages[0]["role"] != "user":
         messages.pop(0)  # the API requires the conversation to start on a user turn
     if not messages:
@@ -493,6 +502,7 @@ async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
             (
                 await db.execute(
                     select(SoftwarePackageORM).where(
+                        SoftwarePackageORM.device_id == HUB_DEVICE_ID,
                         SoftwarePackageORM.package_id.in_(want_app),
                         SoftwarePackageORM.is_installed.is_(False),
                     )
@@ -509,6 +519,7 @@ async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
             (
                 await db.execute(
                     select(WindowsUpdateORM).where(
+                        WindowsUpdateORM.device_id == HUB_DEVICE_ID,
                         WindowsUpdateORM.update_id.in_(want_win),
                         WindowsUpdateORM.is_installed.is_(False),
                     )
@@ -620,7 +631,14 @@ async def apply_plan(db: AsyncSession, actions: list[dict]) -> dict:
         if not by_id:
             return
         rows = (
-            (await db.execute(select(model).where(getattr(model, id_field).in_(list(by_id)))))
+            (
+                await db.execute(
+                    select(model).where(
+                        model.device_id == HUB_DEVICE_ID,
+                        getattr(model, id_field).in_(list(by_id)),
+                    )
+                )
+            )
             .scalars()
             .all()
         )

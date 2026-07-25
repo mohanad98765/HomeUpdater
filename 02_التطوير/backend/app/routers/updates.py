@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models.orm import SoftwarePackageORM, WindowsUpdateORM
+from ..models.orm import HUB_DEVICE_ID, SoftwarePackageORM, WindowsUpdateORM
 from ..services import notifications
 from ..services.software_updates import (
     SoftwareUpdateError,
@@ -97,7 +97,8 @@ async def _list_wua_updates(db: AsyncSession, kind: str) -> dict:
     """Shared helper: list rows of a given kind from the WUA cache."""
     result = await db.execute(
         select(WindowsUpdateORM)
-        .where(WindowsUpdateORM.kind == kind)
+        # These endpoints are about THIS PC; fleet rows carry a real device_id.
+        .where(WindowsUpdateORM.device_id == HUB_DEVICE_ID, WindowsUpdateORM.kind == kind)
         .order_by(WindowsUpdateORM.last_checked.desc())
     )
     rows = result.scalars().all()
@@ -151,7 +152,11 @@ async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
     now = datetime.now(UTC)
 
     # Upsert by update_id, scoped to this kind
-    existing_q = await db.execute(select(WindowsUpdateORM).where(WindowsUpdateORM.kind == kind))
+    existing_q = await db.execute(
+        select(WindowsUpdateORM).where(
+            WindowsUpdateORM.device_id == HUB_DEVICE_ID, WindowsUpdateORM.kind == kind
+        )
+    )
     existing = {r.update_id: r for r in existing_q.scalars().all()}
 
     found_ids: set[str] = set()
@@ -160,7 +165,7 @@ async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
         found_ids.add(u.update_id)
         row = existing.get(u.update_id)
         if row is None:
-            row = WindowsUpdateORM(update_id=u.update_id, kind=kind)
+            row = WindowsUpdateORM(device_id=HUB_DEVICE_ID, update_id=u.update_id, kind=kind)
             db.add(row)
             new_count += 1
         row.kind = kind
@@ -220,6 +225,7 @@ async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) 
     if not update_ids:
         q = await db.execute(
             select(WindowsUpdateORM).where(
+                WindowsUpdateORM.device_id == HUB_DEVICE_ID,
                 WindowsUpdateORM.is_installed.is_(False),
                 WindowsUpdateORM.kind == kind,
             )
@@ -239,7 +245,10 @@ async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) 
 
     by_id: dict[str, dict] = {r["update_id"]: r for r in result["results"]}
     rows_q = await db.execute(
-        select(WindowsUpdateORM).where(WindowsUpdateORM.update_id.in_(update_ids))
+        select(WindowsUpdateORM).where(
+            WindowsUpdateORM.device_id == HUB_DEVICE_ID,
+            WindowsUpdateORM.update_id.in_(update_ids),
+        )
     )
     for row in rows_q.scalars().all():
         r = by_id.get(row.update_id)
@@ -257,7 +266,9 @@ async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) 
 async def list_software(db: AsyncSession = Depends(get_db)) -> dict:
     """Cached list of winget packages with available upgrades."""
     result = await db.execute(
-        select(SoftwarePackageORM).order_by(SoftwarePackageORM.last_checked.desc())
+        select(SoftwarePackageORM)
+        .where(SoftwarePackageORM.device_id == HUB_DEVICE_ID)
+        .order_by(SoftwarePackageORM.last_checked.desc())
     )
     rows = result.scalars().all()
     pending = [r.to_dict() for r in rows if not r.is_installed]
@@ -280,7 +291,9 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     now = datetime.now(UTC)
-    existing_q = await db.execute(select(SoftwarePackageORM))
+    existing_q = await db.execute(
+        select(SoftwarePackageORM).where(SoftwarePackageORM.device_id == HUB_DEVICE_ID)
+    )
     existing = {r.package_id: r for r in existing_q.scalars().all()}
 
     found_ids: set[str] = set()
@@ -289,7 +302,7 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
         found_ids.add(pkg.package_id)
         row = existing.get(pkg.package_id)
         if row is None:
-            row = SoftwarePackageORM(package_id=pkg.package_id)
+            row = SoftwarePackageORM(device_id=HUB_DEVICE_ID, package_id=pkg.package_id)
             db.add(row)
             new_count += 1
         row.name = pkg.name
@@ -336,7 +349,10 @@ async def trigger_software_install(
     package_ids = list(payload.package_ids)
     if not package_ids:
         q = await db.execute(
-            select(SoftwarePackageORM).where(SoftwarePackageORM.is_installed.is_(False))
+            select(SoftwarePackageORM).where(
+                SoftwarePackageORM.device_id == HUB_DEVICE_ID,
+                SoftwarePackageORM.is_installed.is_(False),
+            )
         )
         package_ids = [r.package_id for r in q.scalars().all()]
     if not package_ids:
@@ -350,7 +366,10 @@ async def trigger_software_install(
 
     by_id: dict[str, dict] = {r["package_id"]: r for r in result["results"]}
     rows_q = await db.execute(
-        select(SoftwarePackageORM).where(SoftwarePackageORM.package_id.in_(package_ids))
+        select(SoftwarePackageORM).where(
+            SoftwarePackageORM.device_id == HUB_DEVICE_ID,
+            SoftwarePackageORM.package_id.in_(package_ids),
+        )
     )
     for row in rows_q.scalars().all():
         r = by_id.get(row.package_id)
