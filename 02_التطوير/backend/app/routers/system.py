@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import __version__
 from ..config import settings
 from ..db import get_db
-from ..services import audit, notifications
+from ..services import audit, cve, notifications
 
 router = APIRouter()
 
@@ -135,6 +135,8 @@ class SettingsUpdate(BaseModel):
     scan_method: Literal["auto", "python", "nmap"] | None = None
     scan_scheduler_enabled: bool | None = None
     scan_interval_minutes: int | None = Field(default=None, ge=5, le=1440)
+    # NVD API keys are 36-char UUIDs; empty string is allowed and means "remove it".
+    nvd_api_key: str | None = Field(default=None, max_length=100)
 
 
 def _current_settings() -> dict:
@@ -142,6 +144,10 @@ def _current_settings() -> dict:
         "scan_method": settings.scan_method,
         "scan_scheduler_enabled": settings.scan_scheduler_enabled,
         "scan_interval_minutes": settings.scan_interval_minutes,
+        # The key itself is never returned — only whether one is set, and the pacing it
+        # buys. Echoing a secret back to any local caller would undo storing it safely.
+        "nvd_api_key_set": bool((settings.nvd_api_key or "").strip()),
+        "nvd_min_seconds_between_calls": cve.keyed_floor(),
     }
 
 
@@ -164,7 +170,12 @@ async def update_settings(body: SettingsUpdate, db: AsyncSession = Depends(get_d
     # was at the time of a finding, and when it last changed.
     if applied:
         await audit.record_safe(
-            db, "settings_change", actor="user", target="app-settings", detail=applied
+            db,
+            "settings_change",
+            actor="user",
+            target="app-settings",
+            # audit._strip_secrets() also redacts api_key, but do not even hand it over
+            detail={k: ("[set]" if k == "nvd_api_key" and v else v) for k, v in applied.items()},
         )
     if "scan_scheduler_enabled" in applied or "scan_interval_minutes" in applied:
         from ..services import scheduler

@@ -132,9 +132,60 @@ def test_stored_key_is_reverified_on_read(vendor, monkeypatch):
 
 # --- endpoints: the gate ----------------------------------------------------
 def test_pack_is_refused_without_a_license(client):
-    for path in ("/api/evidence/pack", "/api/evidence/pack.csv"):
+    for path in ("/api/evidence/pack", "/api/evidence/pack.csv", "/api/evidence/pack.html"):
         r = client.get(path)
         assert r.status_code == 402, f"{path} must require payment"
+
+
+# --- the printable document -------------------------------------------------
+def test_printable_document_carries_the_numbers_and_the_limits(client, vendor):
+    client.post("/api/evidence/license/activate", json={"key": vendor()}, headers=CSRF)
+    r = client.get("/api/evidence/pack.html")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    doc = r.text
+    assert doc.lstrip().startswith("<!doctype html>")
+    assert 'dir="rtl"' in doc, "the Arabic document must be right-to-left"
+    # the honesty clauses have to survive into the document a customer prints
+    assert "ليست توقيعًا رقميًّا" in doc
+    assert "ليس شهادة اعتماد" in doc
+    assert "يَكشِف التلاعب ولا يمنعه" in doc
+    # and the numbers that make it auditable
+    assert "SHA-256:" in doc
+    for heading in ("التغطية", "التحديثات المُطبَّقة", "غير مطابَق مع السبب"):
+        assert heading in doc, heading
+    assert "window.print()" in doc, "the document must offer to print itself"
+
+
+def test_printable_document_escapes_product_names(client, vendor, monkeypatch):
+    """Product names come from the machine's registry, and this file is opened in a
+    browser by the person we are trying to convince — an unescaped name would run."""
+    from app.services import software_updates as sw
+
+    async def fake_list():
+        return [
+            sw.InstalledSoftwareInfo("Evil.App", "<script>alert('x')</script>", "1.0"),
+        ], False
+
+    monkeypatch.setattr("app.routers.updates.list_installed_software", fake_list)
+    client.post("/api/updates/inventory/refresh", headers=CSRF)
+    client.post("/api/evidence/license/activate", json={"key": vendor()}, headers=CSRF)
+    doc = client.get("/api/evidence/pack.html").text
+    assert "<script>alert" not in doc
+    assert "&lt;script&gt;" in doc
+
+
+def test_printable_document_shouts_when_the_chain_is_broken(client, vendor, monkeypatch):
+    client.post("/api/evidence/license/activate", json={"key": vendor()}, headers=CSRF)
+    from app.services import audit as audit_svc
+
+    async def broken(_db):
+        return {"ok": False, "entries": 5, "broken_at": 3, "reason": "hash mismatch"}
+
+    monkeypatch.setattr(audit_svc, "verify", broken)
+    doc = client.get("/api/evidence/pack.html").text
+    assert "BROKEN" in doc and "class='broken'" in doc
+    assert "do not rely on this report" in doc
 
 
 def test_preview_is_free_and_shows_the_gap(client):

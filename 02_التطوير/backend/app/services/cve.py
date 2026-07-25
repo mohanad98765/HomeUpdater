@@ -20,6 +20,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..models.orm import CVECacheORM
 
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -41,6 +42,26 @@ class CVERateLimited(CVEError):
         self.retry_after = retry_after
 
 
+def _nvd_headers() -> dict[str, str]:
+    """Request headers for NVD. The apiKey header is what lifts the rate limit."""
+    headers = {"User-Agent": "HomeUpdater/0.1"}
+    key = (settings.nvd_api_key or "").strip()
+    if key:
+        headers["apiKey"] = key
+    return headers
+
+
+def keyed_floor() -> float:
+    """Minimum spacing between NVD calls: 6.5 s anonymous, 0.7 s with an API key.
+
+    NVD allows 5 requests / 30 s without a key and 50 with one. The keyed floor stays
+    above 30/50 = 0.6 s so a burst cannot trip the limit. Measured motivation: one
+    precise scan of a 115-product inventory hit the anonymous limit four times in a
+    day, leaving products reported as "not yet checked".
+    """
+    return 0.7 if (settings.nvd_api_key or "").strip() else _THROTTLE_SECONDS
+
+
 class _NvdThrottle:
     """AIMD pacing for anonymous NVD calls.
 
@@ -59,6 +80,10 @@ class _NvdThrottle:
         self.delay = floor
 
     def current(self) -> float:
+        # The floor is re-read on every call: the user can paste an API key while the
+        # app is running, and the next scan should already be faster.
+        self.floor = keyed_floor()
+        self.delay = max(self.floor, min(self.delay, self.ceiling))
         return self.delay
 
     def on_success(self) -> None:
@@ -265,7 +290,7 @@ async def fetch_by_cpe(cpe_name: str, results_per_page: int = 50) -> dict:
     params = {"cpeName": cpe_name, "resultsPerPage": results_per_page}
     timeout = httpx.Timeout(connect=10.0, read=25.0, write=10.0, pool=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(NVD_URL, params=params, headers={"User-Agent": "HomeUpdater/0.1"})
+        resp = await client.get(NVD_URL, params=params, headers=_nvd_headers())
     if resp.status_code in (429, 403):
         raise CVERateLimited(_retry_after_seconds(resp))
     if resp.status_code == 404:  # unknown CPE — treat as "no data", not an error
@@ -280,7 +305,7 @@ async def _fetch_nvd(keyword: str, results_per_page: int = 100) -> dict:
     # leg room while keeping the connect leg tight instead of one blunt 25s bound.
     timeout = httpx.Timeout(connect=10.0, read=25.0, write=10.0, pool=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(NVD_URL, params=params, headers={"User-Agent": "HomeUpdater/0.1"})
+        resp = await client.get(NVD_URL, params=params, headers=_nvd_headers())
     if resp.status_code in (429, 403):  # rate limited — surface it so the throttle backs off
         raise CVERateLimited(_retry_after_seconds(resp))
     resp.raise_for_status()

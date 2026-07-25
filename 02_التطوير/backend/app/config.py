@@ -146,6 +146,12 @@ class Settings(BaseSettings):
     # set, the advisor uses Claude to reason over the network scan + CVEs + pending
     # updates and recommend a prioritized update plan. Empty = feature disabled (the
     # UI shows a "add your key" prompt). Set HOMEUPDATER_ANTHROPIC_API_KEY.
+    # Optional NVD API key. Anonymous callers get 5 requests / 30 s, a key raises it
+    # to 50 — measured need: a single precise scan of this machine hit the anonymous
+    # limit 4 times in one day and left products reported as "not yet checked".
+    # It is a low-value read-only key, but still stored like a secret: never logged,
+    # redacted in the audit trail, and excluded from the config file's diff output.
+    nvd_api_key: str = ""
     anthropic_api_key: str = ""
     advisor_model: str = "claude-opus-4-8"
 
@@ -195,7 +201,7 @@ settings = load_settings()
 # request can never rewrite security-sensitive keys (session_token, database_url,
 # encryption_passphrase, anthropic_api_key…).
 USER_EDITABLE_SETTINGS = frozenset(
-    {"scan_method", "scan_scheduler_enabled", "scan_interval_minutes"}
+    {"scan_method", "scan_scheduler_enabled", "scan_interval_minutes", "nvd_api_key"}
 )
 
 

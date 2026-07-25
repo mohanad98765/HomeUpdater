@@ -143,6 +143,67 @@ jobs:
           Invoke-Sign "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe"
           Remove-Item "$env:RUNNER_TEMP\sign.pfx" -Force
 
+      # --- INSTALL GATE: run the installer we just built, before anyone can download it.
+      # Two customer-visible defects shipped in one day (v1.10.4 aborted on a locked
+      # adb.exe and its rollback deleted the UI; v1.11.0 shipped an exclusion keyed on
+      # a versioned name) and BOTH were found by hand on a real machine. Tests passed
+      # in both cases, because neither bug lives in Python — it lives in the installed
+      # payload. So the release now installs itself and checks the payload.
+      - name: Install gate (install, verify payload, uninstall)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = (Get-Content "02_التطوير/backend/VERSION").Trim()
+          $setup = "02_التطوير/installer/Output/HomeUpdater-Setup-$ver.exe"
+          $root = "C:\Program Files\HomeUpdater"
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8F3A1C7E-2B4D-4E6A-9C1F-5D7E8A9B0C1D}_is1'
+
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$env:RUNNER_TEMP\install.log" | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content "$env:RUNNER_TEMP\install.log" -Tail 40
+            throw "installer exited $LASTEXITCODE"
+          }
+
+          $display = (Get-ItemProperty $key -ErrorAction SilentlyContinue).DisplayVersion
+          if ($display -ne $ver) { throw "registry DisplayVersion '$display' != built '$ver'" }
+          $onDisk = (Get-Content "$root\_internal\VERSION" -ErrorAction SilentlyContinue).Trim()
+          if ($onDisk -ne $ver) { throw "installed VERSION '$onDisk' != built '$ver'" }
+
+          # The v1.10.4 failure mode: index.html pointing at bundles that are not there.
+          $fd = "$root\_internal\frontend_dist"
+          $html = Get-Content "$fd\index.html" -Raw
+          $refs = [regex]::Matches($html, 'assets/([^"'']+)') | ForEach-Object { $_.Groups[1].Value }
+          if (-not $refs) { throw "index.html references no bundle at all" }
+          foreach ($r in $refs) {
+            if (-not (Test-Path (Join-Path $fd ("assets\" + $r)))) { throw "missing bundle: $r" }
+          }
+          # …and every lazily-imported chunk the entry names must exist too.
+          $entry = [System.IO.File]::ReadAllText((Join-Path $fd ("assets\" + ($refs | Where-Object { $_ -like '*.js' } | Select-Object -First 1))))
+          foreach ($chunk in ([regex]::Matches($entry, 'index-[A-Za-z0-9_-]{8}\.(?:js|css)') | ForEach-Object { $_.Value } | Sort-Object -Unique)) {
+            if (-not (Test-Path (Join-Path $fd ("assets\" + $chunk)))) { throw "missing lazy chunk: $chunk" }
+          }
+
+          # The payload is real Python, not an empty shell: the PYZ must carry our modules.
+          $exeBytes = [System.IO.File]::ReadAllBytes("$root\HomeUpdater.exe")
+          $ascii = [System.Text.Encoding]::ASCII.GetString($exeBytes)
+          foreach ($mod in 'app.services.cpe', 'app.services.evidence', 'app.services.audit') {
+            if ($ascii.IndexOf($mod) -lt 0) { throw "shipped exe does not contain $mod" }
+          }
+
+          $stale = Get-ChildItem "$fd\assets" | Where-Object {
+            $n = $_.Name
+            ($html -notmatch [regex]::Escape($n)) -and ($entry -notmatch [regex]::Escape($n))
+          }
+          if ($stale) { throw "unreferenced bundles left in assets: $($stale.Name -join ', ')" }
+
+          Write-Host "install gate OK: $ver, $($refs.Count) referenced bundle(s), payload verified"
+
+          & "$root\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART | Out-Null
+          Start-Sleep -Seconds 10
+          if (Get-ItemProperty $key -ErrorAction SilentlyContinue) { throw "uninstall left the registry key behind" }
+          if (Test-Path "$root\HomeUpdater.exe") { throw "uninstall left the executable behind" }
+          Write-Host "uninstall gate OK"
+
       # --- publish the Release (idempotent: create or upload) ---
       - name: Publish GitHub Release
         env:

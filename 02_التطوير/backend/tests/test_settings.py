@@ -62,10 +62,42 @@ def test_save_settings_ignores_non_whitelisted_keys():
 
 
 # --- endpoint ---------------------------------------------------------------
-def test_get_settings_returns_the_three_keys(client):
+def test_get_settings_returns_exactly_the_editable_surface(client):
     r = client.get("/api/system/settings")
     assert r.status_code == 200
-    assert set(r.json()) == {"scan_method", "scan_scheduler_enabled", "scan_interval_minutes"}
+    assert set(r.json()) == {
+        "scan_method",
+        "scan_scheduler_enabled",
+        "scan_interval_minutes",
+        "nvd_api_key_set",
+        "nvd_min_seconds_between_calls",
+    }
+
+
+def test_the_nvd_key_is_never_echoed_back(client):
+    """A local caller must not be able to read the key out of the app again."""
+    r = client.post(
+        "/api/system/settings",
+        json={"nvd_api_key": "11111111-2222-3333-4444-555555555555"},
+        headers=CSRF,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["nvd_api_key_set"] is True
+    assert "nvd_api_key" not in body
+    assert "5555" not in json.dumps(body), "the key value leaked into the response"
+    # …and the pacing it buys is reported, so the user sees what the key bought
+    assert body["nvd_min_seconds_between_calls"] < 1.0
+    r2 = client.get("/api/system/settings")
+    assert "nvd_api_key" not in r2.json()
+
+
+def test_removing_the_nvd_key_restores_the_anonymous_pace(client):
+    client.post("/api/system/settings", json={"nvd_api_key": "abc"}, headers=CSRF)
+    r = client.post("/api/system/settings", json={"nvd_api_key": ""}, headers=CSRF)
+    body = r.json()
+    assert body["nvd_api_key_set"] is False
+    assert body["nvd_min_seconds_between_calls"] > 6.0
 
 
 def test_post_settings_persists_and_reflects(client):

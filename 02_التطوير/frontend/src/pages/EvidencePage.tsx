@@ -12,6 +12,7 @@ import {
   ShieldX,
   Users,
   Upload,
+  Printer,
   AlertTriangle,
   Info,
 } from "lucide-react";
@@ -124,6 +125,17 @@ export function EvidencePage({ onBack }: { onBack: () => void }) {
       const csv = await apiFetchText("/api/evidence/pack.csv");
       downloadText("homeupdater-evidence.csv", csv, "text/csv");
       return csv;
+    },
+  });
+
+  // A print-ready document rather than a generated PDF: no PDF engine and no Arabic
+  // font ship in the build, and a PDF with broken Arabic shaping is worse than none.
+  // The browser (WebView2 included) shapes Arabic and prints to PDF in one step.
+  const exportHtml = useMutation({
+    mutationFn: async () => {
+      const doc = await apiFetchText("/api/evidence/pack.html");
+      downloadText("homeupdater-evidence.html", doc, "text/html");
+      return doc;
     },
   });
 
@@ -300,7 +312,22 @@ export function EvidencePage({ onBack }: { onBack: () => void }) {
               )}
               CSV
             </button>
+            <button
+              type="button"
+              onClick={() => exportHtml.mutate()}
+              disabled={!licensed || exportHtml.isPending}
+              title={!licensed ? t("pages.evidence.pack.needLicense") : undefined}
+              className="btn-secondary inline-flex items-center gap-2"
+            >
+              {exportHtml.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Printer className="w-4 h-4" />
+              )}
+              {t("pages.evidence.pack.printable")}
+            </button>
           </div>
+          <p className="text-xs text-fg-muted mt-2">{t("pages.evidence.pack.printableHint")}</p>
         </div>
 
         {preview.isLoading && (

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import html
 import io
 from datetime import UTC, datetime
 
@@ -145,6 +146,9 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
             unmatched.append(
                 {
                     "product_id": row.product_id,
+                    # The NAME matters in the pack too: an auditor reads "Microsoft 365",
+                    # not "ARP\Machine\X64\O365HomePremRetail - ar-sa".
+                    "name": row.name,
                     "version": row.version,
                     "reason": cpe.unmatched_reason(row.product_id, row.version, row.name),
                     "detail": cpe.exclusion_detail(row.product_id, row.name),
@@ -156,6 +160,7 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
             unmatched.append(
                 {
                     "product_id": row.product_id,
+                    "name": row.name,
                     "version": row.version,
                     "reason": "not_yet_checked",
                     "detail": "",
@@ -222,6 +227,195 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
     # the pack. It is placed OUTSIDE the hashed body for that reason.
     stamp = hashlib.sha256(_canonical(body).encode("utf-8")).hexdigest()
     return {"pack": body, "content_sha256": stamp, "stamp_kind": "sha256-content-hash"}
+
+
+_PRINT_CSS = """
+  :root { --ink:#111; --muted:#555; --line:#d4d4d4; --bad:#b00020; --warn:#8a5a00; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Tahoma, sans-serif; color: var(--ink);
+         margin: 0 auto; max-width: 900px; padding: 24px; line-height: 1.6; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 22px 0 8px; border-bottom: 2px solid var(--line);
+       padding-bottom: 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .meta { border: 1px solid var(--line); padding: 10px 14px; margin-bottom: 8px; }
+  .meta div { display: flex; gap: 8px; }
+  .meta b { min-width: 190px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 8px; }
+  th, td { border: 1px solid var(--line); padding: 5px 7px; text-align: start;
+           vertical-align: top; word-break: break-word; }
+  th { background: #f2f2f2; }
+  code { font-family: Consolas, monospace; font-size: 11px; }
+  .note { font-size: 12px; color: var(--muted); }
+  .limits { border: 1px solid var(--warn); padding: 10px 14px; font-size: 12px; }
+  .broken { color: var(--bad); font-weight: 700; }
+  .stamp { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
+  .toolbar { margin-bottom: 16px; }
+  button { font: inherit; padding: 6px 14px; cursor: pointer; }
+  @media print { .toolbar { display: none; } body { max-width: none; padding: 0; }
+    table { page-break-inside: auto; } tr { page-break-inside: avoid; }
+    thead { display: table-header-group; } h2 { page-break-after: avoid; } }
+"""
+
+
+def _esc(value) -> str:
+    """Escape everything that reaches the document: product names come from the
+    machine's registry and are attacker-influenced in the general case, and this file
+    is opened in a browser by the person we are trying to convince."""
+    return html.escape("" if value is None else str(value), quote=True)
+
+
+def _range_text(applies: dict | None) -> str:
+    if not applies:
+        return ""
+    parts = []
+    for key, label in (
+        ("start_including", "from (incl.)"),
+        ("start_excluding", "after"),
+        ("end_including", "up to (incl.)"),
+        ("end_excluding", "before"),
+    ):
+        if applies.get(key):
+            parts.append(f"{label} {applies[key]}")
+    return " · ".join(parts)
+
+
+def to_html(pack: dict) -> str:
+    """A print-ready document of the pack — Arabic + English, one self-contained file.
+
+    Deliberately HTML and not a generated PDF: there is no PDF engine in the build and
+    no embedded Arabic font, and a PDF with broken Arabic shaping would be worse than
+    none. A browser (the app's own WebView2 included) shapes Arabic correctly and
+    prints to PDF in one step, so the honest deliverable is a document that prints.
+    """
+    body = pack["pack"]
+    stamp = pack.get("content_sha256", "")
+    c = body.get("copy", COPY)
+    cov = body.get("coverage", {})
+    audit_info = body.get("audit", {})
+    by_reason = cov.get("by_reason", {})
+
+    rows_findings = []
+    for m in body.get("matched", []):
+        for f in m.get("findings", []):
+            rows_findings.append(
+                "<tr>"
+                f"<td>{_esc(m.get('name'))}</td>"
+                f"<td>{_esc(m.get('version'))}</td>"
+                f"<td><code>{_esc(m.get('cpe_name'))}</code></td>"
+                f"<td>{_esc(f.get('id'))}</td>"
+                f"<td>{_esc(f.get('severity'))}</td>"
+                f"<td>{_esc(f.get('score'))}</td>"
+                f"<td>{_esc(_range_text(f.get('applies_because')))}</td>"
+                "</tr>"
+            )
+    rows_notcounted = []
+    for m in body.get("matched", []):
+        for f in m.get("broad_matches", []):
+            fid = f if isinstance(f, str) else f.get("id")
+            why = "" if isinstance(f, str) else f.get("precision", "")
+            rows_notcounted.append(
+                f"<tr><td>{_esc(m.get('name'))}</td><td>{_esc(fid)}</td><td>{_esc(why)}</td></tr>"
+            )
+    rows_unmatched = []
+    for u in body.get("unmatched", []):
+        rows_unmatched.append(
+            "<tr>"
+            f"<td>{_esc(u.get('name') or u.get('product_id'))}</td>"
+            f"<td>{_esc(u.get('version'))}</td>"
+            f"<td>{_esc(u.get('reason'))}</td>"
+            f"<td>{_esc(u.get('detail'))}</td>"
+            "</tr>"
+        )
+    rows_updates = []
+    for u in body.get("updates_applied", []):
+        rows_updates.append(
+            "<tr>"
+            f"<td>{_esc(u.get('title'))}</td>"
+            f"<td>{_esc(u.get('kind'))}</td>"
+            f"<td>{_esc(u.get('result'))}</td>"
+            f"<td><code>{_esc(u.get('update_id'))}</code></td>"
+            "</tr>"
+        )
+
+    chain_ok = bool(audit_info.get("chain_ok"))
+    chain_line = (
+        f"سليمة / intact — {_esc(audit_info.get('entries'))} حدثًا"
+        if chain_ok
+        else (
+            "<span class='broken'>مكسورة عند السجلّ "
+            f"{_esc(audit_info.get('broken_at'))} / BROKEN — do not rely on this report"
+            " until the cause is known</span>"
+        )
+    )
+
+    return f"""<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<title>{_esc(c['cover_title_ar'])}</title><style>{_PRINT_CSS}</style></head><body>
+<div class="toolbar"><button onclick="window.print()">طباعة / حفظ PDF
+— Print / Save as PDF</button></div>
+<h1>{_esc(c['cover_title_ar'])}</h1>
+<p class="sub">{_esc(c['cover_title_en'])}<br>{_esc(c['cover_sub_ar'])}</p>
+<div class="meta">
+  <div><b>المرخَّص له / Licensee</b><span>{_esc(body.get('licensee') or '—')}</span></div>
+  <div><b>وقت الإصدار / Generated</b><span>{_esc(body.get('generated_at'))}</span></div>
+  <div><b>إصدار التطبيق / App version</b><span>{_esc(body.get('app_version'))}</span></div>
+  <div><b>النطاق / Scope</b><span>{_esc(body.get('scope', {}).get('note'))}</span></div>
+  <div><b>منتجات مجرودة / Products</b><span>{_esc(body.get('inventory_total'))}</span></div>
+</div>
+
+<h2>النطاق والمنهج — Scope &amp; method</h2>
+<p class="note">{_esc(c['scope_ar'])}</p>
+<p class="note">{_esc(c['method_ar'])}</p>
+
+<h2>التغطية — Coverage</h2>
+<p class="note">{_esc(c['coverage_ar'])}</p>
+<div class="meta">
+  <div><b>مُطابَق دقيقًا / Precisely matched</b><span>{_esc(cov.get('mapped'))} من
+      {_esc(cov.get('total'))} ({_esc(cov.get('percent'))}%)</span></div>
+  <div><b>من القابل للمطابقة / Of addressable</b>
+      <span>{_esc(cov.get('addressable_percent'))}%
+      ({_esc(cov.get('addressable_total'))})</span></div>
+  <div><b>حِزم متجر / Store packages</b><span>{_esc(by_reason.get('store_package'))}</span></div>
+  <div><b>استثناءات موثَّقة / Documented</b>
+      <span>{_esc(by_reason.get('documented_exclusion'))}</span></div>
+  <div><b>لم تُدرَس / Not investigated</b>
+      <span>{_esc(by_reason.get('not_investigated'))}</span></div>
+</div>
+
+<h2>الثغرات المنطبقة على الإصدارات المثبَّتة — Findings ({_esc(body.get('findings_total'))})</h2>
+<table><thead><tr><th>المنتج</th><th>الإصدار</th><th>CPE</th><th>الثغرة</th>
+<th>الخطورة</th><th>الدرجة</th><th>تنطبق لأنها</th></tr></thead>
+<tbody>{''.join(rows_findings) or '<tr><td colspan="7">—</td></tr>'}</tbody></table>
+
+<h2>سجلّات فُحصت ولم تُحتسَب — Checked, not counted ({_esc(body.get('broad_matches_total'))})</h2>
+<table><thead><tr><th>المنتج</th><th>الثغرة</th><th>سبب عدم الاحتساب</th></tr></thead>
+<tbody>{''.join(rows_notcounted) or '<tr><td colspan="3">—</td></tr>'}</tbody></table>
+
+<h2>غير مطابَق مع السبب — Not matched, with the reason ({len(body.get('unmatched', []))})</h2>
+<table><thead><tr><th>المنتج</th><th>الإصدار</th><th>السبب</th><th>التفصيل</th></tr></thead>
+<tbody>{''.join(rows_unmatched) or '<tr><td colspan="4">—</td></tr>'}</tbody></table>
+
+<h2>التحديثات المُطبَّقة — Applied updates ({len(body.get('updates_applied', []))})</h2>
+<table><thead><tr><th>العنوان</th><th>النوع</th><th>النتيجة</th><th>المعرّف</th></tr></thead>
+<tbody>{''.join(rows_updates) or '<tr><td colspan="4">—</td></tr>'}</tbody></table>
+
+<h2>سلامة السجلّ — Audit trail</h2>
+<p class="note">{_esc(c['integrity_ar'])}</p>
+<div class="meta">
+  <div><b>حالة السلسلة / Chain</b><span>{chain_line}</span></div>
+  <div><b>بصمة السلسلة / Digest</b>
+      <span class="stamp">{_esc(audit_info.get('head_hash'))}</span></div>
+</div>
+
+<h2>بصمة المحتوى — Content stamp</h2>
+<p class="note">{_esc(c['stamp_ar'])}</p>
+<p class="stamp">SHA-256: {_esc(stamp)}</p>
+
+<h2>حدود التقرير — Limits</h2>
+<div class="limits"><p>{_esc(c['limits_ar'])}</p><p>{_esc(c['limits_en'])}</p></div>
+</body></html>
+"""
 
 
 def to_csv(pack: dict) -> str:

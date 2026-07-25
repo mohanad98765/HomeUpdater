@@ -110,6 +110,34 @@ async def pack_csv(db: AsyncSession = Depends(get_db)) -> Response:
     )
 
 
+@router.get("/pack.html")
+async def pack_html(db: AsyncSession = Depends(get_db)) -> Response:
+    """The pack as a print-ready document — what an auditor is handed.
+
+    Not a generated PDF on purpose: the build ships no PDF engine and no Arabic font,
+    and a PDF with broken Arabic shaping would be worse than none. This document opens
+    in any browser (including the app's own WebView2), shapes Arabic correctly, and
+    prints to PDF in one step.
+    """
+    try:
+        lic = licensing.require_evidence_export()
+    except licensing.LicenseError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+    built = await evidence.build(db, licensee=lic.licensee)
+    await audit.record_safe(
+        db,
+        "evidence_export",
+        actor="user",
+        target="this-pc",
+        detail={"format": "html", "stamp": built["content_sha256"]},
+    )
+    return Response(
+        content=evidence.to_html(built).encode("utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="homeupdater-evidence.html"'},
+    )
+
+
 @router.get("/preview")
 async def preview(db: AsyncSession = Depends(get_db)) -> dict:
     """What the pack WOULD contain — free, so the value is visible before paying.

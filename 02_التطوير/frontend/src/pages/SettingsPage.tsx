@@ -27,6 +27,9 @@ interface ScanSettings {
   scan_method: "auto" | "python" | "nmap";
   scan_scheduler_enabled: boolean;
   scan_interval_minutes: number;
+  /** The key itself is never sent back by the server — only whether one is stored. */
+  nvd_api_key_set?: boolean;
+  nvd_min_seconds_between_calls?: number;
 }
 
 export function SettingsPage({
@@ -49,11 +52,28 @@ export function SettingsPage({
   });
 
   const [form, setForm] = useState<ScanSettings | null>(null);
+  // Write-only: the server never returns the key, so this box starts empty every time
+  // and an empty box means "leave it as it is" (the Remove button clears it).
+  const [nvdKey, setNvdKey] = useState("");
   // Seed the editable form once the server values arrive (and keep in sync if
   // they change underneath us, e.g. after a save invalidation refetch).
   useEffect(() => {
     if (settingsQuery.data) setForm(settingsQuery.data);
   }, [settingsQuery.data]);
+
+  // Saved separately from the scan settings: it is a secret, it is write-only, and it
+  // must not ride along on an unrelated "Save" click.
+  const saveKey = useMutation<ScanSettings, Error, string>({
+    mutationFn: (key) =>
+      apiFetch<ScanSettings>("/api/system/settings", {
+        method: "POST",
+        body: JSON.stringify({ nvd_api_key: key }),
+      }),
+    onSuccess: (data) => {
+      setNvdKey("");
+      qc.setQueryData(["system-settings"], data);
+    },
+  });
 
   const save = useMutation<ScanSettings, Error, ScanSettings>({
     mutationFn: (body) =>
@@ -272,6 +292,58 @@ export function SettingsPage({
                 }
               />
               <p className="text-xs text-fg-muted mt-1">{t("settings.intervalHint")}</p>
+            </div>
+
+            {/* مفتاح NVD — يرفع حدّ الطلبات من ٥ إلى ٥٠ لكل ٣٠ ثانية */}
+            <div className="pt-2 border-t border-border">
+              <label htmlFor="nvd-key" className="text-sm font-medium block mb-1">
+                {t("settings.nvdKey")}
+              </label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  id="nvd-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={
+                    form.nvd_api_key_set ? t("settings.nvdKeyStored") : t("settings.nvdKeyEmpty")
+                  }
+                  className="input w-80 font-mono"
+                  value={nvdKey}
+                  onChange={(e) => setNvdKey(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={!nvdKey.trim() || saveKey.isPending}
+                  onClick={() => saveKey.mutate(nvdKey.trim())}
+                >
+                  {t("settings.nvdKeySave")}
+                </button>
+                {form.nvd_api_key_set && (
+                  <button
+                    type="button"
+                    className="btn-ghost text-danger"
+                    disabled={saveKey.isPending}
+                    onClick={() => saveKey.mutate("")}
+                  >
+                    {t("settings.nvdKeyRemove")}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-fg-muted mt-1">
+                {t("settings.nvdKeyHint", {
+                  seconds: form.nvd_min_seconds_between_calls ?? 6.5,
+                })}
+              </p>
+              {saveKey.isSuccess && (
+                <p className="text-xs text-success mt-1">{t("settings.saved")}</p>
+              )}
+              {saveKey.isError && (
+                <p className="text-xs text-danger mt-1">
+                  {t("settings.saveFailed")} {saveKey.error.message}
+                </p>
+              )}
             </div>
 
             {/* حفظ */}
