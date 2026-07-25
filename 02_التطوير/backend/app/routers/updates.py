@@ -20,11 +20,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models.orm import HUB_DEVICE_ID, SoftwarePackageORM, WindowsUpdateORM
+from ..models.orm import (
+    HUB_DEVICE_ID,
+    InstalledSoftwareORM,
+    SoftwarePackageORM,
+    WindowsUpdateORM,
+)
 from ..services import notifications
 from ..services.software_updates import (
     SoftwareUpdateError,
     install_many,
+    list_installed_software,
     list_software_updates,
 )
 from ..services.update_progress import update_progress
@@ -257,6 +263,93 @@ async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) 
             row.is_installed = bool(r["succeeded"])
     await db.commit()
     return result
+
+
+# ===================================================================
+# Installed-software inventory — what IS on the machine, not what's outdated
+# ===================================================================
+@router.get("/inventory")
+async def list_inventory(db: AsyncSession = Depends(get_db)) -> dict:
+    """The stored inventory for THIS PC (product + version + source)."""
+    rows = (
+        (
+            await db.execute(
+                select(InstalledSoftwareORM)
+                .where(InstalledSoftwareORM.device_id == HUB_DEVICE_ID)
+                .order_by(InstalledSoftwareORM.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "items": [r.to_dict() for r in rows],
+        "total": len(rows),
+        "last_seen": max((r.last_seen for r in rows), default=None).isoformat() if rows else None,
+    }
+
+
+@router.post("/inventory/refresh")
+@_claims_update_slot("inventory")
+async def refresh_inventory(db: AsyncSession = Depends(get_db)) -> dict:
+    """Re-read ``winget list`` and upsert the inventory for THIS PC."""
+    logger.info("POST /api/updates/inventory/refresh")
+    try:
+        items, degraded = await list_installed_software()
+    except SoftwareUpdateError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    now = datetime.now(UTC)
+    existing = {
+        r.product_id: r
+        for r in (
+            (
+                await db.execute(
+                    select(InstalledSoftwareORM).where(
+                        InstalledSoftwareORM.device_id == HUB_DEVICE_ID
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+
+    new_count = 0
+    for item in items:
+        row = existing.get(item.product_id)
+        if row is None:
+            row = InstalledSoftwareORM(
+                device_id=HUB_DEVICE_ID, product_id=item.product_id, first_seen=now
+            )
+            db.add(row)
+            new_count += 1
+        row.name = item.name
+        row.version = item.version
+        row.source = item.source
+        if item.publisher:
+            row.publisher = item.publisher  # keep an earlier value if winget has none
+        row.last_seen = now
+
+    # Prune products that are genuinely gone — but ONLY on a clean run. After a
+    # degraded (non-zero) winget exit the output may be partial, and deleting
+    # rows merely absent from it would erase real inventory.
+    removed = 0
+    if not degraded:
+        seen = {i.product_id for i in items}
+        for pid, row in existing.items():
+            if pid not in seen:
+                await db.delete(row)
+                removed += 1
+
+    await db.commit()
+    return {
+        "total": len(items),
+        "new": new_count,
+        "removed": removed,
+        "degraded": degraded,
+        "checked_at": now.isoformat(),
+    }
 
 
 # ===================================================================

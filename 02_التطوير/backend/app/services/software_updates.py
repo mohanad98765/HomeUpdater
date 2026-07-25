@@ -41,6 +41,27 @@ class SoftwarePackageInfo:
         return asdict(self)
 
 
+@dataclass
+class InstalledSoftwareInfo:
+    """One product that is actually INSTALLED (from ``winget list``).
+
+    Distinct from ``SoftwarePackageInfo``, which only ever describes a package
+    that HAS an upgrade waiting. Inventory answers "what is on this machine",
+    which is what precise (product+version) CVE matching and any asset report
+    need. ``publisher`` is empty here: ``winget list`` does not print it — a
+    registry/MSI source can fill it later without changing this shape.
+    """
+
+    product_id: str  # winget Id, e.g. "Mozilla.Firefox"
+    name: str
+    version: str
+    source: str = "winget"
+    publisher: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 class SoftwareUpdateError(RuntimeError):
     """Raised when winget fails (not installed, no network, etc.)."""
 
@@ -264,9 +285,132 @@ def _parse_winget_table(text: str) -> list[SoftwarePackageInfo]:
     return packages
 
 
+def _looks_like_winget_id(token: str) -> bool:
+    """Is this token shaped like a winget Id (``Publisher.Product``, ``MSIX\\…``)?
+
+    Requires a dot or backslash AND at least one letter, so a bare version such
+    as ``14.51.36247`` is not mistaken for an Id when repairing a collided row.
+    """
+    if not token or not re.search(r"[A-Za-z]", token):
+        return False
+    return "." in token or "\\" in token
+
+
+def _parse_winget_list_row(line: str) -> InstalledSoftwareInfo | None:
+    """Parse one ``winget list`` row — language- and column-count-independent.
+
+    ``winget list`` differs from ``winget upgrade`` in the way that matters: the
+    Available column is usually EMPTY, so a row carries 3 fields (Name, Id,
+    Version) or 4 (+Source), and only occasionally 5 (+Available). The upgrade
+    parser requires an Available value and would drop nearly every installed
+    product, which is why this needs its own row rule.
+
+    Same locale-safe technique: split on runs of 2+ spaces and anchor from the
+    right, since Id/Version/Source are space-free tokens while a product name
+    uses single spaces internally.
+    """
+    fields = re.split(r"\s{2,}", line.strip())
+    if len(fields) < 2:
+        return None
+
+    source = "winget"
+    if fields[-1].lower() in _KNOWN_SOURCES:
+        source = fields[-1].lower()
+        fields = fields[:-1]
+    if len(fields) < 2:
+        return None
+
+    # With an Available column present the trailing field is that, not Version.
+    # Both are version-shaped, so decide on COUNT: >=4 remaining fields means
+    # Name… Id Version Available.
+    if len(fields) >= 4:
+        product_id, version = fields[-3], fields[-2]
+        name = " ".join(fields[:-3]).strip()
+    else:
+        product_id, version = fields[-2], fields[-1]
+        name = " ".join(fields[:-2]).strip()
+
+    # REPAIR a collided row. When a long Name overflows its column only ONE space
+    # separates it from the Id, so both land in a single field, e.g.
+    #   "Microsoft Visual C++ … (x64) - 14.51.36247 Microsoft.VCRedist.2015+.x64"
+    # Recover by taking the trailing Id-shaped token. Verified against real
+    # `winget list` output, where this silently dropped VCRedist — exactly the
+    # kind of product that matters for vulnerability matching.
+    if " " in product_id and "\\" not in product_id:
+        tokens = product_id.split()
+        if len(tokens) >= 2 and _looks_like_winget_id(tokens[-1]):
+            name = f"{name} {' '.join(tokens[:-1])}".strip()
+            product_id = tokens[-1]
+
+    # Structural validation only — no language-specific words, so localized
+    # headers/footers are rejected without matching their wording. A version must
+    # contain a digit, which is what drops the Arabic header row (its "version"
+    # cell is a word). Ids are usually space-free, but path-style ones legitimately
+    # contain spaces (e.g. "ARP\\Machine\\X64\\O365HomePremRetail - ar-sa"), so
+    # spaces are tolerated only when the Id is backslash-qualified.
+    if not product_id or (" " in product_id and "\\" not in product_id):
+        return None
+    if not version or not re.search(r"\d", version):
+        return None
+
+    return InstalledSoftwareInfo(
+        product_id=product_id, name=name or product_id, version=version, source=source
+    )
+
+
+def parse_winget_list(text: str) -> list[InstalledSoftwareInfo]:
+    """Parse ``winget list`` output into an installed-software inventory.
+
+    Locates the locale-independent dashes separator and reads the rows after it,
+    de-duplicating by product id (winget can list the same id twice, e.g. an
+    x86 and an x64 entry) — keeping the FIRST occurrence, which matches the
+    one-row-per-(device, product) shape of ``installed_software``.
+    """
+    lines = text.splitlines()
+    sep_idx = next((i for i, ln in enumerate(lines) if _is_separator_row(ln)), None)
+    data_lines = lines[sep_idx + 1 :] if sep_idx is not None else lines
+
+    out: list[InstalledSoftwareInfo] = []
+    seen: set[str] = set()
+    for line in data_lines:
+        if not line.strip():
+            if sep_idx is not None:
+                break  # blank line ends the table (footer follows)
+            continue
+        item = _parse_winget_list_row(line)
+        if item is None or item.product_id in seen:
+            continue
+        seen.add(item.product_id)
+        out.append(item)
+    return out
+
+
 # ===================================================================
 # Public async API
 # ===================================================================
+async def list_installed_software() -> tuple[list[InstalledSoftwareInfo], bool]:
+    """Inventory what is installed on THIS machine via ``winget list``.
+
+    Returns ``(items, degraded)``. ``degraded`` is True when winget exited
+    non-zero, so the caller must not treat a short list as authoritative and
+    prune rows that are merely missing from partial output.
+    """
+    _ensure_windows()
+    rc, stdout, stderr = await _run(
+        "winget",
+        "list",
+        "--accept-source-agreements",
+        "--disable-interactivity",
+        idle_timeout=60.0,
+        hard_ceiling=240.0,  # a full inventory is longer than an upgrade listing
+    )
+    if rc != 0 and not stdout.strip():
+        raise SoftwareUpdateError(f"winget exited with code {rc}: {stderr.strip() or 'no output'}")
+    items = parse_winget_list(stdout)
+    logger.info(f"inventory: {len(items)} installed product(s) (winget rc={rc})")
+    return items, rc != 0
+
+
 async def list_software_updates() -> tuple[list[SoftwarePackageInfo], bool]:
     """List installed apps that have an upgrade available.
 
