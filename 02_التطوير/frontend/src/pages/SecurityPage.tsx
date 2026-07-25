@@ -12,10 +12,13 @@ import {
   Info,
   Search,
   AlertTriangle,
+  Fingerprint,
+  Tag,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 import { SolveProblemButton } from "@/components/SolveProblemButton";
+import { PreciseFindings } from "@/components/PreciseFindings";
 
 // ================================================================
 // صفحة الأمان — الثغرات المعروفة لكل جهاز (حسب المصنّع، من NVD)
@@ -79,7 +82,9 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["security-overview"] }),
   });
 
-  // فحص يدوي: اكتب أي مصنّع/كلمة (TP-Link، Cisco…) وافحصه مباشرة — يعمل دائماً
+  // فحص يدوي: اكتب أي مصنّع/كلمة (TP-Link، Cisco…) وافحصه مباشرة — يعمل دائماً.
+  // تبويبان بمستويَي دقّة مختلفَين: بالمصنّع (إرشاديّ) وبالإصدار (دقيق).
+  const [tab, setTab] = useState<"vendor" | "precise">("vendor");
   const [keyword, setKeyword] = useState("");
   const manual = useMutation<CVESummary, Error, string>({
     mutationFn: (kw) =>
@@ -154,6 +159,36 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
+      {/* مبدّل مستوى الدقّة */}
+      <div className="flex items-center gap-1 bg-surface-2 rounded-lg p-1 mb-4 w-fit">
+        <button
+          type="button"
+          onClick={() => setTab("vendor")}
+          className={cn(
+            "px-3 py-1.5 rounded-md text-sm font-medium inline-flex items-center gap-2 transition-colors",
+            tab === "vendor" ? "bg-surface text-primary shadow-sm" : "text-fg-muted hover:text-fg",
+          )}
+        >
+          <Tag className="w-4 h-4" />
+          {t("pages.sec.tabVendor")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("precise")}
+          className={cn(
+            "px-3 py-1.5 rounded-md text-sm font-medium inline-flex items-center gap-2 transition-colors",
+            tab === "precise" ? "bg-surface text-primary shadow-sm" : "text-fg-muted hover:text-fg",
+          )}
+        >
+          <Fingerprint className="w-4 h-4" />
+          {t("pages.sec.tabPrecise")}
+        </button>
+      </div>
+
+      {tab === "precise" && <PreciseFindings />}
+
+      {tab === "vendor" && (
+      <>
       {/* Explanation */}
       <div className="card mb-6 flex items-start gap-3 text-sm border-info/30 bg-info/5">
         <Info className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
@@ -361,6 +396,8 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
             </table>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
