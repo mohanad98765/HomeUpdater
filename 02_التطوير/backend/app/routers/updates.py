@@ -104,8 +104,9 @@ async def _list_wua_updates(db: AsyncSession, kind: str) -> dict:
     result = await db.execute(
         select(WindowsUpdateORM)
         # These endpoints are about THIS PC; fleet rows carry a real device_id.
-        .where(WindowsUpdateORM.device_id == HUB_DEVICE_ID, WindowsUpdateORM.kind == kind)
-        .order_by(WindowsUpdateORM.last_checked.desc())
+        .where(WindowsUpdateORM.device_id == HUB_DEVICE_ID, WindowsUpdateORM.kind == kind).order_by(
+            WindowsUpdateORM.last_checked.desc()
+        )
     )
     rows = result.scalars().all()
     pending = [r.to_dict() for r in rows if not r.is_installed]

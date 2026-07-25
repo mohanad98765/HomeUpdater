@@ -458,7 +458,9 @@ async def chat(db: AsyncSession, history: list[dict]) -> dict:
         {"role": m["role"], "content": str(m["content"])}
         for m in history
         if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()
-    ][-20:]  # keep the last ~20 turns
+    ][
+        -20:
+    ]  # keep the last ~20 turns
     while messages and messages[0]["role"] != "user":
         messages.pop(0)  # the API requires the conversation to start on a user turn
     if not messages:
