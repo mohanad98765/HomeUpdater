@@ -133,6 +133,71 @@ def parse_cves(data: dict, limit: int) -> list[dict]:
     return out[:limit]
 
 
+def matched_ranges(data: dict, product: str) -> list[dict]:
+    """Extract the version range that made each CVE apply, for the evidence trail.
+
+    NVD does the authoritative matching when queried by ``cpeName``; this reads
+    the configuration nodes back so a report can state WHY a CVE applies
+    ("affects < 9.7.12") instead of asserting it bare. A finding a reader cannot
+    audit is not evidence.
+    """
+    out: list[dict] = []
+    for item in data.get("vulnerabilities", []):
+        cve = item.get("cve", {})
+        cid = cve.get("id", "")
+        if not cid:
+            continue
+        for config in cve.get("configurations", []) or []:
+            for node in config.get("nodes", []) or []:
+                for m in node.get("cpeMatch", []) or []:
+                    criteria = m.get("criteria", "")
+                    # cpe:2.3:a:vendor:product:version:... -> field 4 is the product
+                    fields = criteria.split(":")
+                    if len(fields) < 5 or fields[4] != product:
+                        continue
+                    bounds = {
+                        "start_including": m.get("versionStartIncluding"),
+                        "start_excluding": m.get("versionStartExcluding"),
+                        "end_including": m.get("versionEndIncluding"),
+                        "end_excluding": m.get("versionEndExcluding"),
+                    }
+                    # A criteria of "product:*" with NO bounds matches EVERY version.
+                    # Verified live: querying python 3.14.6 returns CVE-2009-2940 this
+                    # way. Those are stale/imprecise NVD records, not evidence that a
+                    # 2026 build is vulnerable — so they are labelled, not hidden.
+                    unbounded = not any(bounds.values()) and criteria.split(":")[5] == "*"
+                    out.append(
+                        {
+                            "id": cid,
+                            "criteria": criteria,
+                            "vulnerable": bool(m.get("vulnerable", False)),
+                            "precision": "unbounded" if unbounded else "bounded",
+                            **bounds,
+                        }
+                    )
+                    break  # one range per CVE is enough for the trail
+    return out
+
+
+async def fetch_by_cpe(cpe_name: str, results_per_page: int = 50) -> dict:
+    """Ask NVD which CVEs apply to ONE exact CPE (product + version).
+
+    This is the precise path: NVD evaluates the version against each advisory's
+    configuration ranges server-side, so the answer is "is THIS version affected",
+    not "has this vendor ever had a CVE".
+    """
+    params = {"cpeName": cpe_name, "resultsPerPage": results_per_page}
+    timeout = httpx.Timeout(connect=10.0, read=25.0, write=10.0, pool=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(NVD_URL, params=params, headers={"User-Agent": "HomeUpdater/0.1"})
+    if resp.status_code in (429, 403):
+        raise CVERateLimited(_retry_after_seconds(resp))
+    if resp.status_code == 404:  # unknown CPE — treat as "no data", not an error
+        return {"vulnerabilities": [], "totalResults": 0}
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def _fetch_nvd(keyword: str, results_per_page: int = 100) -> dict:
     params = {"keywordSearch": keyword, "resultsPerPage": results_per_page}
     # Split connect vs read: NVD's server processing can be slow, so give the read
@@ -201,6 +266,77 @@ async def lookup_cves(
 
     return {
         "keyword": keyword,
+        "total_results": total,
+        "cves": cves,
+        "fetched_at": now.isoformat(),
+        "cached": False,
+    }
+
+
+async def lookup_by_cpe(
+    identity,  # cpe.CpeIdentity — imported lazily by the caller to avoid a cycle
+    db: AsyncSession,
+    limit: int = 8,
+    ttl_hours: int = 24,
+    force: bool = False,
+) -> dict:
+    """Precise per-product CVE lookup, cached and throttled like the keyword path.
+
+    Reuses ``cve_cache`` with the CPE name as the key, so no migration is needed
+    and both paths share one 24h TTL and one adaptive NVD throttle. Returns the
+    matched version ranges too, so a report can justify each finding.
+    """
+    key = identity.cpe_name
+    if len(key) > 128:  # cve_cache.keyword is String(128) — don't silently truncate
+        logger.warning(f"CPE name too long to cache, querying uncached: {key[:60]}…")
+        row = None
+    else:
+        row = (
+            await db.execute(select(CVECacheORM).where(CVECacheORM.keyword == key))
+        ).scalar_one_or_none()
+
+    if (
+        row is not None
+        and not force
+        and _aware(row.fetched_at) is not None
+        and (datetime.now(UTC) - _aware(row.fetched_at)) < timedelta(hours=ttl_hours)
+    ):
+        return {**row.to_dict(), "cached": True, "match": "cpe", "cpe_name": key}
+
+    try:
+        data = await fetch_by_cpe(key)
+    except CVERateLimited as exc:
+        _throttle.on_rate_limited(exc.retry_after)
+        logger.warning(f"NVD rate-limited for {key[:50]}…; backing off")
+        if row is not None:
+            return {**row.to_dict(), "cached": True, "stale": True, "match": "cpe", "cpe_name": key}
+        raise
+    except Exception as exc:
+        logger.warning(f"NVD CPE lookup failed for {key[:50]}…: {exc}")
+        if row is not None:
+            return {**row.to_dict(), "cached": True, "stale": True, "match": "cpe", "cpe_name": key}
+        raise CVEError(f"NVD unreachable: {exc}") from exc
+
+    cves = parse_cves(data, limit)
+    ranges = {r["id"]: r for r in matched_ranges(data, identity.product)}
+    for c in cves:  # attach the range that made each CVE apply
+        c["applies_because"] = ranges.get(c["id"])
+    total = int(data.get("totalResults", 0) or 0)
+    now = datetime.now(UTC)
+    if len(key) <= 128:
+        if row is None:
+            row = CVECacheORM(keyword=key)
+            db.add(row)
+        row.total_results = total
+        row.data = json.dumps(cves, ensure_ascii=False)
+        row.fetched_at = now
+        await db.commit()
+    _throttle.on_success()
+
+    return {
+        "keyword": key,
+        "cpe_name": key,
+        "match": "cpe",
         "total_results": total,
         "cves": cves,
         "fetched_at": now.isoformat(),
