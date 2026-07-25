@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..services import audit, evidence, licensing
+from ..services import audit, evidence, licensing, rollup
 
 router = APIRouter()
 
@@ -128,3 +128,61 @@ async def preview(db: AsyncSession = Depends(get_db)) -> dict:
         "audit": body["audit"],
         "licensed": licensing.load().to_dict()["can_export_evidence"],
     }
+
+
+# ===================================================================
+# Partner roll-up — many sites, no cloud console
+# ===================================================================
+class RollupBody(BaseModel):
+    """Evidence packs exactly as each site exported them (JSON, unmodified)."""
+
+    packs: list[dict] = Field(default_factory=list, max_length=500)
+
+
+def _require_partner() -> licensing.License:
+    lic = licensing.load()
+    d = lic.to_dict()
+    if not d["can_export_evidence"] or lic.tier != "partner":
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "partner_tier_required"
+                if d["can_export_evidence"]
+                else (d["reason"] or "not_licensed")
+            ),
+        )
+    return lic
+
+
+@router.post("/rollup")
+async def build_rollup(body: RollupBody, db: AsyncSession = Depends(get_db)) -> dict:
+    """Aggregate site packs. Each is re-hashed; an altered pack is REJECTED, not blended.
+
+    Partner tier only — this is the multi-site view a reseller buys.
+    """
+    _require_partner()
+    result = rollup.build(body.packs)
+    await audit.record_safe(
+        db,
+        "rollup_build",
+        actor="user",
+        detail={
+            "sites_verified": result["totals"]["sites_verified"],
+            "sites_rejected": result["totals"]["sites_rejected"],
+        },
+    )
+    return result
+
+
+@router.post("/rollup.csv")
+async def rollup_csv(body: RollupBody, db: AsyncSession = Depends(get_db)) -> Response:
+    _require_partner()
+    result = rollup.build(body.packs)
+    await audit.record_safe(
+        db, "rollup_build", actor="user", detail={"format": "csv", **result["totals"]}
+    )
+    return Response(
+        content=rollup.to_csv(result).encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="homeupdater-rollup.csv"'},
+    )
