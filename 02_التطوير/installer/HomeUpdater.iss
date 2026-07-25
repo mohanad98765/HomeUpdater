@@ -57,13 +57,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; UAC-prompt or fail every logon). A logon task runs it elevated with NO prompt.
 Name: "startuptask"; Description: "تشغيل {#AppName} تلقائياً عند تسجيل الدخول / Start at sign-in"; GroupDescription: "Startup:"; Flags: unchecked
 
-[InstallDelete]
-; Vite fingerprints every bundle (index-<hash>.js), so an upgrade writes NEW file
-; names and leaves the old ones behind forever — 12 dead bundles (3.6 MB of 10) had piled up
-; by v1.10.2. index.html always points at the current pair, so the leftovers were
-; never served; they were pure growth plus a stale-chunk trap. Wipe the folder
-; first, then let [Files] lay down exactly what this build produced.
-Type: filesandordirs; Name: "{app}\_internal\frontend_dist\assets"
+; NO [InstallDelete] FOR frontend_dist\assets — deliberately.
+; v1.10.3 pruned the stale Vite bundles with [InstallDelete], which Inno runs BEFORE
+; [Files]. Measured consequence on a real machine (v1.10.4 upgrade): a locked file
+; aborted the copy, and because Inno's rollback does NOT restore [InstallDelete]
+; deletions, the machine was left with an installed app whose UI folder was gone.
+; The prune now happens in CurStepChanged(ssPostInstall) — after the new build is
+; safely in place — so a failed install is a no-op instead of destructive.
 
 [Files]
 ; The entire PyInstaller onedir output.
@@ -90,6 +90,10 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""HomeUpdater"" /F"; Flags: runhidden; RunOnceId: "DelHomeUpdaterTask"
 ; Stop the running instance (and its WebView2 children, via /T) before removing files.
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#AppExe}"; Flags: runhidden; RunOnceId: "StopHomeUpdater"
+; Same lock, mirror image: the detached adb server and any orphaned WebView2 host keep
+; files in {app} open, so a silent uninstall would leave the folder behind. Kill only
+; the ones running FROM the install folder — never the user's own adb.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-Process adb,msedgewebview2 -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and $_.Path.StartsWith('{app}', 'OrdinalIgnoreCase') } | Stop-Process -Force"""; Flags: runhidden; RunOnceId: "StopHomeUpdaterHelpers"
 
 ; NOTE: user data in %APPDATA%\HomeUpdater (DB, config, logs) is intentionally
 ; left in place on uninstall. A future "remove my data?" prompt can clear it.
@@ -111,6 +115,29 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, RC) and (RC = 0);
 end;
 
+function AdbPath(): String;
+begin
+  Result := ExpandConstant('{app}\_internal\platform-tools\adb.exe');
+end;
+
+function FileIsReplaceable(const FileName: String): Boolean;
+var
+  RC: Integer;
+begin
+  { Opening with FileShare.None succeeds only if nothing else holds the file — the
+    same question Inno's DeleteFile is about to ask, asked while we can still stop
+    cleanly instead of half-way through the copy. }
+  Result := True;
+  if not FileExists(FileName) then
+    Exit;
+  if Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+          '-NoProfile -ExecutionPolicy Bypass -Command "try { $f=[IO.File]::Open('''
+          + FileName + ''',''Open'',''ReadWrite'',''None''); $f.Close(); exit 0 }'
+          + ' catch { exit 1 }"',
+          '', SW_HIDE, ewWaitUntilTerminated, RC) then
+    Result := (RC = 0);
+end;
+
 procedure StopAdbServer();
 var
   RC: Integer;
@@ -123,12 +150,98 @@ begin
     and left an installed app with no UI at all.
     Deliberately NOT 'taskkill /IM adb.exe' and NOT 'adb kill-server': both would
     also kill an adb the user runs for their own Android work. This kills only
-    processes whose image lives inside OUR install folder. }
+    processes whose image lives inside OUR install folder.
+    msedgewebview2 is here too: the app's WebView2 hosts sometimes outlive it and
+    keep _internal DLLs mapped — the same class of lock, different process.
+    StartsWith (not -like) because a custom install path containing [ or ] would
+    make -like treat it as a wildcard pattern and match nothing. }
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-       '-NoProfile -ExecutionPolicy Bypass -Command "Get-Process adb -ErrorAction'
-       + ' SilentlyContinue | Where-Object { $_.Path -like ''' + ExpandConstant('{app}')
-       + '*'' } | Stop-Process -Force"',
+       '-NoProfile -ExecutionPolicy Bypass -Command "Get-Process adb,msedgewebview2'
+       + ' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and'
+       + ' $_.Path.StartsWith(''' + ExpandConstant('{app}') + ''', ''OrdinalIgnoreCase'')'
+       + ' } | Stop-Process -Force"',
        '', SW_HIDE, ewWaitUntilTerminated, RC);
+end;
+
+procedure PruneStaleBundles();
+var
+  Dir, AssetsDir: String;
+  Blob, Content: AnsiString;
+  FR: TFindRec;
+  Names, Seen: TStringList;
+  I, Pass: Integer;
+  Grew: Boolean;
+begin
+  { Vite fingerprints bundle names, so every upgrade adds files and never removes the
+    old ones (12 dead files / 3.6 MB had piled up by v1.10.2). This USED to be an
+    InstallDelete entry — but that runs before the copy and is not rolled back, so
+    any later failure left the app with no UI. Doing it here, after ssPostInstall,
+    means a failed install leaves the previous bundles exactly where they were.
+    A file is kept if its name appears in index.html or inside any kept .js: the
+    entry bundle references lazily-loaded chunks (the ~6 MB PDF chunk among them),
+    so scanning index.html alone would delete a live file.
+    Fails CLOSED: if index.html cannot be read, nothing is deleted. }
+  Dir := ExpandConstant('{app}\_internal\frontend_dist');
+  AssetsDir := Dir + '\assets';
+  if not LoadStringFromFile(Dir + '\index.html', Blob) then
+  begin
+    Log('PruneStaleBundles: index.html unreadable — pruning skipped');
+    Exit;
+  end;
+  Names := TStringList.Create();
+  Seen := TStringList.Create();
+  try
+    if FindFirst(AssetsDir + '\*', FR) then
+    begin
+      try
+        repeat
+          if (FR.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+            Names.Add(FR.Name);
+        until not FindNext(FR);
+      finally
+        FindClose(FR);
+      end;
+    end;
+    for Pass := 1 to 3 do
+    begin
+      Grew := False;
+      for I := 0 to Names.Count - 1 do
+      begin
+        if Seen.IndexOf(Names[I]) >= 0 then
+          Continue;
+        if Pos(Names[I], Blob) = 0 then
+          Continue;
+        Seen.Add(Names[I]);
+        if LowerCase(ExtractFileExt(Names[I])) = '.js' then
+        begin
+          if LoadStringFromFile(AssetsDir + '\' + Names[I], Content) then
+          begin
+            Blob := Blob + Content;
+            Grew := True;
+          end;
+        end;
+      end;
+      if not Grew then
+        Break;
+    end;
+    for I := 0 to Names.Count - 1 do
+    begin
+      if Pos(Names[I], Blob) = 0 then
+      begin
+        Log('Pruning stale bundle: ' + Names[I]);
+        DeleteFile(AssetsDir + '\' + Names[I]);
+      end;
+    end;
+  finally
+    Names.Free();
+    Seen.Free();
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    PruneStaleBundles();
 end;
 
 procedure KillAppTree();
@@ -229,5 +342,19 @@ begin
   if AppIsRunning() then
     KillAppTree();
   if AppIsRunning() then
+  begin
     Result := 'HomeUpdater ما زال قيد التشغيل ولا يمكن تحديث ملفاته. أغلقه ثم أعد المحاولة.';
+    Exit;
+  end;
+  { Last gate before Inno starts touching files: if something we could not stop is
+    still holding adb.exe, fail HERE. Returning a message aborts the install before
+    a single file is replaced, which is a no-op; letting it run would fail mid-copy
+    instead — and in a non-interactive install (Intune/GPO run in session 0, where
+    the Abort/Retry/Ignore box is invisible) that means hanging until the deployment
+    tool kills setup. }
+  if not FileIsReplaceable(AdbPath()) then
+    Result := 'الملف _internal\platform-tools\adb.exe قيد الاستخدام من عملية أخرى،'
+      + ' فتعذّر التحديث قبل أن يبدأ (لم يُغيَّر أي ملف). أغلق أي أداة adb ثم أعد المحاولة.'
+      + #13#10 + 'adb.exe is locked by another process; the upgrade stopped before'
+      + ' changing anything. Close any adb tool and retry.';
 end;

@@ -22,36 +22,48 @@
 **تثبيت (أو ترقية) صامت كامل:**
 
 ```
-HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /SP- /LOG="%ProgramData%\HomeUpdater-install.log"
+HomeUpdater-Setup-1.10.6.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG="%ProgramData%\HomeUpdater-install.log"
 ```
 
 **اختيار المهام الاختيارية صراحةً** (أيقونة سطح المكتب / التشغيل عند الدخول):
 
 ```
-HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /MERGETASKS="!desktopicon,!startuptask"
+HomeUpdater-Setup-1.10.6.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS="!desktopicon,!startuptask"
 ```
 
 - `!desktopicon` = **بلا** أيقونة سطح مكتب · `desktopicon` = بها.
 - `!startuptask` = **بلا** تشغيل تلقائيّ عند الدخول (يُنصح به في النشر المؤسّسيّ).
 
-**إزالة صامتة:**
+**إزالة صامتة** (لا تحذف بيانات المستخدم — انظر التنبيه بعدها):
 
 ```
-"C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /NORESTART
+"C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
-> **ترقية على جهاز يعمل عليه التطبيق:** المثبّت يُغلق التطبيق بنفسه في
-> `PrepareToInstall` — وهي تعمل **في الوضع الصامت أيضًا**، لا في صفحة المعالج فقط.
-> ومنذ **v1.10.5** يُوقِف كذلك **خادم adb** المضمّن: adb يفصل نفسه فيبقى حيًّا بعد
-> إغلاق التطبيق ويقفل `_internal\platform-tools\adb.exe`، فيتعذّر استبداله. الإيقاف
-> مقصور على adb العامل **من مجلَّد التثبيت**، فلا يمسّ adb الخاصّ بالمستخدم.
+> ⚠️ **الإزالة تُبقي بيانات المستخدم كما هي** — بقصد، لا سهوًا: قاعدة البيانات
+> والإعدادات والسجلّات و**مفتاح التشفير** في `%APPDATA%\HomeUpdater` تبقى بعد
+> الإزالة. في النشر المؤسّسيّ هذا يعني بقاء بيانات جرد وثغرات على الجهاز بعد سحب
+> التطبيق؛ إن كانت سياستك تمنع ذلك فأضِف حذف المجلَّد إلى سكربت السحب لكل مستخدم.
+
+> **ترقية على جهاز يعمل عليه التطبيق:** المثبّت يتولّى ذلك بنفسه في `PrepareToInstall`
+> (وهي تعمل في الوضع الصامت أيضًا): يُغلق التطبيق وأبناءه، ويُوقِف **خادم adb** المضمّن
+> و**مضيفات WebView2 اليتيمة** العاملة من مجلَّد التثبيت — ولا يمسّ adb الخاصّ بك.
+> ثم يتحقّق أن `adb.exe` صار قابلًا للاستبدال، **وإن بقي مقفلًا يتوقّف قبل تغيير أي
+> ملف** ويعيد رمز خروج غير صفريّ. أي أن الفشل صار «لا شيء حدث»، لا «تطبيق معطوب».
 >
-> ⚠️ **لا تستخدم `/SUPPRESSMSGBOXES` مع `/VERYSILENT`.** حادثة مقيسة (ترقية v1.10.4،
-> ٢٠٢٦-٠٧-٢٥): خادم adb كان يقفل `adb.exe` ⇒ صندوق Abort/Retry/Ignore ⇒
-> `/SUPPRESSMSGBOXES` يختار **Abort** ⇒ تراجُع Inno حذف ما نسخه ومعه
-> `frontend_dist\assets` ⇒ **تطبيق مُثبَّت بلا واجهة** ورمز خروج `5`. بدون هذا المفتاح
-> يظهر الصندوق ويمكن اختيار Retry. أضِفه فقط إن كنت **تراقب رمز الخروج** وتُعيد التثبيت
-> آليًّا عند ‎5‎ — فالفشل الصامت هنا لا يترك التطبيق كما كان، بل يتركه معطوبًا.
+> **عن `/SUPPRESSMSGBOXES`:** أعدناه إلى الأوامر أعلاه بعد قياسٍ صريح. المفتاح يجعل
+> صندوق Abort/Retry/Ignore يُجاب تلقائيًّا بـAbort — وهذا **مطلوب** في النشر غير
+> التفاعليّ: Intune وسكربت إقلاع GPO يعملان بحساب **System في الجلسة 0**، حيث الصندوق
+> **غير مرئيّ لأي إنسان**، فبدون المفتاح يتوقّف المثبّت إلى أن تقتله أداة النشر بعد
+> مهلتها (٦٠ دقيقة افتراضًا) — والقتل القسريّ يتخطّى التراجُع فلا رمز خروج ولا سجلّ.
+> **القاعدة:** استخدمه في كل نشر غير تفاعليّ، و**راقب رمز الخروج**: `0` نجاح،
+> `5` أُلغي (ملفّ مقفل عادةً) فأعِد المحاولة، `1`/`2` خطأ في الأوامر أو التهيئة.
+> ولا تستخدمه إن كان أمام الشاشة فنيّ يستطيع اختيار Retry.
+>
+> **منذ v1.10.6 لا يحذف المثبّت شيئًا قبل النسخ.** تنظيف حزم الواجهة القديمة انتقل
+> إلى ما بعد نجاح النسخ (`ssPostInstall`)؛ قبل ذلك كان `InstallDelete` يحذف مجلَّد
+> `frontend_dist\assets` **قبل** النسخ، وتراجُع Inno لا يُعيد ما حذفه، فأي فشل لاحق
+> كان يترك تطبيقًا مُثبَّتًا بلا واجهة (حدث فعليًّا في ترقية v1.10.4).
 
 ## 3. النشر عبر Microsoft Intune (تطبيق Win32)
 
@@ -59,11 +71,11 @@ HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /MERGETASKS="!desktopicon,!s
    لتحصل على `HomeUpdater-Setup-<الإصدار>.intunewin`.
 2. **أمر التثبيت:**
    ```
-   HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /MERGETASKS="!desktopicon,!startuptask"
+   HomeUpdater-Setup-1.10.6.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS="!desktopicon,!startuptask"
    ```
 3. **أمر الإزالة:**
    ```
-   "C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /NORESTART
+   "C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
    ```
 4. **سياق التثبيت:** System (الجهاز) · **سلوك إعادة التشغيل:** لا يلزم (No specific action).
 5. **قاعدة الكشف (Detection rule)** — **مُتحقَّق منها على جهاز مُثبَّت فعلًا**، من نوع **Registry**:
@@ -72,10 +84,16 @@ HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /MERGETASKS="!desktopicon,!s
    |---|---|
    | المسار | `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8F3A1C7E-2B4D-4E6A-9C1F-5D7E8A9B0C1D}_is1` |
    | القيمة | `DisplayVersion` |
-   | نوع المقارنة | Version · **greater than or equal to** · `1.5.10` |
+   | نوع المقارنة | Version · **greater than or equal to** · `1.10.6` ← بالإصدار المنشور |
    | العرض (Registry view) | **64‑bit** — ⚠️ المفتاح **غير موجود** في `WOW6432Node`، فلا تُفعّل «تطبيق على 32‑بت» |
 
-   *(بديل أبسط: كشف بوجود الملف `C:\Program Files\HomeUpdater\HomeUpdater.exe`.)*
+   ⚠️ **رقم القاعدة يجب أن يساوي الإصدار الذي تنشره الآن، ويُحدَّث مع كل إصدار.**
+   القاعدة تعني «مُثبَّت إن كان الإصدار ≥ الرقم»، فإن تركتَها على رقم قديم رأى Intune
+   التطبيق «مُثبَّتًا» **وتخطّى كل ترقية بعده**. مع نشر 1.10.6 يكون الرقم `1.10.6`.
+
+   ⚠️ **لا تستخدم «كشف بوجود الملف `HomeUpdater.exe`»** كبديل: هو صحيح شكليًّا ويُبلِّغ
+   بالنجاح على تثبيت ناقص أو معطوب (الملفّ موجود والواجهة ناقصة). إن أردت كشفًا لا
+   يعتمد على السجل فاستخدم **إصدار الملف** لا وجوده.
 
 ## 4. النشر عبر سياسة المجموعة (GPO) أو أداة توزيع أخرى
 
@@ -85,14 +103,17 @@ Inno Setup لا يُنتج MSI، فلا تُستخدم «Software Installation»
 
 ```powershell
 # Startup script (سياق الجهاز). يُثبِّت مرّة واحدة، ويُرقّي فقط عند صدور إصدار أحدث.
-$target  = '1.5.10'
-$setup   = '\\srv\share\HomeUpdater-Setup-1.5.10.exe'
+$target  = '1.10.6'   # حدّثه مع كل إصدار تنشره
+$setup   = '\\srv\share\HomeUpdater-Setup-1.10.6.exe'
 $key     = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8F3A1C7E-2B4D-4E6A-9C1F-5D7E8A9B0C1D}_is1'
 $current = (Get-ItemProperty $key -ErrorAction SilentlyContinue).DisplayVersion
 if (-not $current -or [version]$current -lt [version]$target) {
-    taskkill /F /T /IM HomeUpdater.exe 2>$null | Out-Null      # حرّر الملفّات المفتوحة
-    Start-Process $setup -Wait -ArgumentList `
-        '/VERYSILENT','/NORESTART','/MERGETASKS=!desktopicon,!startuptask'
+    # لا حاجة لقتل التطبيق يدويًّا: المثبّت يفعله في PrepareToInstall (ومعه adb وWebView2)
+    # راقب رمز الخروج: 5 = أُلغي (ملفّ مقفل) فأعِد المحاولة في الإقلاع القادم
+    $p = Start-Process $setup -Wait -PassThru -ArgumentList `
+        '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=!desktopicon,!startuptask'
+    if ($p.ExitCode -ne 0) { Write-EventLog -LogName Application -Source Application `
+        -EventId 1000 -Message "HomeUpdater setup exit $($p.ExitCode)" -EA SilentlyContinue }
 }
 ```
 
@@ -126,9 +147,17 @@ if (-not $current -or [version]$current -lt [version]$target) {
 
 ## 6. ما يحتاجه الجهاز الهدف
 
-- Windows 10/11 x64 (أو Windows Server حديث).
-- **WebView2 Runtime** (مثبَّت أصلًا على أغلب أنظمة ويندوز 11).
-- صلاحية مسؤول للتثبيت.
+- Windows 10/11 x64 (أو Windows Server حديث). السكربت يضبط
+  `ArchitecturesAllowed=x64compatible`، فأجهزة **ARM64** تُثبِّت عبر محاكاة x64 — غير
+  مُختبَرة، فلا تنشرها على ARM64 قبل تجربة فعليّة.
+- **WebView2 Runtime** (مثبَّت أصلًا على أغلب أنظمة ويندوز 11). ⚠️ **المثبّت لا يفحصه
+  ولا يُنزّله**؛ على نسخ ويندوز 10 القديمة أو صور Server المُقلّمة انشره كاعتماد سابق
+  (Evergreen Bootstrapper) وإلّا فتحت نافذة التطبيق فارغة.
+- صلاحية مسؤول **للتثبيت وللتشغيل**: الملفّ التنفيذيّ يطلب
+  `requestedExecutionLevel=requireAdministrator` لأنه يشغّل Windows Update وwinget،
+  فكل تشغيل يدويّ يُظهر UAC. ولهذا تُنشئ مهمّة «التشغيل عند الدخول» مهمّة مجدولة
+  بـ`/RL HIGHEST` (تعمل مرفوعة بلا سؤال) — وإن نشرت بـ`!startuptask` فلن يعمل
+  التطبيق تلقائيًّا بعد الترقية، وسيحتاج المستخدم إلى قبول UAC ليفتحه.
 - **لا** يلزم فتح أي منفذ وارد: واجهة التطبيق محليّة على `127.0.0.1` فقط.
 
 ---
