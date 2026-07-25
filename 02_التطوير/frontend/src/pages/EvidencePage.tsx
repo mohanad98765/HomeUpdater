@@ -63,7 +63,7 @@ interface Rollup {
   totals: {
     sites_verified: number;
     sites_rejected: number;
-    devices: number;
+    products: number;
     findings: number;
     sites_with_findings: number;
     sites_with_broken_chain: number;
@@ -419,7 +419,7 @@ export function EvidencePage({ onBack }: { onBack: () => void }) {
                   />
                   <Metric
                     label={t("pages.evidence.rollup.devices")}
-                    value={rollup.totals.devices}
+                    value={rollup.totals.products}
                   />
                   <Metric
                     label={t("pages.evidence.rollup.findings")}

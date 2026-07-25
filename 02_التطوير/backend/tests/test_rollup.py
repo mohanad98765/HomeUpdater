@@ -134,7 +134,7 @@ def test_totals_only_count_verified_sites():
     t = result["totals"]
     assert t["sites_verified"] == 2
     assert t["sites_rejected"] == 1
-    assert t["devices"] == 30, "the tampered site's 100 devices must not be counted"
+    assert t["products"] == 30, "the tampered site's 100 products must not be counted"
     assert t["findings"] == 4
     assert t["avg_coverage_percent"] == 50.0
     assert result["rejected"][0]["reason"] == "stamp_mismatch"
@@ -146,6 +146,34 @@ def test_broken_chain_sites_sort_first():
     result = rollup.build([ok_site, broken])
     assert result["sites"][0]["site"] == "Broken", "an invalid report outranks bad news"
     assert result["totals"]["sites_with_broken_chain"] == 1
+
+
+def test_the_same_pack_twice_is_counted_once():
+    """Dragging a folder in twice must not double the numbers a partner reports."""
+    pack = make_pack(site="Clinic A", devices=10, findings=3)
+    result = rollup.build([pack, pack])
+    t = result["totals"]
+    assert t["sites_verified"] == 1
+    assert t["products"] == 10, "one machine's 10 products must not become 20"
+    assert t["findings"] == 3
+    assert t["sites_rejected"] == 1
+    assert result["rejected"][0]["reason"] == "duplicate"
+
+
+def test_two_sites_with_the_same_numbers_are_both_counted():
+    """Dedup keys on the stamp, so two genuinely different sites still both count."""
+    a = make_pack(site="Clinic A", devices=10, findings=3)
+    b = make_pack(site="Clinic B", devices=10, findings=3)
+    assert a["content_sha256"] != b["content_sha256"]
+    t = rollup.build([a, b])["totals"]
+    assert t["sites_verified"] == 2 and t["products"] == 20 and t["sites_rejected"] == 0
+
+
+def test_csv_header_says_products_not_devices():
+    """A pack covers ONE machine; the column counts its software, not machines."""
+    header = rollup.to_csv(rollup.build([make_pack()])).splitlines()[0]
+    assert "products" in header
+    assert "devices" not in header
 
 
 def test_empty_input_is_safe():

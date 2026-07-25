@@ -49,12 +49,20 @@ def build(packs: list[dict]) -> dict:
     """Aggregate verified packs; list rejected ones separately with a reason."""
     sites: list[dict] = []
     rejected: list[dict] = []
+    seen_stamps: set[str] = set()
 
     for i, entry in enumerate(packs or []):
         ok, reason = verify_pack(entry)
         if not ok:
             rejected.append({"index": i, "reason": reason, "site": ""})
             continue
+        # The same file imported twice — trivially easy when a partner drags a folder
+        # in — would otherwise double every total. Identical stamp = identical pack, so
+        # count it once and SAY that a copy was set aside instead of inflating silently.
+        if entry["content_sha256"] in seen_stamps:
+            rejected.append({"index": i, "reason": "duplicate", "site": ""})
+            continue
+        seen_stamps.add(entry["content_sha256"])
         body = entry["pack"]
         cov = body.get("coverage") or {}
         audit_info = body.get("audit") or {}
@@ -87,7 +95,9 @@ def build(packs: list[dict]) -> dict:
         "totals": {
             "sites_verified": verified,
             "sites_rejected": len(rejected),
-            "devices": sum(s["inventory_total"] for s in sites),
+            # PRODUCTS, not machines: a pack covers one machine and counts the software
+            # installed on it. Calling this "devices" read as "230 devices" for two PCs.
+            "products": sum(s["inventory_total"] for s in sites),
             "findings": sum(s["findings_total"] for s in sites),
             "sites_with_findings": sum(1 for s in sites if s["findings_total"] > 0),
             "sites_with_broken_chain": sum(1 for s in sites if not s["chain_ok"]),
@@ -106,7 +116,7 @@ def to_csv(rollup: dict) -> str:
         [
             "site",
             "generated_at",
-            "devices",
+            "products",
             "coverage_percent",
             "findings",
             "broad_matches",

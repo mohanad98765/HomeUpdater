@@ -229,11 +229,14 @@ describe("EvidencePage", () => {
           stamp: "s2",
         },
       ],
-      rejected: [{ index: 0, reason: "stamp_mismatch" }],
+      rejected: [
+        { index: 0, reason: "stamp_mismatch" },
+        { index: 3, reason: "duplicate" },
+      ],
       totals: {
         sites_verified: 2,
-        sites_rejected: 1,
-        devices: 20,
+        sites_rejected: 2,
+        products: 20,
         findings: 2,
         sites_with_findings: 1,
         sites_with_broken_chain: 1,
@@ -261,9 +264,13 @@ describe("EvidencePage", () => {
     expect(await screen.findByText("Clinic A")).toBeInTheDocument();
     expect(screen.getByText("Broken Site")).toBeInTheDocument();
     expect(screen.getByText("BROKEN")).toBeInTheDocument();
+    // The total counts installed products, not machines — one pack is one machine.
+    expect(screen.getByText("products total")).toBeInTheDocument();
+    expect(screen.getByText("20")).toBeInTheDocument();
     // A rejected pack must be shown, with its reason — hiding it would launder it.
-    expect(screen.getByText(/1 pack\(s\) rejected/)).toBeInTheDocument();
+    expect(screen.getByText(/2 pack\(s\) rejected/)).toBeInTheDocument();
     expect(screen.getByText(/stamp does not match the content/)).toBeInTheDocument();
+    expect(screen.getByText(/imported more than once — counted once/)).toBeInTheDocument();
     expect(screen.getByText(/Excluded from every number/)).toBeInTheDocument();
   });
 
