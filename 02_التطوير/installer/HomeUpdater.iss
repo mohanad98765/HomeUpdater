@@ -59,7 +59,7 @@ Name: "startuptask"; Description: "تشغيل {#AppName} تلقائياً عند
 
 [InstallDelete]
 ; Vite fingerprints every bundle (index-<hash>.js), so an upgrade writes NEW file
-; names and leaves the old ones behind forever — 9 MB of dead bundles had piled up
+; names and leaves the old ones behind forever — 12 dead bundles (3.6 MB of 10) had piled up
 ; by v1.10.2. index.html always points at the current pair, so the leftovers were
 ; never served; they were pure growth plus a stale-chunk trap. Wipe the folder
 ; first, then let [Files] lay down exactly what this build produced.

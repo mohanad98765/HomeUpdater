@@ -98,6 +98,16 @@ if (-not $current -or [version]$current -lt [version]$target) {
 - محليًّا: `installer\sign.ps1 -Thumbprint <بصمة>` أو `-PfxPath <ملف>`.
 - **الفرق العمليّ:** شهادة **OV** تُزيل التحذير تدريجيًّا ببناء السمعة؛ شهادة **EV** تُزيله
   من أول تنزيل. الذاتية تحذّر دائمًا.
+- 🛑 **مقيس على جهاز حقيقيّ (٢٠٢٦-٠٧-٢٥): Smart App Control المُفعَّل رفض تثبيت v1.10.3
+  رفضًا كاملًا.** المثبّت لم يُشغَّل أصلًا: `An Application Control policy has blocked this
+  file`، وسجلّ `Microsoft-Windows-CodeIntegrity/Operational` يُظهر الحدثين **3033/3077**
+  (`did not meet the Enterprise signing level requirements`) والحدث **3118** مع
+  سياسة `{0283ac0f-fff1-49ae-ada1-8a933130cad6}`، و
+  `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy\VerifiedAndReputablePolicyState = 1`.
+  النسختان السابقتان مرّتا، وهذه لم تمرّ — لأن القرار **سمعة سحابيّة لكل ملفّ**، فالنتيجة
+  غير حتميّة مع كل بناء جديد. **الخلاصة التجاريّة: الشهادة المعتمدة ليست تحسين تجربة، بل
+  شرط تسليم** — أي عميل على ويندوز ١١ حديث بـSAC مُفعَّل **لن يستطيع التثبيت**. ولا يجوز
+  اقتراح تعطيل SAC: تعطيله **لا رجعة فيه** إلا بإعادة تثبيت ويندوز.
 - ⚠️ **الشهادة الذاتيّة تُولَّد من جديد في كل بناء، فبصمتها تتغيّر مع كل إصدار.** مثال
   محقَّق: v1.10.1 بصمتها `E395B408…` وv1.10.2 بصمتها `E329712D…`. النتيجة العمليّة:
   **لا تُدرِج الشهادة نفسها في قائمة سماح** (WDAC/AppLocker/Smart App Control) لأن
