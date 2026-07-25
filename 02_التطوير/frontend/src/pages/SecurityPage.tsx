@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Info,
   Search,
+  AlertTriangle,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -140,6 +141,16 @@ export function SecurityPage({ onBack }: { onBack: () => void }) {
               </>
             )}
           </button>
+        </div>
+      </div>
+
+      {/* حدود المنتج — تُعرَض بوضوح: المطابقة باسم المصنّع لا بالإصدار الدقيق، فالنتائج
+          إرشاديّة للتوعية ولا تصلح دليلًا تنظيميًّا/تدقيقيًّا. الصراحة هنا شرطُ ثقة. */}
+      <div className="card mb-4 flex items-start gap-3 text-sm border-warning/40 bg-warning/10">
+        <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="font-bold text-fg mb-1">{t("pages.sec.indicativeTitle")}</p>
+          <p className="text-fg-muted">{t("pages.sec.indicativeBody")}</p>
         </div>
       </div>
 

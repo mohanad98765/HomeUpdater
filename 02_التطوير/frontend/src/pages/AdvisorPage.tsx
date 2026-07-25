@@ -199,11 +199,14 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1a1a1a;line-height:1.
 .brand{color:#4f46e5;font-weight:bold;font-size:12px;letter-spacing:.5px}
 h1{font-size:22px;margin:6px 0 2px}.sub{color:#666;font-size:12px;margin:0 0 20px}
 .rec{white-space:pre-wrap;font-size:14px}
+.disc{margin:14px 0 18px;padding:10px 12px;border:1px solid #e0a800;background:#fff8e1;
+color:#5c4400;font-size:11.5px;border-radius:4px}
 .meta{margin-top:28px;padding-top:12px;border-top:1px solid #ddd;color:#999;font-size:11px}
 @page{margin:16mm}</style></head><body>
 <div class="brand">HomeUpdater · محدِّث المنزل</div>
 <h1>${esc(t("pages.advisor.reportTitle"))}</h1>
 <p class="sub">${esc(t("pages.advisor.reportSub"))} · ${esc(now)}</p>
+<div class="disc"><b>${esc(t("pages.sec.indicativeTitle"))}</b> — ${esc(t("pages.sec.indicativeBody"))}</div>
 <div class="rec">${esc(data.recommendations)}</div>
 <p class="meta">${esc(t("pages.advisor.poweredBy"))} · Claude ${esc(data.model)}</p>
 </body></html>`;

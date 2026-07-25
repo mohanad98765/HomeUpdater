@@ -137,7 +137,17 @@ describe("SecurityPage", () => {
     expect(
       screen.getByRole("heading", { name: "Security — known vulnerabilities" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Security · known vulnerabilities (NVD)")).toBeInTheDocument();
+    expect(screen.getByText("Indicative exposure · based on NVD")).toBeInTheDocument();
+  });
+
+  it("always shows the indicative-exposure disclaimer", async () => {
+    // Findings are vendor-name matched, so they must never read as an audit-grade
+    // vulnerability assessment. This banner is a liability guardrail — keep it.
+    renderPage();
+    expect(
+      screen.getByText("Indicative exposure — not a vulnerability assessment"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/not as regulatory or audit evidence/)).toBeInTheDocument();
   });
 
   it("shows the empty state when no device has a known vendor", async () => {
