@@ -36,6 +36,8 @@ interface Cve {
   description: string;
   url: string;
   applies_because?: Range | null;
+  /** Only on records we deliberately do NOT count: why they were set aside. */
+  precision?: "unbounded" | "not_vulnerable" | "scheme_mismatch";
 }
 interface Matched {
   product_id: string;
@@ -61,7 +63,12 @@ interface Precise {
   match_mode: string;
   matched: Matched[];
   unmatched: Unmatched[];
-  coverage: { total: number; mapped: number; unmapped: number; percent: number };
+  coverage: {
+    total: number;
+    mapped: number;
+    unmapped: number;
+    percent: number;
+  };
 }
 
 const SEV_CLASS: Record<string, string> = {
@@ -72,13 +79,20 @@ const SEV_CLASS: Record<string, string> = {
 };
 
 /** "يؤثّر على ما قبل 26.03" — يجعل النتيجة قابلة للمراجعة لا مجرّد تصديق. */
-function rangeText(r: Range | null | undefined, t: (k: string, o?: object) => string): string {
+function rangeText(
+  r: Range | null | undefined,
+  t: (k: string, o?: object) => string,
+): string {
   if (!r) return "";
   const parts: string[] = [];
-  if (r.start_including) parts.push(t("pages.sec.precise.fromIncl", { v: r.start_including }));
-  if (r.start_excluding) parts.push(t("pages.sec.precise.fromExcl", { v: r.start_excluding }));
-  if (r.end_including) parts.push(t("pages.sec.precise.toIncl", { v: r.end_including }));
-  if (r.end_excluding) parts.push(t("pages.sec.precise.toExcl", { v: r.end_excluding }));
+  if (r.start_including)
+    parts.push(t("pages.sec.precise.fromIncl", { v: r.start_including }));
+  if (r.start_excluding)
+    parts.push(t("pages.sec.precise.fromExcl", { v: r.start_excluding }));
+  if (r.end_including)
+    parts.push(t("pages.sec.precise.toIncl", { v: r.end_including }));
+  if (r.end_excluding)
+    parts.push(t("pages.sec.precise.toExcl", { v: r.end_excluding }));
   return parts.join(" · ");
 }
 
@@ -93,12 +107,14 @@ export function PreciseFindings() {
   });
 
   const scanInventory = useMutation({
-    mutationFn: () => apiFetch("/api/updates/inventory/refresh", { method: "POST" }),
+    mutationFn: () =>
+      apiFetch("/api/updates/inventory/refresh", { method: "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["precise"] }),
   });
 
   const checkNvd = useMutation<Precise, Error>({
-    mutationFn: () => apiFetch<Precise>("/api/security/precise?refresh_nvd=true"),
+    mutationFn: () =>
+      apiFetch<Precise>("/api/security/precise?refresh_nvd=true"),
     onSuccess: (data) => qc.setQueryData(["precise"], data),
   });
 
@@ -116,7 +132,9 @@ export function PreciseFindings() {
             <PackageSearch className="w-4 h-4 text-primary" />
             <div>
               <h3 className="font-bold">{t("pages.sec.precise.title")}</h3>
-              <p className="text-xs text-fg-muted">{t("pages.sec.precise.subtitle")}</p>
+              <p className="text-xs text-fg-muted">
+                {t("pages.sec.precise.subtitle")}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -137,7 +155,11 @@ export function PreciseFindings() {
               type="button"
               onClick={() => checkNvd.mutate()}
               disabled={checkNvd.isPending || (cov?.mapped ?? 0) === 0}
-              title={(cov?.mapped ?? 0) === 0 ? t("pages.sec.precise.needInventory") : undefined}
+              title={
+                (cov?.mapped ?? 0) === 0
+                  ? t("pages.sec.precise.needInventory")
+                  : undefined
+              }
               className="btn-primary inline-flex items-center gap-2"
             >
               {checkNvd.isPending ? (
@@ -187,7 +209,9 @@ export function PreciseFindings() {
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <h4 className="font-bold">{m.name}</h4>
-              <p className="text-xs font-mono text-fg-muted break-all">{m.cpe_name}</p>
+              <p className="text-xs font-mono text-fg-muted break-all">
+                {m.cpe_name}
+              </p>
               {m.reported_version !== m.version && (
                 <p className="text-xs text-fg-subtle">
                   {t("pages.sec.precise.trimmed", {
@@ -209,7 +233,9 @@ export function PreciseFindings() {
             </div>
           </div>
 
-          {m.caveat && <p className="text-xs text-fg-muted mt-2 italic">{m.caveat}</p>}
+          {m.caveat && (
+            <p className="text-xs text-fg-muted mt-2 italic">{m.caveat}</p>
+          )}
 
           <ul className="mt-3 space-y-2">
             {m.cves.map((c) => (
@@ -239,7 +265,9 @@ export function PreciseFindings() {
                   )}
                 </div>
                 {c.description && (
-                  <p className="text-xs text-fg-muted mt-1 line-clamp-2">{c.description}</p>
+                  <p className="text-xs text-fg-muted mt-1 line-clamp-2">
+                    {c.description}
+                  </p>
                 )}
               </li>
             ))}
@@ -250,22 +278,35 @@ export function PreciseFindings() {
             <div className="mt-3 p-2 rounded-md border border-warning/30 bg-warning/5">
               <p className="text-xs text-warning font-bold mb-1">
                 <AlertTriangle className="w-3 h-3 inline" />{" "}
-                {t("pages.sec.precise.broadTitle", { count: m.broad_matches.length })}
+                {t("pages.sec.precise.broadTitle", {
+                  count: m.broad_matches.length,
+                })}
               </p>
-              <p className="text-xs text-fg-muted mb-1">{t("pages.sec.precise.broadHint")}</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-xs text-fg-muted mb-1">
+                {t("pages.sec.precise.broadHint")}
+              </p>
+              <ul className="space-y-1">
                 {m.broad_matches.map((c) => (
-                  <a
-                    key={c.id}
-                    href={c.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-mono text-fg-muted hover:text-fg underline"
-                  >
-                    {c.id}
-                  </a>
+                  <li key={c.id} className="text-xs">
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-fg-muted hover:text-fg underline"
+                    >
+                      {c.id}
+                    </a>
+                    {/* لماذا لم تُحتسَب: يُقال صريحًا لكل سجلّ، لا يُخفى */}
+                    <span className="text-fg-muted">
+                      {" "}
+                      —{" "}
+                      {t(
+                        `pages.sec.precise.notCounted.${c.precision || "unbounded"}`,
+                      )}
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </div>
@@ -278,7 +319,9 @@ export function PreciseFindings() {
             <ShieldCheck className="w-4 h-4 text-success" />
             {t("pages.sec.precise.cleanTitle", { count: clean.length })}
           </p>
-          <p className="text-xs text-fg-muted mt-1">{t("pages.sec.precise.cleanHint")}</p>
+          <p className="text-xs text-fg-muted mt-1">
+            {t("pages.sec.precise.cleanHint")}
+          </p>
           <div className="flex flex-wrap gap-2 mt-2">
             {clean.map((m) => (
               <span
@@ -302,19 +345,28 @@ export function PreciseFindings() {
             aria-expanded={showUnmatched}
           >
             <HelpCircle className="w-4 h-4 text-fg-muted" />
-            {t("pages.sec.precise.unmatchedTitle", { count: data!.unmatched.length })}
+            {t("pages.sec.precise.unmatchedTitle", {
+              count: data!.unmatched.length,
+            })}
           </button>
-          <p className="text-xs text-fg-muted mt-1">{t("pages.sec.precise.unmatchedHint")}</p>
+          <p className="text-xs text-fg-muted mt-1">
+            {t("pages.sec.precise.unmatchedHint")}
+          </p>
           {showUnmatched && (
             <ul className="mt-3 space-y-1">
               {data!.unmatched.map((u) => (
-                <li key={u.product_id} className="text-xs border-b border-border pb-1">
+                <li
+                  key={u.product_id}
+                  className="text-xs border-b border-border pb-1"
+                >
                   <span className="font-mono">{u.product_id}</span>{" "}
                   <span className="text-fg-muted">{u.version}</span>
                   <span className="ms-2 px-1.5 py-0.5 rounded border border-border text-fg-subtle">
                     {t(`pages.sec.precise.reason.${u.reason}`, u.reason)}
                   </span>
-                  {u.detail && <p className="text-fg-subtle mt-0.5">{u.detail}</p>}
+                  {u.detail && (
+                    <p className="text-fg-subtle mt-0.5">{u.detail}</p>
+                  )}
                 </li>
               ))}
             </ul>

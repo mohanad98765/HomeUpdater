@@ -69,6 +69,30 @@ const broad = {
   description: "Ancient record with no version bounds.",
   url: "https://nvd.nist.gov/vuln/detail/CVE-2009-2940",
   applies_because: { precision: "unbounded" },
+  precision: "unbounded",
+};
+
+// The two records the shipped v1.10.3 counted as findings on a real machine and
+// should not have: a non-vulnerable platform node, and a date-bounded record.
+const platformOnly = {
+  id: "CVE-2020-29396",
+  score: 8.8,
+  severity: "HIGH",
+  published: "2020-12-01",
+  description: "An Odoo flaw that merely lists Python as the platform.",
+  url: "https://nvd.nist.gov/vuln/detail/CVE-2020-29396",
+  applies_because: { vulnerable: false, start_including: "3.6.0" },
+  precision: "not_vulnerable",
+};
+const dateBounded = {
+  id: "CVE-2025-25468",
+  score: 6.5,
+  severity: "MEDIUM",
+  published: "2025-02-01",
+  description: "Bounded by a snapshot date, not a version.",
+  url: "https://nvd.nist.gov/vuln/detail/CVE-2025-25468",
+  applies_because: { vulnerable: true, end_excluding: "2025-01-13" },
+  precision: "scheme_mismatch",
 };
 
 beforeAll(async () => {
@@ -156,14 +180,19 @@ describe("PreciseFindings", () => {
         caveat: "",
         total_results: 2,
         cves: [bounded],
-        broad_matches: [broad],
+        broad_matches: [broad, platformOnly, dateBounded],
         fetched_at: null,
       },
     ];
     renderIt();
-    expect(await screen.findByText(/broad match/)).toBeInTheDocument();
-    expect(screen.getByText(/no version bounds/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 not counted/)).toBeInTheDocument();
     expect(screen.getByText("CVE-2009-2940")).toBeInTheDocument();
+    // each set-aside record must state its own reason, not share a vague banner
+    expect(screen.getByText(/no version bounds in the NVD record/)).toBeInTheDocument();
+    expect(screen.getByText(/non-vulnerable platform/)).toBeInTheDocument();
+    expect(screen.getByText(/bounded by a date, not a version number/)).toBeInTheDocument();
+    // and the confirmed finding stays confirmed
+    expect(screen.getByText("CVE-2026-58052")).toBeInTheDocument();
   });
 
   it("shows that a version was trimmed to match NVD numbering", async () => {

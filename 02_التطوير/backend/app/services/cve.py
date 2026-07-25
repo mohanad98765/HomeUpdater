@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -133,6 +134,75 @@ def parse_cves(data: dict, limit: int) -> list[dict]:
     return out[:limit]
 
 
+_DATE_VERSION = re.compile(r"^(19|20)\d{2}[-.]\d{1,2}([-.]\d{1,2})?$")
+
+
+def _is_date_scheme(value: str) -> bool:
+    """True when a 'version' is really a date (FFmpeg/snapshot-style records)."""
+    return bool(_DATE_VERSION.match((value or "").strip()))
+
+
+def classify_applicability(applies_because: dict | None, installed_version: str) -> str:
+    """How defensible is this CVE as a statement about THIS installed build?
+
+    ``bounded`` is the only class we count as a finding. The other three were each
+    found producing a false positive on a real machine, so they are separated and
+    labelled rather than dropped — a reader must see that we looked and why we did
+    not count it:
+
+    * ``not_vulnerable`` — NVD lists our product in this CVE with
+      ``vulnerable: false``, i.e. as the *platform the vulnerable thing runs on*.
+      Measured: CVE-2020-29396 (an Odoo flaw) came back for python 3.14.6 because
+      Python is listed as a non-vulnerable platform. Counting it would blame Python
+      for someone else's bug.
+    * ``scheme_mismatch`` — the record's bound is a DATE while the installed
+      version is a normal version (or vice versa), so the two are not comparable.
+      Measured: CVE-2025-25468 bounds FFmpeg at ``< 2025-01-13``; a numeric compare
+      makes 8.1.2 look "older" than the year 2025 and the CVE applied to a 2026
+      build.
+    * ``unbounded`` — ``product:*`` with no bounds at all: matches every version
+      ever released, so it says nothing about this build.
+    """
+    ab = applies_because or {}
+    if not ab:
+        return "unbounded"
+    if not ab.get("vulnerable", True):
+        return "not_vulnerable"
+    bounds = [
+        ab.get("start_including"),
+        ab.get("start_excluding"),
+        ab.get("end_including"),
+        ab.get("end_excluding"),
+    ]
+    present = [b for b in bounds if b]
+    if not present:
+        return "unbounded"
+    installed_is_date = _is_date_scheme(installed_version)
+    if any(_is_date_scheme(str(b)) != installed_is_date for b in present):
+        return "scheme_mismatch"
+    return "bounded"
+
+
+def counted_and_uncounted(
+    cves: list[dict], installed_version: str
+) -> tuple[list[dict], list[dict]]:
+    """Split CVEs into (findings we stand behind, ones we show but do not count).
+
+    Each uncounted item carries ``precision`` so the UI can say WHY, and both the
+    security page and the evidence pack use this one function — a number that
+    differs between the screen and the sold report is worse than either alone.
+    """
+    counted: list[dict] = []
+    uncounted: list[dict] = []
+    for c in cves:
+        kind = classify_applicability(c.get("applies_because"), installed_version)
+        if kind == "bounded":
+            counted.append(c)
+        else:
+            uncounted.append({**c, "precision": kind})
+    return counted, uncounted
+
+
 def matched_ranges(data: dict, product: str) -> list[dict]:
     """Extract the version range that made each CVE apply, for the evidence trail.
 
@@ -147,13 +217,14 @@ def matched_ranges(data: dict, product: str) -> list[dict]:
         cid = cve.get("id", "")
         if not cid:
             continue
+        candidates: list[dict] = []
         for config in cve.get("configurations", []) or []:
             for node in config.get("nodes", []) or []:
                 for m in node.get("cpeMatch", []) or []:
                     criteria = m.get("criteria", "")
                     # cpe:2.3:a:vendor:product:version:... -> field 4 is the product
                     fields = criteria.split(":")
-                    if len(fields) < 5 or fields[4] != product:
+                    if len(fields) < 6 or fields[4] != product:
                         continue
                     bounds = {
                         "start_including": m.get("versionStartIncluding"),
@@ -165,8 +236,8 @@ def matched_ranges(data: dict, product: str) -> list[dict]:
                     # Verified live: querying python 3.14.6 returns CVE-2009-2940 this
                     # way. Those are stale/imprecise NVD records, not evidence that a
                     # 2026 build is vulnerable — so they are labelled, not hidden.
-                    unbounded = not any(bounds.values()) and criteria.split(":")[5] == "*"
-                    out.append(
+                    unbounded = not any(bounds.values()) and fields[5] == "*"
+                    candidates.append(
                         {
                             "id": cid,
                             "criteria": criteria,
@@ -175,7 +246,12 @@ def matched_ranges(data: dict, product: str) -> list[dict]:
                             **bounds,
                         }
                     )
-                    break  # one range per CVE is enough for the trail
+        if not candidates:
+            continue
+        # One CVE can list our product twice: once as the vulnerable component and
+        # once as a non-vulnerable platform. Taking whichever came first made an Odoo
+        # CVE look like a Python finding, so prefer the vulnerable node explicitly.
+        out.append(next((c for c in candidates if c["vulnerable"]), candidates[0]))
     return out
 
 

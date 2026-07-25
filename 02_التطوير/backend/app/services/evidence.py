@@ -166,13 +166,9 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
                 }
             )
             continue
-        cves = cached.get("cves", [])
-        bounded = [
-            c for c in cves if (c.get("applies_because") or {}).get("precision") != "unbounded"
-        ]
-        broad = [
-            c for c in cves if (c.get("applies_because") or {}).get("precision") == "unbounded"
-        ]
+        # Exactly the same classifier the security page uses — the pack must never
+        # count a finding the screen refuses to count, or vice versa.
+        bounded, broad = cve.counted_and_uncounted(cached.get("cves", []), identity.version)
         matched.append(
             {
                 "product_id": row.product_id,

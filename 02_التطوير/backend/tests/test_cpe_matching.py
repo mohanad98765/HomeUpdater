@@ -169,6 +169,102 @@ def test_matched_ranges_ignores_other_products_in_the_same_advisory():
     assert cve.matched_ranges(_NVD_RESPONSE, "some-other-product") == []
 
 
+# --- what may be COUNTED as a finding ---------------------------------------
+# Both false positives below were produced by the shipped code on a real machine
+# (v1.10.3, 2026-07-25) before this classifier existed.
+def _because(**kw) -> dict:
+    base = {
+        "vulnerable": True,
+        "criteria": "cpe:2.3:a:python:python:*:*:*:*:*:*:*:*",
+        "start_including": None,
+        "start_excluding": None,
+        "end_including": None,
+        "end_excluding": None,
+    }
+    return {**base, **kw}
+
+
+def test_a_bounded_range_is_countable():
+    assert cve.classify_applicability(_because(end_excluding="3.15.0"), "3.14.6") == "bounded"
+
+
+def test_a_non_vulnerable_platform_node_is_not_a_finding():
+    """Measured: CVE-2020-29396 (an Odoo flaw) came back for python 3.14.6 because
+    NVD lists Python there as the platform, with vulnerable=false."""
+    got = cve.classify_applicability(_because(vulnerable=False, start_including="3.6.0"), "3.14.6")
+    assert got == "not_vulnerable"
+
+
+def test_a_date_bound_against_a_normal_version_is_not_comparable():
+    """Measured: CVE-2025-25468 bounds FFmpeg at < 2025-01-13; comparing 8.1.2 to a
+    date made a 2026 build look affected."""
+    got = cve.classify_applicability(_because(end_excluding="2025-01-13"), "8.1.2")
+    assert got == "scheme_mismatch"
+
+
+def test_two_date_versions_are_comparable_to_each_other():
+    got = cve.classify_applicability(_because(end_excluding="2025-01-13"), "2024-11-02")
+    assert got == "bounded"
+
+
+def test_no_bounds_at_all_stays_unbounded():
+    assert cve.classify_applicability(_because(), "3.14.6") == "unbounded"
+    assert cve.classify_applicability(None, "3.14.6") == "unbounded"
+
+
+def test_counted_and_uncounted_splits_and_labels():
+    cves = [
+        {"id": "CVE-A", "applies_because": _because(end_excluding="3.15.0")},
+        {"id": "CVE-B", "applies_because": _because(vulnerable=False, start_including="3.6.0")},
+        {"id": "CVE-C", "applies_because": _because(end_excluding="2025-01-13")},
+        {"id": "CVE-D", "applies_because": _because()},
+    ]
+    counted, uncounted = cve.counted_and_uncounted(cves, "3.14.6")
+    assert [c["id"] for c in counted] == ["CVE-A"]
+    assert {c["id"]: c["precision"] for c in uncounted} == {
+        "CVE-B": "not_vulnerable",
+        "CVE-C": "scheme_mismatch",
+        "CVE-D": "unbounded",
+    }
+
+
+def test_a_cve_listing_our_product_twice_prefers_the_vulnerable_node():
+    """Odoo-shaped advisory: Python appears as a non-vulnerable platform first."""
+    data = {
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2026-0002",
+                    "configurations": [
+                        {
+                            "nodes": [
+                                {
+                                    "cpeMatch": [
+                                        {
+                                            "vulnerable": False,
+                                            "criteria": "cpe:2.3:a:python:python:*:*:*:*:*:*:*:*",
+                                            "versionStartIncluding": "3.6.0",
+                                        },
+                                        {
+                                            "vulnerable": True,
+                                            "criteria": "cpe:2.3:a:python:python:*:*:*:*:*:*:*:*",
+                                            "versionEndExcluding": "3.15.0",
+                                        },
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+    ranges = cve.matched_ranges(data, "python")
+    assert len(ranges) == 1
+    assert ranges[0]["vulnerable"] is True
+    assert ranges[0]["end_excluding"] == "3.15.0"
+
+
 def _seed_inventory(client, monkeypatch, items: list[tuple[str, str]]) -> None:
     """Seed the inventory through the REAL refresh path (winget mocked), so the
     tests exercise the same code the app runs instead of hand-built sessions."""
@@ -210,6 +306,59 @@ def test_precise_matches_installed_version_and_explains_why(client, monkeypatch)
     monkeypatch.setattr(cve, "fetch_by_cpe", must_not_call)
     again = client.get("/api/security/precise?refresh_nvd=true").json()
     assert again["matched"][0]["cves"][0]["id"] == "CVE-2024-0001"
+
+
+def test_precise_does_not_count_platform_or_date_bounded_records(client, monkeypatch):
+    """The two real false positives, end to end: neither may appear as a finding,
+    and both must still be listed with the reason they were set aside."""
+    monkeypatch.setitem(cpe.CPE_MAP, "Python.Python.3.14", cpe.CpeEntry("python", "python"))
+    _seed_inventory(client, monkeypatch, [("Python.Python.3.14", "3.14.6")])
+
+    def _cve(cid: str, match: dict) -> dict:
+        return {
+            "cve": {
+                "id": cid,
+                "published": "2026-01-01T00:00:00.000",
+                "descriptions": [{"lang": "en", "value": "x"}],
+                "metrics": {
+                    "cvssMetricV31": [{"cvssData": {"baseScore": 8.8, "baseSeverity": "HIGH"}}]
+                },
+                "configurations": [{"nodes": [{"cpeMatch": [match]}]}],
+            }
+        }
+
+    PY = "cpe:2.3:a:python:python:*:*:*:*:*:*:*:*"
+    response = {
+        "totalResults": 3,
+        "vulnerabilities": [
+            _cve("CVE-REAL", {"vulnerable": True, "criteria": PY, "versionEndExcluding": "3.15.0"}),
+            _cve(
+                "CVE-PLATFORM",
+                {"vulnerable": False, "criteria": PY, "versionStartIncluding": "3.6.0"},
+            ),
+            _cve(
+                "CVE-DATED",
+                {"vulnerable": True, "criteria": PY, "versionEndExcluding": "2025-01-13"},
+            ),
+        ],
+    }
+
+    async def fake_fetch(cpe_name, results_per_page=50):
+        return response
+
+    monkeypatch.setattr(cve, "fetch_by_cpe", fake_fetch)
+    found = client.get("/api/security/precise?refresh_nvd=true").json()["matched"][0]
+
+    assert [c["id"] for c in found["cves"]] == ["CVE-REAL"]
+    assert {c["id"]: c["precision"] for c in found["broad_matches"]} == {
+        "CVE-PLATFORM": "not_vulnerable",
+        "CVE-DATED": "scheme_mismatch",
+    }
+
+    # The pack a customer pays for must report the SAME single finding.
+    pack = client.get("/api/evidence/preview").json()
+    assert pack["findings_total"] == 1
+    assert pack["broad_matches_total"] == 2
 
 
 def test_fetch_by_cpe_treats_unknown_cpe_404_as_no_data(monkeypatch):

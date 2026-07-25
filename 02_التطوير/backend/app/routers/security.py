@@ -168,6 +168,9 @@ async def precise_findings(
 
         entry = cpe.entry_for(row.product_id)
         cves = cached.get("cves", [])
+        # Re-judged on every read (not from the cached 'precision'), so a cache written
+        # before this rule existed is corrected without waiting for a 24h TTL.
+        counted, uncounted = cve.counted_and_uncounted(cves, identity.version)
         matched.append(
             {
                 "product_id": row.product_id,
@@ -178,18 +181,11 @@ async def precise_findings(
                 "confidence": entry.confidence if entry else "",
                 "caveat": entry.caveat if entry else "",
                 "total_results": cached.get("total_results", 0),
-                # Split by how defensible each hit is: an "unbounded" NVD record
-                # matches every version and is NOT evidence about this build.
-                "cves": [
-                    c
-                    for c in cves
-                    if (c.get("applies_because") or {}).get("precision") != "unbounded"
-                ],
-                "broad_matches": [
-                    c
-                    for c in cves
-                    if (c.get("applies_because") or {}).get("precision") == "unbounded"
-                ],
+                # Split by how defensible each hit is: a record that matches every
+                # version, names our product as a non-vulnerable platform, or bounds
+                # it on a date scheme is NOT evidence about this build.
+                "cves": counted,
+                "broad_matches": uncounted,
                 "fetched_at": cached.get("fetched_at"),
             }
         )
