@@ -22,13 +22,13 @@
 **تثبيت (أو ترقية) صامت كامل:**
 
 ```
-HomeUpdater-Setup-1.5.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG="%ProgramData%\HomeUpdater-install.log"
+HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /SP- /LOG="%ProgramData%\HomeUpdater-install.log"
 ```
 
 **اختيار المهام الاختيارية صراحةً** (أيقونة سطح المكتب / التشغيل عند الدخول):
 
 ```
-HomeUpdater-Setup-1.5.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS="!desktopicon,!startuptask"
+HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /MERGETASKS="!desktopicon,!startuptask"
 ```
 
 - `!desktopicon` = **بلا** أيقونة سطح مكتب · `desktopicon` = بها.
@@ -37,12 +37,21 @@ HomeUpdater-Setup-1.5.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASK
 **إزالة صامتة:**
 
 ```
-"C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+"C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /NORESTART
 ```
 
-> **ترقية على جهاز يعمل عليه التطبيق:** السكربت يضبط `CloseApplications=no`، فالملفّات المفتوحة
-> قد تفرض إعادة تشغيل. في النشر الجماعي أَنْهِ العملية أولًا:
-> `taskkill /F /T /IM HomeUpdater.exe` ثم شغّل المثبّت.
+> **ترقية على جهاز يعمل عليه التطبيق:** المثبّت يُغلق التطبيق بنفسه في
+> `PrepareToInstall` — وهي تعمل **في الوضع الصامت أيضًا**، لا في صفحة المعالج فقط.
+> ومنذ **v1.10.5** يُوقِف كذلك **خادم adb** المضمّن: adb يفصل نفسه فيبقى حيًّا بعد
+> إغلاق التطبيق ويقفل `_internal\platform-tools\adb.exe`، فيتعذّر استبداله. الإيقاف
+> مقصور على adb العامل **من مجلَّد التثبيت**، فلا يمسّ adb الخاصّ بالمستخدم.
+>
+> ⚠️ **لا تستخدم `/SUPPRESSMSGBOXES` مع `/VERYSILENT`.** حادثة مقيسة (ترقية v1.10.4،
+> ٢٠٢٦-٠٧-٢٥): خادم adb كان يقفل `adb.exe` ⇒ صندوق Abort/Retry/Ignore ⇒
+> `/SUPPRESSMSGBOXES` يختار **Abort** ⇒ تراجُع Inno حذف ما نسخه ومعه
+> `frontend_dist\assets` ⇒ **تطبيق مُثبَّت بلا واجهة** ورمز خروج `5`. بدون هذا المفتاح
+> يظهر الصندوق ويمكن اختيار Retry. أضِفه فقط إن كنت **تراقب رمز الخروج** وتُعيد التثبيت
+> آليًّا عند ‎5‎ — فالفشل الصامت هنا لا يترك التطبيق كما كان، بل يتركه معطوبًا.
 
 ## 3. النشر عبر Microsoft Intune (تطبيق Win32)
 
@@ -50,11 +59,11 @@ HomeUpdater-Setup-1.5.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASK
    لتحصل على `HomeUpdater-Setup-<الإصدار>.intunewin`.
 2. **أمر التثبيت:**
    ```
-   HomeUpdater-Setup-1.5.10.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS="!desktopicon,!startuptask"
+   HomeUpdater-Setup-1.5.10.exe /VERYSILENT /NORESTART /MERGETASKS="!desktopicon,!startuptask"
    ```
 3. **أمر الإزالة:**
    ```
-   "C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+   "C:\Program Files\HomeUpdater\unins000.exe" /VERYSILENT /NORESTART
    ```
 4. **سياق التثبيت:** System (الجهاز) · **سلوك إعادة التشغيل:** لا يلزم (No specific action).
 5. **قاعدة الكشف (Detection rule)** — **مُتحقَّق منها على جهاز مُثبَّت فعلًا**، من نوع **Registry**:
@@ -83,7 +92,7 @@ $current = (Get-ItemProperty $key -ErrorAction SilentlyContinue).DisplayVersion
 if (-not $current -or [version]$current -lt [version]$target) {
     taskkill /F /T /IM HomeUpdater.exe 2>$null | Out-Null      # حرّر الملفّات المفتوحة
     Start-Process $setup -Wait -ArgumentList `
-        '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/MERGETASKS=!desktopicon,!startuptask'
+        '/VERYSILENT','/NORESTART','/MERGETASKS=!desktopicon,!startuptask'
 }
 ```
 

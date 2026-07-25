@@ -111,6 +111,26 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, RC) and (RC = 0);
 end;
 
+procedure StopAdbServer();
+var
+  RC: Integer;
+begin
+  { MEASURED (v1.10.4 upgrade, 2026-07-25): adb starts a SERVER process that
+    detaches itself, so it outlives HomeUpdater.exe and 'taskkill /T' on the app
+    does not touch it. It then holds _internal\platform-tools\adb.exe open, Inno
+    cannot replace the file, and a silent install (where the Abort/Retry/Ignore box
+    defaults to Abort) aborts and rolls back — which deleted frontend_dist\assets
+    and left an installed app with no UI at all.
+    Deliberately NOT 'taskkill /IM adb.exe' and NOT 'adb kill-server': both would
+    also kill an adb the user runs for their own Android work. This kills only
+    processes whose image lives inside OUR install folder. }
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -ExecutionPolicy Bypass -Command "Get-Process adb -ErrorAction'
+       + ' SilentlyContinue | Where-Object { $_.Path -like ''' + ExpandConstant('{app}')
+       + '*'' } | Stop-Process -Force"',
+       '', SW_HIDE, ewWaitUntilTerminated, RC);
+end;
+
 procedure KillAppTree();
 var
   RC: Integer;
@@ -125,6 +145,7 @@ begin
     if not AppIsRunning() then Break;
     Sleep(500);
   end;
+  StopAdbServer();
 end;
 
 procedure InitializeWizard();
@@ -198,8 +219,13 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   { Backstop right before files are copied — guarantees the tree is down even if
-    the app was launched between the page and the copy. }
+    the app was launched between the page and the copy. Runs in silent mode too,
+    which the wizard page does not.
+    The adb server is stopped UNCONDITIONALLY here: it outlives the app, so it can
+    be holding platform-tools\adb.exe even when AppIsRunning() is already false —
+    that is exactly how the v1.10.4 upgrade aborted. }
   Result := '';
+  StopAdbServer();
   if AppIsRunning() then
     KillAppTree();
   if AppIsRunning() then
