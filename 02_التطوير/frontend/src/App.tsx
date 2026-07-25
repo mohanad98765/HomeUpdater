@@ -23,6 +23,7 @@ import {
   HelpCircle,
   LifeBuoy,
   SlidersHorizontal,
+  FileCheck2,
 } from "lucide-react";
 import { apiFetch, cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -37,6 +38,7 @@ import { WindowsRemotePage } from "@/pages/WindowsRemotePage";
 import { AdvisorPage } from "@/pages/AdvisorPage";
 import { SupportPage } from "@/pages/SupportPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { EvidencePage } from "@/pages/EvidencePage";
 import { OnboardingTour } from "@/components/OnboardingTour";
 
 // ================================================================
@@ -81,7 +83,8 @@ type Page =
   | "winrm"
   | "advisor"
   | "support"
-  | "settings";
+  | "settings"
+  | "evidence";
 
 function App() {
   const { t } = useTranslation();
@@ -309,6 +312,12 @@ function App() {
               label={t("nav.advisor")}
             />
             <NavTab
+              active={page === "evidence"}
+              onClick={() => setPage("evidence")}
+              icon={FileCheck2}
+              label={t("nav.evidence")}
+            />
+            <NavTab
               active={page === "support"}
               onClick={() => setPage("support")}
               icon={LifeBuoy}
@@ -369,6 +378,7 @@ function App() {
         {page === "winrm" && <WindowsRemotePage onBack={() => setPage("dashboard")} />}
         {page === "advisor" && <AdvisorPage onBack={() => setPage("dashboard")} />}
         {page === "support" && <SupportPage onBack={() => setPage("dashboard")} />}
+        {page === "evidence" && <EvidencePage onBack={() => setPage("dashboard")} />}
         {page === "settings" && (
           <SettingsPage
             onBack={() => setPage("dashboard")}

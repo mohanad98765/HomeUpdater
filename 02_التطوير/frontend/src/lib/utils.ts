@@ -134,3 +134,49 @@ export interface ApiError extends Error {
   status?: number;
   body?: unknown;
 }
+
+/**
+ * Like {@link apiFetch} but returns the raw body text — for endpoints that answer
+ * with CSV rather than JSON (the evidence pack and the partner roll-up).
+ *
+ * A plain `<a href>` cannot be used for those: the API requires the session and
+ * login headers, which a link never sends, so the file must be fetched here and
+ * turned into a Blob download.
+ */
+export async function apiFetchText(path: string, init?: RequestInit): Promise<string> {
+  const token = sessionToken();
+  const auth = authToken();
+  const res = await fetch(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "X-HomeUpdater": "1",
+      ...(token ? { "X-HomeUpdater-Token": token } : {}),
+      ...(auth ? { "X-HomeUpdater-Auth": auth } : {}),
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(
+      typeof body?.detail === "string" ? body.detail : `HTTP ${res.status}`,
+    ) as ApiError;
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+  return res.text();
+}
+
+/** Save text as a file from the app window (WebView2 has no download prompt for
+ * fetched data, so a Blob URL + a synthetic click is the portable path). */
+export function downloadText(filename: string, text: string, mime = "text/plain"): void {
+  const url = URL.createObjectURL(new Blob([text], { type: `${mime};charset=utf-8` }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
