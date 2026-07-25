@@ -29,6 +29,7 @@ from .routers import (
     audit,
     auth,
     devices,
+    evidence,
     homeassistant,
     security,
     ssh,
@@ -267,6 +268,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ─── Routers ──────────────────────────────────────────────────────
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
+app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(devices.router, prefix="/api/devices", tags=["Devices"])
 app.include_router(updates.router, prefix="/api/updates", tags=["Updates"])
