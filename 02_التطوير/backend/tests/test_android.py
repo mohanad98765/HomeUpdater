@@ -140,3 +140,46 @@ def test_parse_mdns_connect_other_host_is_none():
 
 def test_parse_mdns_connect_empty_is_none():
     assert _parse_mdns_connect("List of discovered mdns services\n", "192.168.3.30") is None
+
+
+# --- the mdns row parser: one row's port must never be read from another's line ---
+def test_an_empty_address_field_does_not_steal_the_next_rows_address():
+    r"""The previous regex used `\s+`, which spans newlines: a connect row whose address
+    field was empty bound to whatever followed, so the app could report one phone's
+    port for another phone."""
+    from app.services.android import _parse_mdns_connect
+
+    broken = (
+        "List of discovered mdns services\n"
+        "1-phone\t_adb-tls-connect._tcp\t\n"
+        "192.168.9.9:5555\tjunk\n"
+    )
+    assert _parse_mdns_connect(broken, "192.168.9.9") is None
+
+
+def test_rows_are_parsed_structurally_including_ipv6():
+    from app.services.android import parse_mdns_rows
+
+    rows = parse_mdns_rows(_MDNS_SAMPLE)
+    assert [r["service"] for r in rows] == ["_adb-tls-pairing._tcp", "_adb-tls-connect._tcp"]
+    assert rows[0]["instance"] == "adb-RFCW70YDHHB-hqcfQV"
+    assert rows[0]["port"] == 34887
+    # adb prints only three fields, so the instance is the ONLY thing telling two
+    # phones apart — worth pinning, because a pairing flow has to rely on it.
+    assert set(rows[0]) == {"instance", "service", "address", "port"}
+
+    v6 = "List of discovered mdns services\nadb-X\t_adb-tls-connect._tcp\t[fe80::1]:5555\n"
+    assert parse_mdns_rows(v6)[0]["address"] == "[fe80::1]"
+
+
+def test_two_phones_do_not_bleed_into_each_other():
+    from app.services.android import _parse_mdns_connect
+
+    two = (
+        "List of discovered mdns services\n"
+        "adb-AAA\t_adb-tls-connect._tcp\t192.168.3.30:34677\n"
+        "adb-BBB\t_adb-tls-connect._tcp\t192.168.3.31:41111\n"
+    )
+    assert _parse_mdns_connect(two, "192.168.3.30") == 34677
+    assert _parse_mdns_connect(two, "192.168.3.31") == 41111
+    assert _parse_mdns_connect(two, "192.168.3.32") is None

@@ -47,9 +47,19 @@ _PACKAGE_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.]*$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]*$")
 # Wireless-debugging pairing codes are exactly six digits.
 _CODE_RE = re.compile(r"^\d{6}$")
-# `adb mdns services` row for the connect endpoint:
-#   adb-XXXX-YYYY\t_adb-tls-connect._tcp\t192.168.3.30:34677
-_MDNS_CONNECT_RE = re.compile(r"_adb-tls-connect\._tcp\s+([0-9.]+):(\d+)")
+# One row of `adb mdns services`, which adb formats as exactly three tab-separated
+# fields - instance, service type, address:port:
+#   adb-RFCW70YDHHB-hqcfQV\t_adb-tls-connect._tcp\t192.168.3.30:34677
+#
+# Anchored per line, with horizontal whitespace only. The previous version matched
+# `_adb-tls-connect\._tcp\s+([0-9.]+):(\d+)` across the whole output, and `\s+` spans
+# newlines: a row whose address field was empty bound to the NEXT row's address, so
+# the app could report one phone's port for another phone.
+_MDNS_ROW_RE = re.compile(
+    r"^(?P<instance>\S+)[^\S\n]+(?P<service>_adb-tls-[a-z]+\._tcp)"
+    r"[^\S\n]+(?P<address>\S+):(?P<port>\d+)[^\S\n]*$",
+    re.MULTILINE,
+)
 
 # Avoid flashing a console window from the windowed (WebView2) app.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
@@ -211,12 +221,29 @@ def _parse_getprop(output: str) -> dict[str, str]:
     return props
 
 
+def parse_mdns_rows(output: str) -> list[dict]:
+    """Every service row in ``adb mdns services``, structured.
+
+    Rows are all adb gives us: three fields, no TXT record and no model name, so the
+    instance string is the only thing distinguishing one phone from another.
+    """
+    return [
+        {
+            "instance": m.group("instance"),
+            "service": m.group("service"),
+            "address": m.group("address"),
+            "port": int(m.group("port")),
+        }
+        for m in _MDNS_ROW_RE.finditer(output)
+    ]
+
+
 def _parse_mdns_connect(output: str, host: str) -> int | None:
     """Find the Wireless-debugging connect port for ``host`` in the output of
     ``adb mdns services``. Returns None if this host isn't advertising."""
-    for m in _MDNS_CONNECT_RE.finditer(output):
-        if m.group(1) == host:
-            return int(m.group(2))
+    for row in parse_mdns_rows(output):
+        if row["service"] == "_adb-tls-connect._tcp" and row["address"] == host:
+            return row["port"]
     return None
 
 

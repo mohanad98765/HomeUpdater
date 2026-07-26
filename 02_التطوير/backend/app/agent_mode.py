@@ -62,6 +62,9 @@ class AgentState:
     agent_id: str
     private_key_pem: str  # encrypted at rest
     cert_pin_sha256: str = ""  # "" for a loopback http hub (testing only)
+    # The pinned certificate itself, so the pin is enforced inside the TLS handshake
+    # rather than checked beside it. Not a secret — it is what the hub hands out.
+    cert_pem: str = ""
     name: str = ""
 
     @property
@@ -111,16 +114,38 @@ def machine_id() -> str:
     return "|".join(parts)
 
 
-def cert_fingerprint(url: str) -> str:
-    """SHA-256 of the hub's TLS certificate, for pinning at enrolment."""
+def fetch_cert(url: str) -> tuple[str, str]:
+    """The hub's TLS certificate as (PEM, sha256-of-DER). ``("", "")`` for non-https."""
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        return ""
+        return "", ""
     host, port = parsed.hostname or "", parsed.port or 443
-    der = ssl.get_server_certificate((host, port), timeout=10).encode()
-    import ssl as _ssl
+    pem = ssl.get_server_certificate((host, port), timeout=10)
+    return pem, hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
 
-    return hashlib.sha256(_ssl.PEM_cert_to_DER_cert(der.decode())).hexdigest()
+
+def cert_fingerprint(url: str) -> str:
+    """SHA-256 of the hub's TLS certificate, for pinning at enrolment."""
+    return fetch_cert(url)[1]
+
+
+def _pinned_ssl_context(pem: str) -> ssl.SSLContext:
+    """A TLS context that trusts EXACTLY this certificate and nothing else.
+
+    The pin belongs inside the handshake, not in a check beside it. An earlier version
+    computed the fingerprint, compared it, and then opened an ordinary httpx client —
+    which verifies against the system trust store, so connecting to the hub's
+    self-signed certificate failed with CERTIFICATE_VERIFY_FAILED before the pin was
+    ever consulted. The agent could not reach a TLS hub at all; every test used a
+    loopback http client, so nothing caught it until a real run did.
+
+    Using the certificate as its own trust anchor keeps hostname (SAN) and expiry
+    checking, which ``verify=False`` plus a manual comparison would both throw away.
+    """
+    ctx = ssl.create_default_context(cadata=pem)
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return ctx
 
 
 def _require_pin_or_loopback(url: str, pin: str) -> None:
@@ -150,16 +175,24 @@ def sign_headers(state: AgentState, method: str, path: str, body: bytes) -> dict
 
 def make_client(state: AgentState) -> httpx.Client:
     _require_pin_or_loopback(state.hub_url, state.cert_pin_sha256)
-    if state.cert_pin_sha256:
-        current = cert_fingerprint(state.hub_url)
-        if current != state.cert_pin_sha256:
-            # Stop, loudly. Trusting a new certificate on sight would undo the pin.
-            raise AgentError(
-                "hub certificate changed: pinned "
-                f"{state.cert_pin_sha256[:16]}… but saw {current[:16]}… — re-enrol"
-                " deliberately if this was a legitimate renewal"
-            )
-    return httpx.Client(base_url=state.hub_url, timeout=30.0)
+    if not state.cert_pin_sha256:
+        return httpx.Client(base_url=state.hub_url, timeout=30.0)  # loopback http only
+
+    # Compared first, so a renewal produces the sentence an operator can act on rather
+    # than an SSL error. The context below is what actually ENFORCES it.
+    current = cert_fingerprint(state.hub_url)
+    if current != state.cert_pin_sha256:
+        raise AgentError(
+            "hub certificate changed: pinned "
+            f"{state.cert_pin_sha256[:16]}… but saw {current[:16]}… — re-enrol"
+            " deliberately if this was a legitimate renewal"
+        )
+    pem = state.cert_pem
+    if not pem:
+        # State written by an agent from before the certificate was stored. Refetching
+        # is safe: the fingerprint above already proved it is the pinned certificate.
+        pem, _ = fetch_cert(state.hub_url)
+    return httpx.Client(base_url=state.hub_url, timeout=30.0, verify=_pinned_ssl_context(pem))
 
 
 # --------------------------------------------------------------------- enrol
@@ -168,7 +201,7 @@ def enrol(hub_url: str, token: str, name: str = "", client: httpx.Client | None 
     from cryptography.hazmat.primitives import serialization
 
     hub_url = hub_url.rstrip("/")
-    pin = cert_fingerprint(hub_url)
+    cert_pem, pin = fetch_cert(hub_url)
     _require_pin_or_loopback(hub_url, pin)
 
     key = Ed25519PrivateKey.generate()
@@ -179,7 +212,13 @@ def enrol(hub_url: str, token: str, name: str = "", client: httpx.Client | None 
     ).decode()
 
     owned = client is None
-    http = client or httpx.Client(base_url=hub_url, timeout=30.0)
+    http = client or httpx.Client(
+        base_url=hub_url,
+        timeout=30.0,
+        # Trust exactly the certificate we are about to pin. The system trust store
+        # cannot vouch for a PC on a home LAN, and asking it to would fail here.
+        verify=_pinned_ssl_context(cert_pem) if cert_pem else True,
+    )
     try:
         resp = http.post(
             "/api/agents/enrol",
@@ -204,6 +243,7 @@ def enrol(hub_url: str, token: str, name: str = "", client: httpx.Client | None 
         agent_id=body["agent_id"],
         private_key_pem=encrypt(pem),  # at rest under the app's DPAPI-backed key
         cert_pin_sha256=pin,
+        cert_pem=cert_pem,
         name=name or platform.node(),
     )
     save_state(state)

@@ -48,12 +48,23 @@ def key_path() -> Path:
 
 
 def local_addresses() -> list[str]:
-    """Every address an agent could plausibly use to reach this hub."""
+    """Every address an agent could plausibly use to reach this hub.
+
+    Link-local addresses are dropped. An IPv6 ``fe80::`` literal is meaningless without
+    a scope id, and the operator UI hands these to a human to type on another machine —
+    offering an address that cannot work is worse than offering one fewer.
+    """
     names = {socket.gethostname()}
     addresses = {"127.0.0.1"}
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None):
-            addresses.add(info[4][0])
+            addr = info[4][0].split("%")[0]  # strip any scope id before parsing
+            try:
+                if ipaddress.ip_address(addr).is_link_local:
+                    continue
+            except ValueError:
+                pass
+            addresses.add(addr)
     except socket.gaierror:  # a machine with no resolvable name is still usable
         pass
     return sorted(names) + sorted(addresses)
