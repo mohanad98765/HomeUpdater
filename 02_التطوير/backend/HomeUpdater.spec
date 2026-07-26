@@ -10,6 +10,9 @@ hiddenimports += ['webview.platforms.edgechromium', 'webview.platforms.winforms'
                   'clr', 'clr_loader', 'clr_loader.ffi']
 # Remote Windows updates (pywinrm) — auth stack pulled in dynamically.
 hiddenimports += ['winrm', 'winrm.transport', 'requests_ntlm', 'xmltodict', 'spnego', 'sspilib']
+# QR rendering for Android pairing. `import segno` is deliberately lazy inside the
+# render function, and a lazy import is exactly what static analysis misses.
+hiddenimports += collect_submodules('segno')
 hiddenimports += collect_submodules('sqlalchemy')
 tmp_ret = collect_all('uvicorn')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
+import { QrPairing } from "@/components/QrPairing";
 
 // ================================================================
 // Types
@@ -375,6 +376,15 @@ function AddDeviceDialog({
             <div>{t("android.addDialog.wirelessHint")}</div>
             <div>{t("android.addDialog.usbHint")}</div>
           </div>
+
+          <QrPairing
+            onPaired={(pairedHost, connectPort) => {
+              setHost(pairedHost);
+              if (connectPort) setPort(connectPort);
+            }}
+          />
+
+          <p className="text-[11px] text-fg-subtle mb-2">{t("android.qr.orManual")}</p>
 
           {/* Phone IP (shared by pairing + connecting) */}
           <div className="mb-3">

@@ -2,6 +2,11 @@
 Android router - manage phones connected via ADB over TCP/IP.
 
 Endpoints (mounted under /api/android):
+  POST   /pair/qr                       -> start a QR pairing session
+  GET    /pair/qr                       -> its status (polled while the dialog is open)
+  GET    /pair/qr.svg                   -> the code itself, as an inline SVG
+  POST   /pair/qr/choose                -> pick a phone when several arrive at once
+  DELETE /pair/qr                       -> end the session and forget the password
   GET    /devices                       -> list registered phones
   POST   /devices                       -> add + probe a phone by IP:port
   DELETE /devices/{id}                  -> remove a phone
@@ -15,7 +20,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
@@ -23,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..models.orm import AndroidDeviceORM
+from ..services import android_qr
 from ..services.android import (
     AndroidError,
     discover_connect_port,
@@ -55,6 +61,73 @@ class DiscoverRequest(BaseModel):
 
 class UpdateDeviceRequest(BaseModel):
     custom_name: str | None = Field(default=None, max_length=255)
+
+
+# ==================================================================
+# QR pairing (Android 11+)
+#
+# The hub shows a code, the phone scans it, and the phone starts advertising a pairing
+# service. Nothing here asks a person to read a port off a screen. See
+# services/android_qr.py for what about this flow is verified and what is not.
+# ==================================================================
+class ChooseRequest(BaseModel):
+    instance: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/pair/qr")
+async def start_qr_pairing() -> dict:
+    """Mint a pairing password and start watching for the phone that scanned it."""
+    try:
+        session = await android_qr.start()
+    except AndroidError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return session.public()
+
+
+@router.get("/pair/qr")
+async def qr_pairing_status() -> dict:
+    """Polled while the dialog is open. Returns ``{"status": "none"}`` once the session
+    is gone, so a stale page cannot keep reporting a pairing that no longer exists."""
+    session = android_qr.current()
+    if session is None:
+        return {"status": "none"}
+    return session.public()
+
+
+@router.get("/pair/qr.svg")
+async def qr_pairing_image() -> Response:
+    """The code, rendered where the password was generated.
+
+    ``no-store``: this image *is* the credential, and a cached copy in a WebView2 disk
+    cache would outlive the two-minute session it belongs to.
+    """
+    session = android_qr.current()
+    if session is None or not session.payload:
+        raise HTTPException(status_code=404, detail="no_active_session")
+    svg = android_qr.render_qr_svg(session.payload)
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
+
+
+@router.post("/pair/qr/choose")
+async def choose_qr_phone(payload: ChooseRequest) -> dict:
+    """Two phones arrived at once. Pairing with a coin flip would hand the password to
+    the wrong one, so the operator says which."""
+    try:
+        session = await android_qr.choose(payload.instance)
+    except AndroidError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return session.public()
+
+
+@router.delete("/pair/qr")
+async def cancel_qr_pairing() -> dict:
+    """End the session. A pairing code left live is a code someone else can use."""
+    await android_qr.cancel()
+    return {"cancelled": True}
 
 
 # ==================================================================

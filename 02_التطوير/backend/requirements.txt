@@ -43,6 +43,12 @@ psutil==6.1.0
 # subprocess — it supports Android 11+ Wireless-debugging pairing, which the
 # pure-Python adb-shell cannot. No Python ADB dependency is needed.
 
+# --- QR code rendering (Android pairing by QR) ---
+# Pure Python, no compiled extension and no dependencies, so PyInstaller bundles it
+# without a hook. Rendered on the BACKEND because the pairing password is generated
+# there: the code appears in exactly one response, and the JS bundle pays nothing.
+segno==1.6.6
+
 # --- Logging ---
 loguru==0.7.3
 
