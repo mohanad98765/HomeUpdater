@@ -513,3 +513,111 @@ class WinRMHostORM(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "display_name": self.custom_name or self.hostname or f"{self.username}@{self.host}",
         }
+
+
+class AgentORM(Base):
+    """A target machine running the HomeUpdater agent.
+
+    The hub stores the agent's PUBLIC key only: the private half is generated on the
+    target and never leaves it, so a compromised hub database cannot impersonate an
+    agent to anything. ``status`` is what makes an unbound enrolment safe — a token
+    that any machine could redeem produces a ``pending`` agent, and a pending agent
+    receives no commands until an operator confirms the fingerprint it reported.
+    """
+
+    __tablename__ = "agents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # uuid4
+    # The truncated SHA-256 the target derives from its machine id. Unique: one agent
+    # per machine, so a second enrolment updates rather than forking the identity.
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    public_key: Mapped[str] = mapped_column(String(64))  # Ed25519 raw public key, hex
+    name: Mapped[str] = mapped_column(String(120), default="")
+    os_name: Mapped[str] = mapped_column(String(120), default="")
+    agent_version: Mapped[str] = mapped_column(String(32), default="")
+    # pending (unbound enrolment, awaits operator) | active | revoked
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Reported by the agent on check-in; a machine whose clock drifts out of the
+    # signature window is told so instead of silently dropping out of the fleet.
+    last_skew_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    inventory_count: Mapped[int] = mapped_column(Integer, default=0)
+    pending_updates: Mapped[int] = mapped_column(Integer, default=0)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "fingerprint": self.fingerprint,
+            "name": self.name,
+            "os_name": self.os_name,
+            "agent_version": self.agent_version,
+            "status": self.status,
+            "enrolled_at": self.enrolled_at.isoformat() if self.enrolled_at else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "last_skew_seconds": self.last_skew_seconds,
+            "inventory_count": self.inventory_count,
+            "pending_updates": self.pending_updates,
+            # The public key is not secret, but there is no reason to hand it to the
+            # UI either; the fingerprint is what an operator compares on the target.
+        }
+
+
+class AgentCommandORM(Base):
+    """One enumerated instruction for one agent.
+
+    There is deliberately no free-text field: ``kind`` is checked against a fixed set
+    and ``payload`` holds typed lists of ids. A hub that gets compromised can queue a
+    wrong update id; it cannot queue a shell command, because the wire has nowhere to
+    put one.
+    """
+
+    __tablename__ = "agent_commands"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    agent_id: Mapped[str] = mapped_column(String(36), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[str] = mapped_column(Text, default="{}")  # JSON, typed per kind
+    # queued -> sent -> done | failed  (sent is set when an agent picks it up)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[str] = mapped_column(Text, default="")  # short summary, never raw output
+    issued_by: Mapped[str] = mapped_column(String(64), default="user")
+
+    def to_dict(self) -> dict:
+        import json as _json
+
+        try:
+            payload = _json.loads(self.payload or "{}")
+        except ValueError:
+            payload = {}
+        return {
+            "id": self.id,
+            "agent_id": self.agent_id,
+            "kind": self.kind,
+            "payload": payload,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "result": self.result,
+            "issued_by": self.issued_by,
+        }
+
+
+class AgentNonceORM(Base):
+    """Nonces already seen on signed agent requests — the replay defence.
+
+    Rows older than the signature window are pruned on every insert: a nonce cannot
+    be replayed once its timestamp is outside the window anyway, so keeping it would
+    only grow the table. Without the pruning this is an unbounded write target for
+    any agent that can sign.
+    """
+
+    __tablename__ = "agent_nonces"
+
+    nonce: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(36), index=True)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)

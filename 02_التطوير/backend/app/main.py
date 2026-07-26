@@ -25,6 +25,7 @@ from .db import init_db
 from .logging_setup import setup_logging
 from .routers import (
     advisor,
+    agents,
     android,
     audit,
     auth,
@@ -163,7 +164,7 @@ _TOKEN_GATED_EXACT = {"/api", "/docs", "/redoc", "/openapi.json"}
 
 
 def _needs_token(path: str) -> bool:
-    if path in _TOKEN_EXEMPT_PATHS:
+    if path in _TOKEN_EXEMPT_PATHS or path in _AGENT_SIGNED_PATHS:
         return False
     return path.startswith("/api/") or path in _TOKEN_GATED_EXACT
 
@@ -172,6 +173,19 @@ def _needs_token(path: str) -> bool:
 # sensitive /api/* route requires a valid login session (X-HomeUpdater-Auth).
 # The auth endpoints themselves + liveness are exempt so the UI can render the
 # setup/login screen before the user is authenticated.
+# Agent endpoints authenticate with an enrolment token (enrol) or an Ed25519
+# signature over the request (checkin/result) — see services/agent_auth.py. The hub's
+# own gates are shaped for a browser on this machine: a session token handed to the UI
+# at launch, a login cookie, and a CSRF header. An agent on another machine has none
+# of them, so gating it on those would not add security, it would just make the
+# feature impossible. These three paths are listed explicitly — never a prefix — so a
+# future /api/agents/* operator route does not silently inherit the exemption.
+_AGENT_SIGNED_PATHS = {
+    "/api/agents/enrol",
+    "/api/agents/checkin",
+    "/api/agents/result",
+}
+
 _AUTH_EXEMPT_PATHS = {
     "/api/system/health",
     "/api/system/version",
@@ -182,7 +196,7 @@ _AUTH_EXEMPT_PATHS = {
 
 
 def _needs_app_auth(path: str) -> bool:
-    if path in _AUTH_EXEMPT_PATHS:
+    if path in _AUTH_EXEMPT_PATHS or path in _AGENT_SIGNED_PATHS:
         return False
     # Cover the same doc/openapi/root paths the token gate protects, so a
     # token-holder that hasn't logged in can't enumerate the API surface either.
@@ -220,7 +234,11 @@ async def security_guard(request: Request, call_next):
                     "detail": "Missing or invalid session token",
                 },
             )
-    if request.method in _MUTATING_METHODS and request.headers.get("x-homeupdater") is None:
+    if (
+        request.method in _MUTATING_METHODS
+        and request.url.path not in _AGENT_SIGNED_PATHS
+        and request.headers.get("x-homeupdater") is None
+    ):
         logger.warning(
             f"Rejected {request.method} {request.url.path}: missing X-HomeUpdater header"
         )
@@ -278,6 +296,7 @@ app.include_router(homeassistant.router, prefix="/api/homeassistant", tags=["Hom
 app.include_router(ssh.router, prefix="/api/ssh", tags=["SSH"])
 app.include_router(winrm_hosts.router, prefix="/api/winrm", tags=["WinRM"])
 app.include_router(advisor.router, prefix="/api/advisor", tags=["Advisor"])
+app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
 
 
 # ─── API welcome (always available) ───────────────────────────────
