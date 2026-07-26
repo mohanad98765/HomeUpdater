@@ -21,7 +21,7 @@ function res(status: number, body: unknown, ok = status < 400): Response {
     ok,
     status,
     json: async () => body,
-    text: async () => JSON.stringify(body),
+    text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
   } as unknown as Response;
 }
 
@@ -29,6 +29,18 @@ function router(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const u = String(url);
   const method = init?.method ?? "GET";
   calls.push(`${method} ${u.split("?")[0]}`);
+  if (u.includes("/pair/qr.svg")) {
+    // The app's API rejects anything without the per-launch session token. An <img src>
+    // cannot send it, so this fake refuses that case the way the real server does — the
+    // whole point of the assertions below.
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    if (!headers["X-HomeUpdater"]) {
+      return Promise.resolve(res(401, { detail: "Missing or invalid session token" }));
+    }
+    return Promise.resolve(
+      res(200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 41 41"></svg>'),
+    );
+  }
   if (u.includes("/pair/qr/choose")) {
     session = { ...session, status: "paired", device: { host: "192.168.3.11", port: 5555 } };
     return Promise.resolve(res(200, session));
@@ -104,7 +116,7 @@ describe("while the code is up", () => {
   async function start() {
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
-    await screen.findByAltText(/pairing code/i);
+    await screen.findByRole("img", { name: /pairing code/i });
   }
 
   it("tells the user to turn Wireless debugging on themselves", async () => {
@@ -124,13 +136,25 @@ describe("while the code is up", () => {
     expect(screen.getByText(/expires in 02:00/i)).toBeTruthy();
   });
 
-  it("fetches the code as an image and never renders the payload as text", async () => {
+  it("fetches the code THROUGH the authenticated client, not as an <img src>", async () => {
+    // This replaces an assertion that encoded the shipped bug: it asserted the request
+    // did NOT happen, excused by "jsdom does not fetch <img src>". The real app put an
+    // <img src="/api/android/pair/qr.svg"> on screen, the browser's image loader sent
+    // no session token, and the server answered 401 — a broken-image icon where the
+    // code should be. A test that tolerates a request never being made cannot see that.
     await start();
-    expect(calls.some((c) => c === "GET /api/android/pair/qr.svg")).toBe(false);
-    // jsdom does not fetch <img src>, so assert the element points at the endpoint and
-    // that the raw payload is not sitting in the DOM for a screenshot to pick up.
-    const img = screen.getByAltText(/pairing code/i) as HTMLImageElement;
-    expect(img.getAttribute("src")).toContain("/api/android/pair/qr.svg");
+    expect(calls.some((c) => c === "GET /api/android/pair/qr.svg")).toBe(true);
+    expect(document.querySelector('img[src*="/api/"]')).toBeNull();
+  });
+
+  it("inlines the returned SVG", async () => {
+    await start();
+    const holder = screen.getByRole("img", { name: /pairing code/i });
+    expect(holder.querySelector("svg")).toBeTruthy();
+  });
+
+  it("never renders the payload as text", async () => {
+    await start();
     expect(document.body.textContent).not.toContain("WIFI:T:ADB");
   });
 });
@@ -139,7 +163,7 @@ describe("when two phones arrive", () => {
   it("asks which one instead of picking", async () => {
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
-    await screen.findByAltText(/pairing code/i);
+    await screen.findByRole("img", { name: /pairing code/i });
     session = {
       ...session,
       status: "choose",
@@ -163,7 +187,7 @@ describe("when nothing arrives", () => {
   it("lists the causes rather than asserting one the hub cannot know", async () => {
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
-    await screen.findByAltText(/pairing code/i);
+    await screen.findByRole("img", { name: /pairing code/i });
     session = { ...session, status: "expired", seconds_left: 0 };
     expect(await screen.findByText(/no phone arrived/i, {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.getByText(/never opened on the phone/i)).toBeTruthy();
@@ -178,7 +202,7 @@ describe("the credential's lifetime", () => {
     const onPaired = vi.fn();
     renderPanel(onPaired);
     fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
-    await screen.findByAltText(/pairing code/i);
+    await screen.findByRole("img", { name: /pairing code/i });
     session = { ...session, status: "paired", device: { host: "192.168.3.30", port: 34677 } };
     await waitFor(() => expect(onPaired).toHaveBeenCalledWith("192.168.3.30", 34677), {
       timeout: 4000,
@@ -188,7 +212,7 @@ describe("the credential's lifetime", () => {
   it("ends the session when the panel goes away", async () => {
     const view = renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
-    await screen.findByAltText(/pairing code/i);
+    await screen.findByRole("img", { name: /pairing code/i });
     view.unmount();
     await waitFor(() =>
       expect(calls.some((c) => c === "DELETE /api/android/pair/qr")).toBe(true),
@@ -198,7 +222,7 @@ describe("the credential's lifetime", () => {
   it("ends it on the close button too", async () => {
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
-    await screen.findByAltText(/pairing code/i);
+    await screen.findByRole("img", { name: /pairing code/i });
     fireEvent.click(screen.getByRole("button", { name: /close pairing/i }));
     await waitFor(() =>
       expect(calls.some((c) => c === "DELETE /api/android/pair/qr")).toBe(true),

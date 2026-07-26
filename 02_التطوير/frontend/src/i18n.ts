@@ -537,6 +537,7 @@ const resources = {
       },
       android: {
         qr: {
+          imageFailed: "تعذّر رسم الرمز:",
           title: "إقران برمز QR (أسهل)",
           intro: "بدل كتابة العنوان ومنفذ الإقران والرمز يدويًّا: يعرض المركز رمزًا، وتمسحه بالهاتف.",
           startBtn: "اعرض رمز الإقران",
@@ -1311,6 +1312,7 @@ const resources = {
       },
       android: {
         qr: {
+          imageFailed: "Could not render the code:",
           title: "Pair by QR code (easier)",
           intro: "Instead of typing an address, a pairing port and a code by hand: the hub shows a code and you scan it with the phone.",
           startBtn: "Show the pairing code",
@@ -2028,6 +2030,7 @@ const resources = {
       },
       android: {
         qr: {
+          imageFailed: "Impossible d'afficher le code :",
           title: "Appairage par QR code (plus simple)",
           intro: "Au lieu de saisir une adresse, un port d'appairage et un code à la main : le centre affiche un code et vous le scannez avec le téléphone.",
           startBtn: "Afficher le code d'appairage",
@@ -2774,6 +2777,7 @@ const resources = {
       },
       android: {
         qr: {
+          imageFailed: "No se pudo mostrar el código:",
           title: "Emparejar con código QR (más fácil)",
           intro: "En lugar de escribir una dirección, un puerto de emparejamiento y un código a mano: el centro muestra un código y usted lo escanea con el teléfono.",
           startBtn: "Mostrar el código de emparejamiento",
@@ -3548,6 +3552,7 @@ const resources = {
       },
       android: {
         qr: {
+          imageFailed: "Kod görüntülenemedi:",
           title: "QR kodu ile eşleştir (daha kolay)",
           intro: "Adres, eşleştirme baglanti noktasi ve kodu elle yazmak yerine: merkez bir kod gösterir, siz telefonla taratirsiniz.",
           startBtn: "Eşleştirme kodunu göster",
@@ -4322,6 +4327,7 @@ const resources = {
       },
       android: {
         qr: {
+          imageFailed: "کوڈ نہیں دکھایا جا سکا:",
           title: "QR کوڈ سے جوڑیں (آسان)",
           intro: "پتہ، جوڑنے کا پورٹ اور کوڈ ہاتھ سے لکھنے کے بجائے: مرکز ایک کوڈ دکھاتا ہے اور آپ فون سے اسکین کرتے ہیں۔",
           startBtn: "جوڑنے کا کوڈ دکھائیں",

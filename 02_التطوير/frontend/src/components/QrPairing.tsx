@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Check, Loader2, QrCode, RefreshCw, Smartphone, X } from "lucide-react";
-import { apiFetch, cn, type ApiError } from "@/lib/utils";
+import { apiFetch, apiFetchText, cn, type ApiError } from "@/lib/utils";
 
 // ================================================================
 // إقران الهاتف برمز QR.
@@ -45,7 +45,8 @@ export function QrPairing({
 }) {
   const { t } = useTranslation();
   const [active, setActive] = useState(false);
-  const [svgKey, setSvgKey] = useState(0);
+  const [svg, setSvg] = useState("");
+  const [svgError, setSvgError] = useState("");
 
   const session = useQuery<QrSession>({
     queryKey: ["android-qr"],
@@ -58,9 +59,21 @@ export function QrPairing({
 
   const start = useMutation<QrSession, ApiError, void>({
     mutationFn: () => apiFetch<QrSession>("/api/android/pair/qr", { method: "POST" }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setActive(true);
-      setSvgKey((k) => k + 1);
+      setSvg("");
+      setSvgError("");
+      // Fetched through apiFetchText, NOT an <img src>. Every /api/ path needs the
+      // per-launch session token and the login token, and a browser's image loader
+      // sends neither — an <img> pointing here gets 401 and shows a broken icon.
+      // Measured, after shipping exactly that: 401 "Missing or invalid session token".
+      try {
+        const markup = await apiFetchText("/api/android/pair/qr.svg");
+        if (!markup.trimStart().startsWith("<svg")) throw new Error("not an svg");
+        setSvg(markup);
+      } catch (err) {
+        setSvgError(err instanceof Error ? err.message : String(err));
+      }
     },
   });
 
@@ -74,7 +87,10 @@ export function QrPairing({
 
   const cancel = useMutation({
     mutationFn: () => apiFetch("/api/android/pair/qr", { method: "DELETE" }),
-    onSuccess: () => setActive(false),
+    onSuccess: () => {
+      setActive(false);
+      setSvg("");
+    },
   });
 
   const status = session.data?.status ?? "none";
@@ -91,6 +107,7 @@ export function QrPairing({
     if (status === "paired" && session.data?.device) {
       onPaired(session.data.device.host, session.data.device.port);
       setActive(false);
+      setSvg("");  // the code has been used; leaving it on screen invites a second scan
     }
   }, [status, session.data, onPaired]);
 
@@ -153,16 +170,24 @@ export function QrPairing({
           </ol>
 
           <div className="flex justify-center">
-            {/* Keyed so a new session refetches the image instead of showing the old
-                code, which would pair nothing and look like a broken feature. */}
-            <img
-              key={svgKey}
-              src={`/api/android/pair/qr.svg?s=${svgKey}`}
-              alt={t("android.qr.imageAlt")}
-              width={246}
-              height={246}
-              className="rounded-md bg-white p-2"
-            />
+            {svg ? (
+              // Inlined rather than loaded as an image, and safe to inline: segno
+              // renders it from a payload this app built out of a fixed alphabet, so
+              // there is no path for outside input to reach this markup. A test
+              // asserts the rendered SVG carries no <script>.
+              <div
+                role="img"
+                aria-label={t("android.qr.imageAlt")}
+                className="rounded-md bg-white p-2 [&>svg]:w-[230px] [&>svg]:h-[230px]"
+                dangerouslySetInnerHTML={{ __html: svg }}
+              />
+            ) : svgError ? (
+              <p className="text-xs text-danger">
+                {t("android.qr.imageFailed")} {svgError}
+              </p>
+            ) : (
+              <Loader2 className="w-6 h-6 animate-spin text-fg-muted" />
+            )}
           </div>
 
           <p
