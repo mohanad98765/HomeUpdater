@@ -537,6 +537,8 @@ const resources = {
       },
       android: {
         qr: {
+          enlarge: "كبِّر الرمز",
+          closeEnlarged: "اضغط في أي مكان للإغلاق",
           imageFailed: "تعذّر رسم الرمز:",
           title: "إقران برمز QR (أسهل)",
           intro: "بدل كتابة العنوان ومنفذ الإقران والرمز يدويًّا: يعرض المركز رمزًا، وتمسحه بالهاتف.",
@@ -1312,6 +1314,8 @@ const resources = {
       },
       android: {
         qr: {
+          enlarge: "Enlarge the code",
+          closeEnlarged: "click anywhere to close",
           imageFailed: "Could not render the code:",
           title: "Pair by QR code (easier)",
           intro: "Instead of typing an address, a pairing port and a code by hand: the hub shows a code and you scan it with the phone.",
@@ -2030,6 +2034,8 @@ const resources = {
       },
       android: {
         qr: {
+          enlarge: "Agrandir le code",
+          closeEnlarged: "cliquez n'importe où pour fermer",
           imageFailed: "Impossible d'afficher le code :",
           title: "Appairage par QR code (plus simple)",
           intro: "Au lieu de saisir une adresse, un port d'appairage et un code à la main : le centre affiche un code et vous le scannez avec le téléphone.",
@@ -2777,6 +2783,8 @@ const resources = {
       },
       android: {
         qr: {
+          enlarge: "Ampliar el código",
+          closeEnlarged: "haga clic en cualquier lugar para cerrar",
           imageFailed: "No se pudo mostrar el código:",
           title: "Emparejar con código QR (más fácil)",
           intro: "En lugar de escribir una dirección, un puerto de emparejamiento y un código a mano: el centro muestra un código y usted lo escanea con el teléfono.",
@@ -3552,6 +3560,8 @@ const resources = {
       },
       android: {
         qr: {
+          enlarge: "Kodu büyüt",
+          closeEnlarged: "kapatmak için herhangi bir yere tiklayin",
           imageFailed: "Kod görüntülenemedi:",
           title: "QR kodu ile eşleştir (daha kolay)",
           intro: "Adres, eşleştirme baglanti noktasi ve kodu elle yazmak yerine: merkez bir kod gösterir, siz telefonla taratirsiniz.",
@@ -4327,6 +4337,8 @@ const resources = {
       },
       android: {
         qr: {
+          enlarge: "کوڈ بڑا کریں",
+          closeEnlarged: "بند کرنے کے لیے کہیں بھی کلک کریں",
           imageFailed: "کوڈ نہیں دکھایا جا سکا:",
           title: "QR کوڈ سے جوڑیں (آسان)",
           intro: "پتہ، جوڑنے کا پورٹ اور کوڈ ہاتھ سے لکھنے کے بجائے: مرکز ایک کوڈ دکھاتا ہے اور آپ فون سے اسکین کرتے ہیں۔",

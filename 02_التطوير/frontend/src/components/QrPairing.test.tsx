@@ -153,6 +153,32 @@ describe("while the code is up", () => {
     expect(holder.querySelector("svg")).toBeTruthy();
   });
 
+  it("renders the code big enough for a phone camera, and can go bigger", async () => {
+    // The first version constrained the symbol to 230px: about five pixels per module
+    // for a 41-module code. A phone camera against a glossy screen could not read it,
+    // and the failure was indistinguishable from a network problem — three empty
+    // discovery windows before the raw mDNS listener showed the phone never advertised
+    // because the scan never completed.
+    await start();
+    const holder = screen.getByRole("img", { name: /pairing code/i });
+    expect(holder.className).toMatch(/w-\[300px\]/);
+
+    // And an enlarge path exists, because "bigger still" is the actual remedy.
+    fireEvent.click(screen.getByRole("button", { name: /enlarge the code/i }));
+    const overlay = await screen.findByRole("dialog", { name: /pairing code/i });
+    expect(overlay.querySelector("svg")).toBeTruthy();
+    expect(overlay.innerHTML).toMatch(/min\(78vw,78vh\)/);
+  });
+
+  it("closing the enlarged view leaves the session running", async () => {
+    await start();
+    fireEvent.click(screen.getByRole("button", { name: /enlarge the code/i }));
+    const overlay = await screen.findByRole("dialog", { name: /pairing code/i });
+    fireEvent.click(overlay);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.some((c) => c === "DELETE /api/android/pair/qr")).toBe(false);
+  });
+
   it("never renders the payload as text", async () => {
     await start();
     expect(document.body.textContent).not.toContain("WIFI:T:ADB");

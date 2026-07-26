@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, Loader2, QrCode, RefreshCw, Smartphone, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  Maximize2,
+  QrCode,
+  RefreshCw,
+  Smartphone,
+  X,
+} from "lucide-react";
 import { apiFetch, apiFetchText, cn, type ApiError } from "@/lib/utils";
 
 // ================================================================
@@ -47,6 +56,7 @@ export function QrPairing({
   const [active, setActive] = useState(false);
   const [svg, setSvg] = useState("");
   const [svgError, setSvgError] = useState("");
+  const [zoom, setZoom] = useState(false);
 
   const session = useQuery<QrSession>({
     queryKey: ["android-qr"],
@@ -90,6 +100,7 @@ export function QrPairing({
     onSuccess: () => {
       setActive(false);
       setSvg("");
+      setZoom(false);
     },
   });
 
@@ -108,6 +119,7 @@ export function QrPairing({
       onPaired(session.data.device.host, session.data.device.port);
       setActive(false);
       setSvg("");  // the code has been used; leaving it on screen invites a second scan
+      setZoom(false);
     }
   }, [status, session.data, onPaired]);
 
@@ -169,18 +181,40 @@ export function QrPairing({
             <li>{t("android.qr.step3")}</li>
           </ol>
 
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-2">
             {svg ? (
               // Inlined rather than loaded as an image, and safe to inline: segno
               // renders it from a payload this app built out of a fixed alphabet, so
               // there is no path for outside input to reach this markup. A test
               // asserts the rendered SVG carries no <script>.
-              <div
-                role="img"
-                aria-label={t("android.qr.imageAlt")}
-                className="rounded-md bg-white p-2 [&>svg]:w-[230px] [&>svg]:h-[230px]"
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
+              //
+              // Sized generously and enlargeable. The first version was 230px, which is
+              // about 5 pixels per module for a 41-module symbol — a phone camera at an
+              // angle, against a glossy screen, could not read it, and the failure looked
+              // exactly like a network problem.
+              <>
+                <button
+                  type="button"
+                  onClick={() => setZoom(true)}
+                  title={t("android.qr.enlarge")}
+                  className="rounded-md bg-white p-3 hover:ring-2 hover:ring-primary transition-shadow"
+                >
+                  <span
+                    role="img"
+                    aria-label={t("android.qr.imageAlt")}
+                    className="block [&>svg]:w-[300px] [&>svg]:h-[300px] [&>svg]:block"
+                    dangerouslySetInnerHTML={{ __html: svg }}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom(true)}
+                  className="btn-secondary text-xs inline-flex items-center gap-1"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  {t("android.qr.enlarge")}
+                </button>
+              </>
             ) : svgError ? (
               <p className="text-xs text-danger">
                 {t("android.qr.imageFailed")} {svgError}
@@ -238,6 +272,25 @@ export function QrPairing({
           <Check className="w-4 h-4" />
           {t("android.qr.paired")}
         </p>
+      )}
+
+      {zoom && svg && (
+        // As big as the window allows: this is the whole point of enlarging, and a
+        // phone camera reads a large symbol from further away and at worse angles.
+        <div
+          className="fixed inset-0 z-[60] bg-black/80 flex flex-col items-center justify-center gap-3 p-4"
+          onClick={() => setZoom(false)}
+          role="dialog"
+          aria-label={t("android.qr.imageAlt")}
+        >
+          <span
+            className="bg-white rounded-lg p-4 [&>svg]:block [&>svg]:w-[min(78vw,78vh)] [&>svg]:h-[min(78vw,78vh)]"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+          <p className="text-white text-sm">
+            {t("android.qr.expiresIn", { clock })} — {t("android.qr.closeEnlarged")}
+          </p>
+        </div>
       )}
 
       {(status === "expired" || status === "failed") && (
