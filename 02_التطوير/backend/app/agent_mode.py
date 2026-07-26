@@ -208,12 +208,37 @@ def enrol(hub_url: str, token: str, name: str = "", client: httpx.Client | None 
     )
     save_state(state)
     if body.get("requires_confirmation"):
+        # The WHOLE fingerprint, grouped. The hub deliberately masks everything after
+        # the first group, and asks the operator to type the last one — a challenge
+        # only answerable from this screen. Printing a truncated value here would make
+        # that challenge unanswerable; printing it ungrouped makes it unreadable.
         logger.warning(
             "enrolled as PENDING — an operator must confirm this fingerprint in the hub"
-            f" before any command is sent: {body.get('fingerprint', '')[:16]}…"
+            f" before any command is sent: {grouped(body.get('fingerprint', ''))}"
         )
     logger.info(f"enrolled: agent_id={state.agent_id[:8]}… status={body.get('status')}")
     return state, body
+
+
+def grouped(fingerprint: str) -> str:
+    """``a3f19c02 b7d4e610 …`` — four groups of eight.
+
+    Comparing two 32-character blobs by eye is how a confirmation step decays into a
+    ritual click; comparing four short groups is something a human can actually do.
+    """
+    return " ".join(fingerprint[i : i + 8] for i in range(0, len(fingerprint), 8))
+
+
+def show_id() -> str:
+    """This machine's agent fingerprint — what the hub will store, computed offline.
+
+    Two uses, both of which the product needed and did not have: minting a token bound
+    to THIS machine before the agent has ever run, and recovering the confirmation
+    challenge after the enrolment line has scrolled out of the console.
+    """
+    from .services.enrolment import fingerprint as _fp
+
+    return grouped(_fp(machine_id()))
 
 
 def _version() -> str:
@@ -358,11 +383,12 @@ async def loop(state: AgentState, interval: int = CHECKIN_SECONDS) -> None:
 
 # ------------------------------------------------------------------------ CLI
 def main(argv: list[str] | None = None) -> int:
-    """``--agent [--hub URL --token T] [--name N] [--once]``.
+    """``--agent [--hub URL --token T] [--name N] [--once] [--show-id]``.
 
     With a token it enrols (first run); without one it uses the saved state. ``--once``
     performs a single check-in and exits, which is what a scheduled task would call and
-    what makes the mode testable without a service.
+    what makes the mode testable without a service. ``--show-id`` prints this machine's
+    fingerprint and exits without touching the network or the saved state.
     """
     args = list(argv if argv is not None else sys.argv[1:])
 
@@ -375,6 +401,12 @@ def main(argv: list[str] | None = None) -> int:
 
     hub, token, name = opt("--hub"), opt("--token"), opt("--name") or ""
     once = "--once" in args
+
+    if "--show-id" in args:
+        # Deliberately before everything else: no network, no state written, nothing
+        # enrolled. Safe to run on a machine that is not (or no longer) an agent.
+        print(show_id())  # noqa: T201 — this IS the output of this mode
+        return 0
 
     try:
         state = load_state()

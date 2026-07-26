@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from collections import deque
 from datetime import UTC, datetime, timedelta
 
 from cryptography.exceptions import InvalidSignature
@@ -86,7 +87,56 @@ def _skew_seconds(timestamp: str) -> float:
     return (datetime.now(UTC) - sent).total_seconds()
 
 
+# Every refusal that reached the agent port, most recent last. In memory only and
+# deliberately small: this is a diagnostic for the operator standing at the OTHER
+# machine, not a security log — the audit log is that, and it is on disk and chained.
+#
+# Why it exists at all: without it every failure in the enrolment arc — an expired
+# token, a clock 400 seconds out, a port scanner, a revoked agent still running —
+# reaches the operator as the same thing, silence. The hub never opens a connection to
+# a target, so silence is the ONLY symptom it can otherwise offer.
+RECENT_REFUSALS: deque[dict] = deque(maxlen=100)
+
+
+def note_refusal(reason: str, *, agent_id: str = "", path: str = "", source: str = "") -> None:
+    """Record one refusal. Every field is attacker-controlled, so every field is cut."""
+    RECENT_REFUSALS.append(
+        {
+            "at": datetime.now(UTC).isoformat(),
+            "agent_id": agent_id[:36],
+            "reason": reason[:64],
+            "path": path[:64],
+            "source": source[:45],
+        }
+    )
+
+
+def recent_refusals(limit: int = 20) -> list[dict]:
+    """Most recent first. Never contains bodies, signatures, nonces or tokens."""
+    return list(RECENT_REFUSALS)[-limit:][::-1]
+
+
+def _client_ip(request: Request) -> str:
+    """The peer address. Deliberately NOT X-Forwarded-For: nothing proxies this
+    listener, so honouring that header would let a caller forge its own origin."""
+    return request.client.host if request.client else ""
+
+
 async def authenticate(request: Request, db: AsyncSession) -> tuple[AgentORM, bytes, float]:
+    """Verify a signed agent request, recording any refusal for the operator."""
+    try:
+        return await _authenticate(request, db)
+    except AgentAuthError as exc:
+        note_refusal(
+            exc.reason,
+            agent_id=request.headers.get("x-hu-agent", ""),
+            path=request.url.path,
+            source=_client_ip(request),
+        )
+        raise
+
+
+async def _authenticate(request: Request, db: AsyncSession) -> tuple[AgentORM, bytes, float]:
     """Verify a signed agent request. Returns (agent, body, skew_seconds).
 
     Order matters and is deliberate: size, then headers, then the agent record, then

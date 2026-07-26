@@ -336,7 +336,13 @@ def test_checkin_is_audited_as_a_summary_not_a_full_inventory(client):
 def test_confirming_a_pending_agent_lets_it_receive_work(client):
     a = Agent(client)
     a.enrol(bound=False)
-    assert client.post(f"/api/agents/{a.id}/confirm", headers=CSRF).status_code == 200
+    # Confirmation is a challenge, not a button: the last eight characters of the
+    # fingerprint exist only on the target's screen. See test_agents_operator.py.
+    suffix = enrolment.fingerprint(a.machine_id)[-8:]
+    confirmed = client.post(
+        f"/api/agents/{a.id}/confirm", json={"fingerprint_suffix": suffix}, headers=CSRF
+    )
+    assert confirmed.status_code == 200
     client.post(f"/api/agents/{a.id}/command", json={"kind": "inventory"}, headers=CSRF)
     assert len(a.checkin().json()["commands"]) == 1
 

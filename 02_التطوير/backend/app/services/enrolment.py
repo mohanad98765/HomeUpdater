@@ -35,6 +35,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -48,6 +49,8 @@ from ..config import get_appdata_dir
 from ..crypto import decrypt, encrypt
 
 TOKEN_TTL_MINUTES = 15
+_FINGERPRINT = re.compile(r"^[0-9a-f]{32}$")
+
 PREFIX = "HUENROL1"
 
 
@@ -111,6 +114,7 @@ def mint(
     target_hint: str = "",
     *,
     machine_id: str | None = None,
+    machine_fingerprint: str | None = None,
     allow_any_machine: bool = False,
 ) -> EnrolmentToken:
     """Create a single-use enrolment token valid for a short window.
@@ -121,8 +125,22 @@ def mint(
     but it must be asked for with ``allow_any_machine=True`` so it is a decision, not
     an accident. The fingerprint is a truncated SHA-256, so carrying it in a readable
     payload discloses nothing about the machine.
+
+    ``machine_fingerprint`` is the same binding for a caller that has the target's
+    fingerprint but not its machine id — which is every caller reachable from the UI,
+    because the machine id is computed ON the target. ``HomeUpdater.exe --agent
+    --show-id`` prints it there. Without this parameter the bound path exists only in
+    the docstring: nobody outside the target can produce a machine id.
     """
-    if machine_id is None and not allow_any_machine:
+    if machine_id is not None and machine_fingerprint is not None:
+        # Refuse rather than silently pick one: the caller is confused about which
+        # machine it means, and guessing would bind the token to the wrong target.
+        raise EnrolmentError("machine_id_and_fingerprint_are_exclusive")
+    if machine_fingerprint is not None:
+        machine_fingerprint = machine_fingerprint.replace(" ", "").replace("-", "").lower()
+        if not _FINGERPRINT.fullmatch(machine_fingerprint):
+            raise EnrolmentError("bad_machine_fingerprint")
+    if machine_id is None and machine_fingerprint is None and not allow_any_machine:
         raise EnrolmentError("unbound_token_requires_allow_any_machine")
     key = _load_or_create_key()
     expires = datetime.now(UTC) + timedelta(minutes=TOKEN_TTL_MINUTES)
@@ -130,7 +148,9 @@ def mint(
         "nonce": secrets.token_urlsafe(16),
         "expires_at": expires.isoformat(),
         "target_hint": target_hint,
-        "target_fp": fingerprint(machine_id) if machine_id is not None else "",
+        "target_fp": (
+            fingerprint(machine_id) if machine_id is not None else (machine_fingerprint or "")
+        ),
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     token = f"{PREFIX}.{_b64(raw)}.{_b64(key.sign(raw))}"

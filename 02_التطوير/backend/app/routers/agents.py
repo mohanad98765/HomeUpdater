@@ -23,11 +23,11 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models.orm import AgentCommandORM, AgentORM
+from ..models.orm import AgentCommandORM, AgentNonceORM, AgentORM
 from ..services import agent_auth, audit, enrolment
 
 router = APIRouter()
@@ -60,7 +60,7 @@ class CommandBody(BaseModel):
 
 # ---------------------------------------------------------------- agent-facing
 @router.post("/enrol")
-async def enrol(body: EnrolBody, db: AsyncSession = Depends(get_db)) -> dict:
+async def enrol(body: EnrolBody, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Redeem an enrolment token and create (or re-key) this machine's agent.
 
     The only agent endpoint not signed by the agent's key — the key is being
@@ -71,6 +71,9 @@ async def enrol(body: EnrolBody, db: AsyncSession = Depends(get_db)) -> dict:
         redeemed = enrolment.redeem(body.token, machine_id=body.machine_id)
     except enrolment.EnrolmentError as exc:
         logger.warning(f"enrolment refused: {exc}")
+        agent_auth.note_refusal(
+            f"enrol:{exc}", path="/api/agents/enrol", source=agent_auth._client_ip(request)
+        )
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
     fingerprint = redeemed["agent_fingerprint"]
@@ -84,6 +87,12 @@ async def enrol(body: EnrolBody, db: AsyncSession = Depends(get_db)) -> dict:
         # id so its history stays attached, and never resurrect a revoked agent
         # silently — an operator revoked it for a reason.
         if existing.status == "revoked":
+            agent_auth.note_refusal(
+                "agent_revoked",
+                agent_id=existing.id,
+                path="/api/agents/enrol",
+                source=agent_auth._client_ip(request),
+            )
             raise HTTPException(status_code=403, detail="agent_revoked")
         existing.public_key = body.public_key
         existing.name = body.name or existing.name
@@ -252,12 +261,27 @@ async def listener_status() -> dict:
     return listener.status()
 
 
+class RegenerateBody(BaseModel):
+    acknowledge_agents: int = Field(ge=0)
+
+
 @router.post("/listener/certificate/regenerate")
-async def regenerate_certificate(db: AsyncSession = Depends(get_db)) -> dict:
+async def regenerate_certificate(body: RegenerateBody, db: AsyncSession = Depends(get_db)) -> dict:
     """Issue a NEW hub certificate. Every enrolled agent pinned the old one, so this
-    breaks them until they re-enrol — said here rather than discovered in the field."""
+    breaks them until they re-enrol — said here rather than discovered in the field.
+
+    ``acknowledge_agents`` must equal how many agents this will break. It is not a
+    confirmation checkbox: a mismatch means the caller's screen was stale about the
+    very number that measures the damage, so the answer is to go and re-read it.
+    """
     from ..agent_listener import listener
     from ..services import agent_tls
+
+    breakable = (
+        (await db.execute(select(AgentORM).where(AgentORM.status != "revoked"))).scalars().all()
+    )
+    if body.acknowledge_agents != len(breakable):
+        raise HTTPException(status_code=409, detail=f"agent_count_mismatch:{len(breakable)}")
 
     details = agent_tls.ensure_cert(force=True)
     if listener.running:
@@ -273,7 +297,141 @@ async def regenerate_certificate(db: AsyncSession = Depends(get_db)) -> dict:
     return {
         **details,
         "warning": "every enrolled agent pinned the previous certificate and must re-enrol",
+        "broken_agents": [
+            {"id": a.id, "name": a.name, "fingerprint_head": a.fingerprint[:8]} for a in breakable
+        ],
     }
+
+
+class EnrolmentTokenBody(BaseModel):
+    """What the operator is asking for, stated rather than inferred.
+
+    ``machine_fingerprint`` is what ``HomeUpdater.exe --agent --show-id`` prints on the
+    target; supplying it binds the token to that machine and the agent arrives ACTIVE.
+    Without it the token is redeemable by anything on the network for 15 minutes, so
+    ``allow_any_machine`` must be sent explicitly — an unbound credential is a decision.
+    """
+
+    target_hint: str = Field(default="", max_length=80)
+    machine_fingerprint: str = Field(default="", max_length=64)
+    allow_any_machine: bool = False
+
+
+@router.post("/enrolment-token")
+async def create_enrolment_token(
+    body: EnrolmentTokenBody, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Mint one single-use enrolment token. Shown once; there is no GET counterpart."""
+    fp = body.machine_fingerprint.replace(" ", "").replace("-", "").lower()
+    if fp and body.allow_any_machine:
+        # Both would mean the caller does not know what it wants; picking one silently
+        # is how a token ends up unbound while the operator believes it is bound.
+        raise HTTPException(status_code=400, detail="fingerprint_and_allow_any_machine")
+    if not fp and not body.allow_any_machine:
+        raise HTTPException(status_code=400, detail="unbound_requires_optin")
+    try:
+        minted = enrolment.mint(
+            target_hint=body.target_hint,
+            machine_fingerprint=fp or None,
+            allow_any_machine=body.allow_any_machine,
+        )
+    except enrolment.EnrolmentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await audit.record_safe(
+        db,
+        "agent_enrolment_token_minted",
+        actor="user",
+        target=body.target_hint or "(unnamed)",
+        # Never the token and never the nonce: the audit log is exported inside the
+        # paid Evidence Pack, so a live credential must not travel in it.
+        detail={"bound": bool(fp), "target_fp_head": fp[:8], "expires_at": minted.expires_at},
+    )
+    logger.info(f"enrolment token minted (bound={bool(fp)})")
+    return {
+        "token": minted.token,
+        "expires_at": minted.expires_at,
+        "bound": bool(fp),
+        "requires_confirmation": not fp,
+        "target_hint": body.target_hint,
+    }
+
+
+class ListenerBody(BaseModel):
+    enabled: bool
+
+
+@router.post("/listener")
+async def set_listener(body: ListenerBody, db: AsyncSession = Depends(get_db)) -> dict:
+    """Turn the agent port on or off, live, and persist the choice.
+
+    A dedicated route rather than a field on the generic settings endpoint: that one
+    has no start/stop hook, so the persisted flag and the live socket would disagree —
+    which is exactly the state this feature shipped in before this endpoint existed.
+    """
+    import time
+
+    from ..agent_listener import listener
+    from ..config import save_settings
+
+    save_settings({"agent_listener_enabled": body.enabled})
+    if body.enabled:
+        listener.start()
+        # start() hands off to a thread, so `running` is False for a moment. Returning
+        # immediately would report "off" after every successful enable.
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline and not (listener.running or listener.error):
+            time.sleep(0.1)
+    else:
+        listener.stop()
+    await audit.record_safe(
+        db,
+        "agent_listener_toggled",
+        actor="user",
+        target="agent-listener",
+        detail={"enabled": body.enabled, "running": listener.running},
+    )
+    # A failed start is not a client error — a port in use is a fact about the machine.
+    # It comes back as status with `error` populated, and the UI names the cause.
+    return listener.status()
+
+
+@router.get("/refusals")
+async def refusals(limit: int = 20, db: AsyncSession = Depends(get_db)) -> dict:
+    """Why a machine went quiet — every request the agent port refused.
+
+    In memory, cleared on restart, capped. Agent names are resolved here so the UI
+    does not have to join, and an id with no matching row stays null rather than
+    inventing a name for a machine that was forgotten.
+    """
+    entries = agent_auth.recent_refusals(max(1, min(limit, 100)))
+    ids = {e["agent_id"] for e in entries if e["agent_id"]}
+    names: dict[str, str] = {}
+    if ids:
+        rows = (await db.execute(select(AgentORM).where(AgentORM.id.in_(ids)))).scalars().all()
+        names = {r.id: r.name or r.fingerprint[:12] for r in rows}
+    return {
+        "refusals": [{**e, "agent_name": names.get(e["agent_id"])} for e in entries],
+        "total": len(entries),
+    }
+
+
+def _for_operator(agent: AgentORM) -> dict:
+    """One agent as the operator's screen may see it.
+
+    A PENDING agent's fingerprint is MASKED past the first group. The confirm step
+    asks the operator to type the last eight characters, and those exist only on the
+    target machine's screen - rendering them one input away would turn the check into
+    a transcription exercise and back into the one-click promote it replaced.
+    Confirmed and revoked agents show the whole thing: there is nothing left to prove.
+    """
+    data = agent.to_dict()
+    fp = agent.fingerprint
+    data["fingerprint_head"] = fp[:8]
+    if agent.status == "pending":
+        data["fingerprint"] = None
+        data["fingerprint_masked"] = f"{fp[:8]} •••••••• •••••••• ••••••••"
+    return data
 
 
 @router.get("")
@@ -281,17 +439,74 @@ async def list_agents(db: AsyncSession = Depends(get_db)) -> dict:
     rows = (
         (await db.execute(select(AgentORM).order_by(AgentORM.enrolled_at.desc()))).scalars().all()
     )
-    return {"agents": [r.to_dict() for r in rows], "total": len(rows)}
+    counts = {"pending": 0, "active": 0, "revoked": 0}
+    for r in rows:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    return {
+        "agents": [_for_operator(r) for r in rows],
+        "total": len(rows),
+        "counts": counts,
+    }
+
+
+class ConfirmBody(BaseModel):
+    fingerprint_suffix: str = Field(min_length=1, max_length=32)
+
+
+# Wrong suffixes per agent id, so a mistyped confirmation cannot become a guessing
+# loop against the 8 hex characters that stand between a stranger's machine and trust.
+_CONFIRM_ATTEMPTS: dict[str, list[datetime]] = {}
+_CONFIRM_WINDOW_SECONDS = 900
+_CONFIRM_MAX_ATTEMPTS = 5
 
 
 @router.post("/{agent_id}/confirm")
-async def confirm(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    """Promote a pending agent to active — the human step an unbound token requires."""
+async def confirm(agent_id: str, body: ConfirmBody, db: AsyncSession = Depends(get_db)) -> dict:
+    """Promote a pending agent to active — the human step an unbound token requires.
+
+    The operator must type the LAST eight characters of the fingerprint. An unbound
+    token is redeemable by any machine on the network, so a stranger's agent can land
+    in this list beside the intended one; a button alone would promote whichever the
+    operator clicked. Those eight characters are printed on the target's own screen
+    (``--agent --show-id``, or the enrolment line), so answering the challenge is a
+    proof of access to the machine being trusted.
+    """
     agent = await db.get(AgentORM, agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="unknown_agent")
     if agent.status == "revoked":
         raise HTTPException(status_code=409, detail="agent_revoked")
+    if agent.status == "active":
+        # Previously a silent no-op, which reads as "confirmed!" for an agent someone
+        # else may have confirmed a moment ago.
+        raise HTTPException(status_code=409, detail="agent_already_active")
+
+    now = datetime.now(UTC)
+    tries = [
+        t
+        for t in _CONFIRM_ATTEMPTS.get(agent_id, [])
+        if (now - t).total_seconds() < _CONFIRM_WINDOW_SECONDS
+    ]
+    if len(tries) >= _CONFIRM_MAX_ATTEMPTS:
+        _CONFIRM_ATTEMPTS[agent_id] = tries
+        raise HTTPException(status_code=429, detail="too_many_attempts")
+
+    given = body.fingerprint_suffix.replace(" ", "").replace("-", "").lower()
+    if given != agent.fingerprint[-8:]:
+        tries.append(now)
+        _CONFIRM_ATTEMPTS[agent_id] = tries
+        await audit.record_safe(
+            db,
+            "agent_confirm_refused",
+            actor="user",
+            outcome="failed",
+            target=agent.name or agent.fingerprint[:12],
+            # The correct value is not echoed anywhere, including here.
+            detail={"agent_id": agent.id, "fingerprint_head": agent.fingerprint[:8]},
+        )
+        raise HTTPException(status_code=400, detail="fingerprint_mismatch")
+
+    _CONFIRM_ATTEMPTS.pop(agent_id, None)
     agent.status = "active"
     await audit.record_safe(
         db,
@@ -300,7 +515,7 @@ async def confirm(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         target=agent.name or agent.fingerprint[:12],
         detail={"agent_id": agent.id, "fingerprint": agent.fingerprint},
     )
-    return agent.to_dict()
+    return _for_operator(agent)
 
 
 @router.post("/{agent_id}/revoke")
@@ -318,7 +533,36 @@ async def revoke(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         detail={"agent_id": agent.id, "fingerprint": agent.fingerprint},
     )
     logger.info(f"agent revoked: {agent.id[:8]}…")
-    return agent.to_dict()
+    return _for_operator(agent)
+
+
+@router.delete("/{agent_id}")
+async def forget(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Remove a REVOKED agent so that machine can enrol again.
+
+    Revocation is otherwise a one-way door: ``enrol`` refuses a known revoked
+    fingerprint forever, so one mis-click permanently bars a machine with no way back.
+    Gated on ``revoked`` so it can never become a shortcut around revoking, and the
+    audit trail stays — the rows leave the list, not the history.
+    """
+    agent = await db.get(AgentORM, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="unknown_agent")
+    if agent.status != "revoked":
+        raise HTTPException(status_code=409, detail="agent_not_revoked")
+    await db.execute(delete(AgentCommandORM).where(AgentCommandORM.agent_id == agent_id))
+    await db.execute(delete(AgentNonceORM).where(AgentNonceORM.agent_id == agent_id))
+    fingerprint, name = agent.fingerprint, agent.name
+    await db.delete(agent)
+    await audit.record_safe(
+        db,
+        "agent_forgotten",
+        actor="user",
+        target=name or fingerprint[:12],
+        detail={"agent_id": agent_id, "fingerprint": fingerprint},
+    )
+    logger.info(f"agent forgotten: {agent_id[:8]}…")
+    return {"deleted": True, "agent_id": agent_id}
 
 
 @router.post("/{agent_id}/command")
