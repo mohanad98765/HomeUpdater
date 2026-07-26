@@ -47,6 +47,10 @@ class CpeEntry:
     version_parts: int | None = None
     confidence: str = "high"  # high | medium — surfaced so a reader can weigh it
     caveat: str = ""
+    # "vendor" = verified by us and shipped in this table · "site" = added on the
+    # customer's machine through cpe_overrides.json. The pack prints it, because a
+    # customer's mapping must not appear with our authority.
+    source: str = "vendor"
 
 
 CPE_MAP: dict[str, CpeEntry] = {
@@ -105,6 +109,146 @@ CPE_MAP: dict[str, CpeEntry] = {
         caveat="Git-for-Windows revision suffix trimmed to the upstream 3-part version.",
     ),
     "Microsoft.WSL": CpeEntry("microsoft", "windows_subsystem_for_linux", version_parts=3),
+    # --- software a paying customer runs (added v1.13.0) ---------------------
+    # Every entry below was decided from a live pull of NVD's CPE dictionary, then
+    # attacked by a second reviewer before being accepted. version_parts is left
+    # unset wherever NVD's own segment count varies for that product — pinning it
+    # would corrupt one of the shapes NVD actually stores.
+    "Mozilla.Firefox": CpeEntry(
+        "mozilla",
+        "firefox",
+        caveat="1132 dictionary entries; ESR builds report '…esr' and are refused rather"
+        " than mis-matched.",
+    ),
+    "Mozilla.Thunderbird": CpeEntry(
+        "mozilla",
+        "thunderbird",
+        confidence="medium",
+        caveat="601 entries, but the sampled versions are the early line — an empty result"
+        " for a current build means NO DATA, not clean.",
+    ),
+    "TheDocumentFoundation.LibreOffice": CpeEntry(
+        "libreoffice",  # NOT documentfoundation — that is the winget publisher
+        "libreoffice",
+        confidence="medium",
+        caveat="Dictionary mixes 3- and 4-segment versions (3.5.2 alongside 3.5.4.2), so a"
+        " release recorded with the other shape matches nothing.",
+    ),
+    "VideoLAN.VLC": CpeEntry(
+        "videolan",
+        "vlc_media_player",
+        caveat="Old entries carry letter suffixes (0.8.6b) that are refused, not guessed.",
+    ),
+    "RARLab.WinRAR": CpeEntry(
+        "rarlab",
+        "winrar",
+        confidence="medium",
+        caveat="NVD writes WinRAR as a zero-padded 2-segment number (7.13, 4.00) and holds"
+        " both '4.10' and '4.1.0' for one release.",
+    ),
+    "Notepad++.Notepad++": CpeEntry(
+        "don_ho",  # the CPE vendor is the author, not 'notepad-plus-plus'
+        "notepad++",
+        confidence="medium",
+        caveat="60 entries under vendor don_ho; the sampled versions are the 2.x-3.x era, so"
+        " a current build may resolve only through ranged records.",
+    ),
+    "PuTTY.PuTTY": CpeEntry(
+        "putty",
+        "putty",
+        confidence="medium",
+        caveat="NVD uses TWO segments (0.83); an install reporting 0.83.0.0 matches nothing"
+        " — a miss, never a false hit.",
+    ),
+    "TimKosse.FileZilla.Client": CpeEntry(
+        "filezilla-project",  # hyphenated vendor, and the CLIENT product, not the server
+        "filezilla_client",
+        caveat="Release candidates are separate rows; sample ceiling is 3.49.1.",
+    ),
+    "Microsoft.PowerToys": CpeEntry(
+        "microsoft",
+        "powertoys",
+        caveat="A Store/MSIX PowerToys install carries a package identity instead and is"
+        " classified as a store package, not by this entry.",
+    ),
+    "Telegram.TelegramDesktop": CpeEntry(
+        "telegram",
+        "telegram_desktop",
+        caveat="Desktop client only; the mobile clients are separate NVD products.",
+    ),
+    "Postman.Postman": CpeEntry(
+        "postman",
+        "postman",
+        confidence="medium",
+        caveat="GA releases appear as 2 segments (10.12) and patches as 3, so an exact-version"
+        " query hits at most one of the two forms.",
+    ),
+    "Audacity.Audacity": CpeEntry(
+        "audacityteam",
+        "audacity",
+        confidence="medium",
+        caveat="Sample stops at 2.0.5; whether the 3.x line is enumerated is unverified.",
+    ),
+    "GIMP.GIMP": CpeEntry(
+        "gimp",
+        "gimp",
+        confidence="medium",
+        caveat="232 entries; segment count varies across the 2.x line.",
+    ),
+    "Malwarebytes.Malwarebytes": CpeEntry(
+        "malwarebytes",
+        "malwarebytes",
+        confidence="medium",
+        caveat="49 entries and one unversioned row; the product was renamed across versions.",
+    ),
+    "TeamViewer.TeamViewer": CpeEntry(
+        "teamviewer",
+        "teamviewer",
+        confidence="medium",
+        caveat="67 entries mixing 2-segment (15.28) and long build forms (10.0.134865).",
+    ),
+    "Zoom.Zoom": CpeEntry(
+        # NOT zoom:zoom — the keyword probe showed the desktop client lives under
+        # zoom:workplace_desktop with current 6.x versions, while zoom:workplace is the
+        # mobile line and workplace_virtual_desktop_infrastructure is the VDI plugin.
+        "zoom",
+        "workplace_desktop",
+        confidence="medium",
+        caveat="Desktop line (6.x enumerated); the mobile and VDI products are separate CPEs.",
+    ),
+    "PostgreSQL.PostgreSQL": CpeEntry(
+        "postgresql",
+        "postgresql",
+        confidence="medium",
+        caveat="595 entries spanning 6.x to current; one unversioned row can never match.",
+    ),
+    "Oracle.MySQL": CpeEntry(
+        "oracle",
+        "mysql",
+        confidence="medium",
+        caveat="776 entries; MySQL Server and Connector CVEs share this product, so a finding"
+        " may concern a component that is not installed.",
+    ),
+    "Docker.DockerDesktop": CpeEntry(
+        "docker",
+        "docker_desktop",
+        confidence="medium",
+        caveat="143 entries with 4-segment versions (4.28.0.1); a 3-segment report may miss.",
+    ),
+    "EclipseAdoptium.Temurin.21.JRE": CpeEntry(
+        "eclipse",
+        "temurin",
+        confidence="medium",
+        caveat="Lengths vary (11.0.12 vs 11.0.12.1); Temurin only — other JDK builds have"
+        " their own CPEs.",
+    ),
+    "Google.Drive": CpeEntry(
+        "google",
+        "drive",
+        confidence="medium",
+        caveat="The dictionary mixes the modern desktop line (26.1, 30.1) with legacy"
+        " 1.0.x builds and one unversioned row.",
+    ),
     "GlavSoft.TightVNC": CpeEntry(
         "tightvnc",
         "tightvnc",
@@ -161,6 +305,44 @@ UNMAPPABLE: dict[str, str] = {
     "Microsoft.UI.Xaml.2.8": "No WinUI/UI.Xaml product (winui hits are Telerik).",
     "Python.Launcher": (
         "No distinct product; mapping to python:python would duplicate every finding."
+    ),
+    # --- business software checked and deliberately NOT mapped (v1.13.0) -----
+    # Each line says what the dictionary actually returned, so the claim is checkable.
+    "SlackTechnologies.Slack": (
+        "Keyword 'slack' returns 304 rows and NONE is the Slack desktop app (Jenkins"
+        " plugin, ArchiveBot, Slackware Linux). No product to map."
+    ),
+    "OBSProject.OBSStudio": (
+        "Both cpe:2.3:a:obsproject:obs_studio and the keyword 'obs studio' return 0 —"
+        " OBS Studio is absent from the dictionary."
+    ),
+    "Discord.Discord": (
+        "Only 2 rows exist: one unversioned and one 0.0.291, so any current build either"
+        " matches nothing or matches an unbounded record."
+    ),
+    "Valve.Steam": (
+        "valvesoftware:steam_client mixes a Unix timestamp (1528829181), dates"
+        " (2018-03-22) and 2.10.91.91 in the version field — not orderable."
+    ),
+    "Microsoft.SQLServer.2022.Developer": (
+        "microsoft:sql_server versions are release years (2000, 2005, 2012) plus service"
+        " packs, while the install reports 16.0.x — no comparable scheme."
+    ),
+    "Microsoft.VisualStudio.2022.Community": (
+        "microsoft:visual_studio_2022 enumerates 17.x releases, but a VS install reports"
+        " its own build (17.14.36301.6) whose 3rd/4th segments do not exist in NVD."
+    ),
+    "Oracle.JavaRuntimeEnvironment": (
+        "oracle:jre holds 525 rows with only three distinct version fields (1.4.2_38,"
+        " 1.4.2_40, 1.7.0); modern 8u/17 builds are recorded under other products."
+    ),
+    "Microsoft.Skype": (
+        "Only 8 rows, mostly unversioned, for a retired desktop line — a match would be"
+        " an unbounded record, not evidence about this build."
+    ),
+    "Dropbox.Dropbox": (
+        "dropbox:dropbox stops at the 2.3.x era (31 rows) while the client reports 2xx.y.z;"
+        " mapping it would report 'no findings' for a version NVD never covered."
     ),
     "WinAppRuntime.Main.1.8": (
         "winget reports the whole MSIX identity in the version column"
@@ -417,6 +599,32 @@ FALLBACK_RULES: tuple[FallbackRule, ...] = (
 )
 
 
+def _override_entry(product_id: str, name: str) -> CpeEntry | None:
+    """A site-provided mapping, if one matches. Loaded fresh so an IT admin can add a
+    mapping and see it take effect on the next scan without restarting the app."""
+    from . import cpe_overrides  # local import: cpe must stay importable standalone
+
+    nm = (name or "").strip()
+    for ov in cpe_overrides.load(blocked=set(UNMAPPABLE)):
+        if ov.product_id and ov.product_id == product_id:
+            matched = True
+        elif ov.name_pattern and nm and re.search(ov.name_pattern, nm, re.IGNORECASE):
+            matched = True
+        else:
+            matched = False
+        if matched:
+            return CpeEntry(
+                vendor=ov.vendor,
+                product=ov.product,
+                version_parts=ov.version_parts,
+                # Capped at medium on purpose: it was not verified by us.
+                confidence="medium",
+                caveat=ov.caveat,
+                source="site",
+            )
+    return None
+
+
 def _fallback_entry(product_id: str, name: str) -> CpeEntry | None:
     pid = (product_id or "").lower()
     nm = (name or "").strip()
@@ -448,7 +656,11 @@ def resolve(product_id: str, raw_version: str, name: str = "") -> CpeIdentity | 
     ``None`` means one of: the product isn't in the curated map, or its version
     isn't comparable. Both are reported honestly as "not precisely matched".
     """
-    entry = CPE_MAP.get(product_id) or _fallback_entry(product_id, name)
+    entry = (
+        CPE_MAP.get(product_id)
+        or _fallback_entry(product_id, name)
+        or _override_entry(product_id, name)
+    )
     if entry is None:
         return None
     version = normalize_version(raw_version)
@@ -461,7 +673,11 @@ def resolve(product_id: str, raw_version: str, name: str = "") -> CpeIdentity | 
 
 def entry_for(product_id: str, name: str = "") -> CpeEntry | None:
     """The curated entry (confidence + caveat) so the UI/report can show them."""
-    return CPE_MAP.get(product_id) or _fallback_entry(product_id, name)
+    return (
+        CPE_MAP.get(product_id)
+        or _fallback_entry(product_id, name)
+        or _override_entry(product_id, name)
+    )
 
 
 def exclusion_detail(product_id: str, name: str = "") -> str:
@@ -479,7 +695,11 @@ def unmatched_reason(product_id: str, raw_version: str, name: str = "") -> str:
     and NVD has nothing" together with "nobody has looked yet" and with the 57 Store
     packages NVD does not track. Those need different answers from the reader.
     """
-    if CPE_MAP.get(product_id) or _fallback_entry(product_id, name):
+    if (
+        CPE_MAP.get(product_id)
+        or _fallback_entry(product_id, name)
+        or _override_entry(product_id, name)
+    ):
         return "version_not_comparable"
     kind = classify_unmapped(product_id, name)
     if kind in ("documented_exclusion", "store_package"):
@@ -498,7 +718,11 @@ def classify_unmapped(product_id: str, name: str = "") -> str:
     when the real answer is that most of the estate is not addressable by CPE.
     Only ``not_investigated`` is a gap that more work can close.
     """
-    if product_id in CPE_MAP or _fallback_entry(product_id, name) is not None:
+    if (
+        product_id in CPE_MAP
+        or _fallback_entry(product_id, name) is not None
+        or _override_entry(product_id, name) is not None
+    ):
         return "mapped"
     if product_id in UNMAPPABLE:
         return "documented_exclusion"
