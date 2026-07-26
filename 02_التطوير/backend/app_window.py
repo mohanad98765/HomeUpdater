@@ -171,6 +171,15 @@ def _run_browser_fallback(
 def main() -> None:
     _ensure_std_streams()  # MUST be first, before uvicorn/loguru/pythonnet
 
+    # --agent turns this same binary into the target-side agent: no window, no local
+    # API, no elevation prompt of its own — it talks OUT to a hub and does what the
+    # enumerated commands say. Checked before anything GUI-related so the agent can
+    # run under a service account in session 0 where no desktop exists.
+    if "--agent" in sys.argv[1:]:
+        from app.agent_mode import main as agent_main
+
+        raise SystemExit(agent_main(sys.argv[1:]))
+
     # Guarantee elevation (the app updates Windows/devices). No-op in the shipped
     # exe (requireAdministrator manifest); relaunches a non-elevated source run.
     from app.win_elevation import ensure_elevated
