@@ -80,6 +80,17 @@ async def lifespan(app: FastAPI):
     # Phase 1.3: create tables on first run
     await init_db()
 
+    # The TLS listener for agents, only if the operator turned it on. A failure here
+    # must not take the app down: the local UI is the primary product, and a port
+    # conflict on 8443 is a fixable configuration problem, not a crash.
+    if settings.agent_listener_enabled:
+        from .agent_listener import listener as agent_listener
+
+        try:
+            agent_listener.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"agent listener failed to start: {exc}")
+
     # Detect an already-applied upgrade (installer replaced files + relaunched)
     # and, if the version went up since the last run, fire a one-time toast.
     from .services import notifications, version_state
@@ -106,6 +117,10 @@ async def lifespan(app: FastAPI):
     yield  # ──── application runs here ────
 
     scheduler.stop()
+    if settings.agent_listener_enabled:
+        from .agent_listener import listener as agent_listener
+
+        agent_listener.stop()
     logger.info(f"Shutting down {settings.app_name}")
 
 

@@ -155,6 +155,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     advisor_model: str = "claude-opus-4-8"
 
+    # === Agent listener (TLS, network-facing) ===
+    # OFF by default: a listening socket on a customer machine is a decision, not a
+    # side effect of upgrading. When on, it is a SEPARATE uvicorn instance serving
+    # only the three agent paths — the elevated local API is never exposed.
+    agent_listener_enabled: bool = False
+    agent_listener_host: str = "0.0.0.0"  # noqa: S104 — the point is to be reachable
+    agent_listener_port: int = 8443
+
     # === Network scan ===
     scan_interval_minutes: int = 30
     scan_subnet: str = "auto"  # 'auto' = detect from network interface
@@ -201,7 +209,14 @@ settings = load_settings()
 # request can never rewrite security-sensitive keys (session_token, database_url,
 # encryption_passphrase, anthropic_api_key…).
 USER_EDITABLE_SETTINGS = frozenset(
-    {"scan_method", "scan_scheduler_enabled", "scan_interval_minutes", "nvd_api_key"}
+    {
+        "scan_method",
+        "scan_scheduler_enabled",
+        "scan_interval_minutes",
+        "nvd_api_key",
+        "agent_listener_enabled",
+        "agent_listener_port",
+    }
 )
 
 

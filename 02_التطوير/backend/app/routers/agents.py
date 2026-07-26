@@ -239,6 +239,43 @@ async def result(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
 
 
 # ------------------------------------------------------------- operator-facing
+@router.get("/listener")
+async def listener_status() -> dict:
+    """Where agents should point, and what fingerprint they will pin.
+
+    Deliberately an operator route (behind the hub's gates) and NOT on the agent
+    listener's allowlist: the socket that faces the network must not describe the
+    hub's configuration to anyone who connects to it.
+    """
+    from ..agent_listener import listener
+
+    return listener.status()
+
+
+@router.post("/listener/certificate/regenerate")
+async def regenerate_certificate(db: AsyncSession = Depends(get_db)) -> dict:
+    """Issue a NEW hub certificate. Every enrolled agent pinned the old one, so this
+    breaks them until they re-enrol — said here rather than discovered in the field."""
+    from ..agent_listener import listener
+    from ..services import agent_tls
+
+    details = agent_tls.ensure_cert(force=True)
+    if listener.running:
+        listener.stop()
+        listener.start()
+    await audit.record_safe(
+        db,
+        "agent_tls_regenerated",
+        actor="user",
+        target="agent-listener",
+        detail={"fingerprint": details["fingerprint_sha256"]},
+    )
+    return {
+        **details,
+        "warning": "every enrolled agent pinned the previous certificate and must re-enrol",
+    }
+
+
 @router.get("")
 async def list_agents(db: AsyncSession = Depends(get_db)) -> dict:
     rows = (
