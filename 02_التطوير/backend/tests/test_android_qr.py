@@ -238,3 +238,47 @@ def test_the_session_is_never_written_to_the_database(client, adb):
     client.post("/api/android/pair/qr", headers=H)
     tables = client.get("/api/audit/events?limit=20").json()["events"]
     assert not any("pair" in str(e).lower() and "WIFI:T:ADB" in str(e) for e in tables)
+
+
+# --- how readable the symbol actually is ----------------------------------------
+def test_the_symbol_is_sized_for_a_camera_not_just_for_the_layout():
+    """Pixels per module is what a camera resolves, and the module COUNT decides it.
+
+    Error correction buys recovery from damage and occlusion. A code on a clean screen
+    for twenty seconds has neither, so a level that adds modules is paying real module
+    size for robustness this code will never use.
+    """
+    import re
+
+    import segno
+
+    payload = android_qr.build_payload("homeupdater-abcd1234", "483920")
+    chosen = segno.make(payload, error=android_qr.QR_ERROR_LEVEL)
+    heavier = segno.make(payload, error="q")
+    assert chosen.symbol_size(border=4)[0] < heavier.symbol_size(border=4)[0]
+
+    svg = android_qr.render_qr_svg(payload)
+    width = int(re.search(r'width="(\d+)"', svg).group(1))
+    modules = chosen.symbol_size(border=4)[0]
+    # An exact integer multiple. Any other size lands every module edge mid-pixel and
+    # the renderer anti-aliases it to grey — exactly what a binariser struggles with.
+    assert width % modules == 0, f"{width}px over {modules} modules is not an integer scale"
+    assert width // modules >= 6, "fewer than 6 device pixels per module is hard to scan"
+
+
+def test_module_edges_stay_hard_when_the_symbol_is_scaled():
+    """The enlarged view scales by a viewport fraction, which cannot be an integer
+    multiple, so the symbol has to say it must not be smoothed."""
+    svg = android_qr.render_qr_svg(android_qr.build_payload("homeupdater-abcd1234", "483920"))
+    assert 'shape-rendering="crispEdges"' in svg
+
+
+def test_it_is_pure_black_on_pure_white():
+    """A tinted 'dark' colour costs contrast, and contrast is the other half of what a
+    binariser needs. segno shortens the hex it emits, so match on the colours rather
+    than on the spelling we passed in."""
+    import re
+
+    svg = android_qr.render_qr_svg(android_qr.build_payload("homeupdater-abcd1234", "483920"))
+    colours = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{3,6}", svg)}
+    assert colours == {"#000", "#fff"}, colours

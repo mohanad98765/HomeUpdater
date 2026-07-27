@@ -202,7 +202,11 @@ export function QrPairing({
                   <span
                     role="img"
                     aria-label={t("android.qr.imageAlt")}
-                    className="block [&>svg]:w-[300px] [&>svg]:h-[300px] [&>svg]:block"
+                    // No width override: the backend renders the symbol at an exact
+                    // integer multiple of its module count (296px = 37 x 8). Forcing a
+                    // different size puts every module edge mid-pixel and the renderer
+                    // greys it out, which is what a camera's binariser trips over.
+                    className="block [&>svg]:block"
                     dangerouslySetInnerHTML={{ __html: svg }}
                   />
                 </button>

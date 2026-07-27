@@ -138,15 +138,42 @@ def build_payload(service_name: str, password: str) -> str:
     return f"WIFI:T:ADB;S:{service_name};P:{password};;"
 
 
+# One module is what a camera has to resolve, and the count of modules decides how big
+# each one can be. Measured for this payload:
+#
+#     level   version   modules+border   px/module at 300px
+#     L       3         37               8.11
+#     Q       4         41               7.32
+#     H       5         45               6.67
+#
+# L is the right trade here. Error correction buys recovery from damage and occlusion;
+# a code displayed on a clean screen for twenty seconds has neither, so paying 11% of
+# module size for 25% recovery makes the code harder to read in exchange for robustness
+# it will never use.
+QR_ERROR_LEVEL = "l"
+# 37 modules x 8 = 296px, an exact integer multiple. Sizing the symbol to a non-multiple
+# puts every module edge mid-pixel, and the renderer anti-aliases it to grey — which is
+# precisely what a binariser struggles with.
+QR_SCALE = 8
+
+
 def render_qr_svg(payload: str) -> str:
     """An inline SVG, generated where the password is generated.
 
     Rendered on the backend rather than in the browser so the pairing password appears
     in exactly one response, and so this costs the frontend bundle nothing.
+
+    ``shape-rendering="crispEdges"`` is added because segno does not set it: the enlarged
+    view scales the symbol by a viewport fraction, which cannot be an integer multiple,
+    and without this every module edge softens into grey at exactly the moment the
+    operator is holding a camera to the screen.
     """
     import segno
 
-    return segno.make(payload, error="m").svg_inline(scale=6, dark="#111111", light="#ffffff")
+    svg = segno.make(payload, error=QR_ERROR_LEVEL).svg_inline(
+        scale=QR_SCALE, dark="#000000", light="#ffffff"
+    )
+    return svg.replace("<svg ", '<svg shape-rendering="crispEdges" ', 1)
 
 
 def _pairing_snapshot() -> set[str]:

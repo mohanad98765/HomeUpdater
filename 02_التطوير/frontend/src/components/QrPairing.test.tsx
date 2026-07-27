@@ -161,7 +161,9 @@ describe("while the code is up", () => {
     // because the scan never completed.
     await start();
     const holder = screen.getByRole("img", { name: /pairing code/i });
-    expect(holder.className).toMatch(/w-\[300px\]/);
+    // Rendered at its natural size, NOT stretched: the backend emits an exact integer
+    // multiple of the module count, and any other size anti-aliases the module edges.
+    expect(holder.className).not.toMatch(/w-\[\d+px\]/);
 
     // And an enlarge path exists, because "bigger still" is the actual remedy.
     fireEvent.click(screen.getByRole("button", { name: /enlarge the code/i }));
