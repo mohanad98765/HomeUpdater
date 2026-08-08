@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LanguageProvider } from "@/lib/language";
 import { ThemeProvider } from "@/lib/theme";
@@ -62,18 +62,46 @@ let apps: AppInfo[];
 let appsError: boolean;
 
 function res(status: number, body: unknown, ok = status < 400): Response {
-  return { ok, status, json: async () => body } as unknown as Response;
+  return {
+    ok,
+    status,
+    json: async () => body,
+    text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
+  } as unknown as Response;
 }
+
+let qrPaired = false;
+const posted: { url: string; body: string }[] = [];
 
 function router(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const u = String(url);
   const method = init?.method ?? "GET";
+  if (method === "POST") posted.push({ url: u, body: String(init?.body ?? "") });
 
   // per-device apps list + open-in-store (checked first: URL contains /devices)
   if (u.includes("/apps")) {
     if (u.includes("/open")) return Promise.resolve(res(200, {}));
     if (appsError) return Promise.resolve(res(500, { detail: "adb not reachable" }));
     return Promise.resolve(res(200, { device: devices[0], apps, total: apps.length }));
+  }
+  if (u.includes("/api/android/pair/qr.svg")) {
+    return Promise.resolve(res(200, "<svg></svg>"));
+  }
+  if (u.includes("/api/android/pair/qr")) {
+    if (method === "DELETE") return Promise.resolve(res(200, { cancelled: true }));
+    // POST starts it; GET reports it. `qrPaired` lets a test flip the session to the
+    // moment the phone finished pairing.
+    return Promise.resolve(
+      res(
+        200,
+        qrPaired
+          ? {
+              status: "paired",
+              device: { host: "192.168.3.24", port: 41234, instance: "adb-X" },
+            }
+          : { id: "s1", status: "waiting", seconds_left: 120, candidates: [] },
+      ),
+    );
   }
   if (u.includes("/api/android/pair")) {
     return Promise.resolve(res(200, { paired: true, connect_port: 41234 }));
@@ -197,5 +225,27 @@ describe("AndroidPage", () => {
     renderPage({ onBack });
     fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pairing by QR ends with the phone in the list", () => {
+  it("registers the phone itself, with no second click", async () => {
+    // What the operator asked for after using it: "when I scan the code, the device
+    // should be added". The first version only filled the form and waited for a click
+    // on Add phone, which reads as "it did not work".
+    qrPaired = false;
+    posted.length = 0;
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /إضافة هاتف|add phone/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
+    await screen.findByRole("img", { name: /pairing code/i });
+
+    qrPaired = true;  // the phone finished pairing
+    await waitFor(
+      () => expect(posted.some((p) => p.url.endsWith("/api/android/devices"))).toBe(true),
+      { timeout: 5000 },
+    );
+    const add = posted.find((p) => p.url.endsWith("/api/android/devices"))!;
+    expect(JSON.parse(add.body)).toEqual({ host: "192.168.3.24", port: 41234 });
   });
 });

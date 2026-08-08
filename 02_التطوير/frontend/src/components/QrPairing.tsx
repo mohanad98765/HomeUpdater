@@ -175,6 +175,16 @@ export function QrPairing({
 
       {(status === "waiting" || status === "pairing") && (
         <>
+          {/* Above the steps, not inside them. In real use the code rendered, a phone
+              was pointed at it, and five sessions expired unused — because the payload
+              begins with the literal "WIFI:" prefix, so a camera app reads it as a
+              Wi-Fi join code and never reaches adb. Exactly one screen understands
+              T:ADB, and that is the whole difference between working and not. */}
+          <div className="rounded-md border border-warning/50 bg-warning/10 p-2 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+            <p className="text-xs text-fg">{t("android.qr.cameraWarning")}</p>
+          </div>
+
           <ol className="text-xs text-fg-muted space-y-1 list-decimal ms-4">
             <li>{t("android.qr.step1")}</li>
             <li>{t("android.qr.step2")}</li>

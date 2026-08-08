@@ -122,7 +122,25 @@ describe("while the code is up", () => {
   it("tells the user to turn Wireless debugging on themselves", async () => {
     await start();
     expect(screen.getByText(/Wireless debugging, and turn it on/i)).toBeTruthy();
-    expect(screen.getByText(/Pair device with QR code/i)).toBeTruthy();
+    // Named in both the warning and the step, deliberately — see the next test.
+    expect(screen.getAllByText(/Pair device with QR code/i).length).toBeGreaterThan(0);
+  });
+
+  it("warns that the camera app cannot work, before the steps", async () => {
+    // The payload begins with the literal "WIFI:" prefix, so a camera app or any QR
+    // reader treats it as a Wi-Fi join code and never reaches adb. Five real sessions
+    // expired unused for exactly this reason, with the code rendering perfectly. This
+    // one sentence is the difference between the feature working and not, so it is
+    // asserted to be present, prominent, and ahead of the numbered steps.
+    await start();
+    const warning = screen.getByText(/will not work/i);
+    expect(warning).toBeTruthy();
+    expect(warning.textContent).toMatch(/camera app|QR reader/i);
+
+    const steps = screen.getByRole("list");
+    expect(
+      warning.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("says plainly that it does not enable Developer options for you", async () => {

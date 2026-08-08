@@ -537,6 +537,9 @@ const resources = {
       },
       android: {
         qr: {
+          cameraWarning: "لا تستعمل تطبيق الكاميرا ولا أي قارئ QR — لن يعمل. هذا الرمز يفهمه مكانٌ واحد فقط في الهاتف: شاشة «إقران جهاز برمز QR» داخل «تصحيح الأخطاء اللاسلكي».",
+          adding: "يُضاف الجهاز…",
+          addFailed: "تمّ الإقران لكن تعذّرت إضافة الجهاز:",
           enlarge: "كبِّر الرمز",
           closeEnlarged: "اضغط في أي مكان للإغلاق",
           imageFailed: "تعذّر رسم الرمز:",
@@ -545,7 +548,7 @@ const resources = {
           startBtn: "اعرض رمز الإقران",
           startFailed: "تعذّر بدء الإقران:",
           step1: "على الهاتف: الإعدادات ← خيارات المطوّر ← تصحيح الأخطاء اللاسلكي (Wireless debugging) وشغّله.",
-          step2: "من داخله اضغط «إقران جهاز برمز QR».",
+          step2: "من داخل «تصحيح الأخطاء اللاسلكي» اضغط «إقران جهاز برمز QR» — وستُفتح كاميرا خاصّة بهذه الشاشة.",
           step3: "وجّه كاميرا الهاتف إلى هذا الرمز.",
           imageAlt: "رمز إقران الهاتف",
           expiresIn: "ينتهي الرمز خلال {{clock}}",
@@ -1314,6 +1317,9 @@ const resources = {
       },
       android: {
         qr: {
+          cameraWarning: "Do not use the camera app or any QR reader — it will not work. Exactly one place on the phone understands this code: the “Pair device with QR code” screen inside Wireless debugging.",
+          adding: "Adding the phone…",
+          addFailed: "Paired, but the phone could not be added:",
           enlarge: "Enlarge the code",
           closeEnlarged: "click anywhere to close",
           imageFailed: "Could not render the code:",
@@ -1322,7 +1328,7 @@ const resources = {
           startBtn: "Show the pairing code",
           startFailed: "Could not start pairing:",
           step1: "On the phone: Settings > Developer options > Wireless debugging, and turn it on.",
-          step2: "Inside it, tap “Pair device with QR code”.",
+          step2: "Inside Wireless debugging, tap “Pair device with QR code” — that screen opens its own scanner.",
           step3: "Point the phone's camera at this code.",
           imageAlt: "Phone pairing code",
           expiresIn: "The code expires in {{clock}}",
@@ -2034,6 +2040,9 @@ const resources = {
       },
       android: {
         qr: {
+          cameraWarning: "N'utilisez pas l'application appareil photo ni un lecteur de QR — cela ne marchera pas. Un seul endroit du téléphone comprend ce code : l'écran « Associer l'appareil à l'aide d'un QR code » dans le débogage sans fil.",
+          adding: "Ajout du téléphone…",
+          addFailed: "Appairé, mais le téléphone n'a pas pu être ajouté :",
           enlarge: "Agrandir le code",
           closeEnlarged: "cliquez n'importe où pour fermer",
           imageFailed: "Impossible d'afficher le code :",
@@ -2042,7 +2051,7 @@ const resources = {
           startBtn: "Afficher le code d'appairage",
           startFailed: "Impossible de démarrer l'appairage :",
           step1: "Sur le téléphone : Paramètres > Options pour les développeurs > Débogage sans fil, puis activez-le.",
-          step2: "À l'intérieur, touchez « Associer l'appareil à l'aide d'un QR code ».",
+          step2: "Dans le débogage sans fil, touchez « Associer l'appareil à l'aide d'un QR code » — cet écran ouvre son propre scanner.",
           step3: "Dirigez la caméra du téléphone vers ce code.",
           imageAlt: "Code d'appairage du téléphone",
           expiresIn: "Le code expire dans {{clock}}",
@@ -2783,6 +2792,9 @@ const resources = {
       },
       android: {
         qr: {
+          cameraWarning: "No use la aplicación de cámara ni ningún lector de QR: no funcionará. Solo un lugar del teléfono entiende este código: la pantalla “Emparejar dispositivo mediante código QR” dentro de Depuración inalámbrica.",
+          adding: "Añadiendo el teléfono…",
+          addFailed: "Emparejado, pero no se pudo añadir el teléfono:",
           enlarge: "Ampliar el código",
           closeEnlarged: "haga clic en cualquier lugar para cerrar",
           imageFailed: "No se pudo mostrar el código:",
@@ -2791,7 +2803,7 @@ const resources = {
           startBtn: "Mostrar el código de emparejamiento",
           startFailed: "No se pudo iniciar el emparejamiento:",
           step1: "En el teléfono: Ajustes > Opciones de desarrollador > Depuración inalámbrica, y actívela.",
-          step2: "Dentro, toque “Emparejar dispositivo mediante código QR”.",
+          step2: "Dentro de Depuración inalámbrica, toque “Emparejar dispositivo mediante código QR”: esa pantalla abre su propio escáner.",
           step3: "Apunte la cámara del teléfono a este código.",
           imageAlt: "Código de emparejamiento del teléfono",
           expiresIn: "El código caduca en {{clock}}",
@@ -3560,6 +3572,9 @@ const resources = {
       },
       android: {
         qr: {
+          cameraWarning: "Kamera uygulamasini veya herhangi bir QR okuyucuyu kullanmayin — işe yaramaz. Bu kodu telefonda yalnizca tek bir yer anlar: Kablosuz hata ayiklama içindeki “Cihazi QR kodu ile eşleştir” ekrani.",
+          adding: "Telefon ekleniyor…",
+          addFailed: "Eşleştirildi, ancak telefon eklenemedi:",
           enlarge: "Kodu büyüt",
           closeEnlarged: "kapatmak için herhangi bir yere tiklayin",
           imageFailed: "Kod görüntülenemedi:",
@@ -3568,7 +3583,7 @@ const resources = {
           startBtn: "Eşleştirme kodunu göster",
           startFailed: "Eşleştirme başlatilamadi:",
           step1: "Telefonda: Ayarlar > Geliştirici seçenekleri > Kablosuz hata ayiklama, ve açin.",
-          step2: "Içinden “Cihazi QR kodu ile eşleştir”’e dokunun.",
+          step2: "Kablosuz hata ayiklama içinde “Cihazi QR kodu ile eşleştir”’e dokunun — o ekran kendi tarayicisini açar.",
           step3: "Telefonun kamerasini bu koda tutun.",
           imageAlt: "Telefon eşleştirme kodu",
           expiresIn: "Kodun süresi {{clock}} içinde doluyor",
@@ -4337,6 +4352,9 @@ const resources = {
       },
       android: {
         qr: {
+          cameraWarning: "کیمرا ایپ یا کوئی QR ریڈر استعمال نہ کریں — یہ کام نہیں کرے گا۔ اس کوڈ کو فون میں صرف ایک جگہ سمجھتی ہے: وائرلیس ڈی بگنگ کے اندر «Pair device with QR code» سکرین۔",
+          adding: "فون شامل کیا جا رہا ہے…",
+          addFailed: "جُڑ گیا، مگر فون شامل نہیں ہو سکا:",
           enlarge: "کوڈ بڑا کریں",
           closeEnlarged: "بند کرنے کے لیے کہیں بھی کلک کریں",
           imageFailed: "کوڈ نہیں دکھایا جا سکا:",
@@ -4345,7 +4363,7 @@ const resources = {
           startBtn: "جوڑنے کا کوڈ دکھائیں",
           startFailed: "جوڑنا شروع نہیں ہو سکا:",
           step1: "فون پر: سیٹنگز ← ڈیویلپر آپشنز ← وائرلیس ڈی بگنگ، اور اسے آن کریں۔",
-          step2: "اس کے اندر «Pair device with QR code» پر ٹیپ کریں۔",
+          step2: "وائرلیس ڈی بگنگ کے اندر «Pair device with QR code» پر ٹیپ کریں — وہ سکرین اپنا سکینر کھولتی ہے۔",
           step3: "فون کا کیمرا اس کوڈ کی طرف کریں۔",
           imageAlt: "فون جوڑنے کا کوڈ",
           expiresIn: "کوڈ {{clock}} میں ختم ہو گا",

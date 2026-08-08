@@ -342,6 +342,18 @@ function AddDeviceDialog({
     },
   });
 
+  /** Registers the phone the QR flow just paired, with no further clicks. Separate
+   *  from `add` so a failure here reports against the QR panel rather than the manual
+   *  form the operator never touched. */
+  const addPaired = useMutation<AndroidDevice, Error, { host: string; port: number }>({
+    mutationFn: (v) =>
+      apiFetch<AndroidDevice>("/api/android/devices", {
+        method: "POST",
+        body: JSON.stringify({ host: v.host, port: v.port }),
+      }),
+    onSuccess: () => onAdded(),
+  });
+
   const add = useMutation<AndroidDevice, Error>({
     mutationFn: () =>
       apiFetch<AndroidDevice>("/api/android/devices", {
@@ -379,10 +391,26 @@ function AddDeviceDialog({
 
           <QrPairing
             onPaired={(pairedHost, connectPort) => {
+              // Add the phone outright. Filling the fields and waiting for a second
+              // click was the wrong ending for this flow: someone who scanned a code
+              // has already said which phone they mean, and a form left half-filled
+              // reads as "it did not work" — which is exactly what happened in use.
               setHost(pairedHost);
               if (connectPort) setPort(connectPort);
+              addPaired.mutate({ host: pairedHost, port: connectPort ?? 5555 });
             }}
           />
+          {addPaired.isPending && (
+            <p className="text-xs text-fg-muted mb-2 inline-flex items-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              {t("android.qr.adding")}
+            </p>
+          )}
+          {addPaired.isError && (
+            <p className="text-xs text-danger mb-2">
+              {t("android.qr.addFailed")} {(addPaired.error as Error).message}
+            </p>
+          )}
 
           <p className="text-[11px] text-fg-subtle mb-2">{t("android.qr.orManual")}</p>
 
