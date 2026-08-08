@@ -20,6 +20,7 @@ import {
 import { apiFetch } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
 import { QrPairing } from "@/components/QrPairing";
+import { CodePairing } from "@/components/CodePairing";
 
 // ================================================================
 // Types
@@ -388,6 +389,8 @@ function AddDeviceDialog({
             <div>{t("android.addDialog.wirelessHint")}</div>
             <div>{t("android.addDialog.usbHint")}</div>
           </div>
+
+          <CodePairing onAdded={onAdded} />
 
           <QrPairing
             onPaired={(pairedHost, connectPort) => {

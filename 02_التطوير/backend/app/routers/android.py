@@ -2,6 +2,8 @@
 Android router - manage phones connected via ADB over TCP/IP.
 
 Endpoints (mounted under /api/android):
+  GET    /pair/candidates               -> phones the app already found, to pick from
+  POST   /pair/auto                     -> pair with only a six-digit code (no mDNS)
   POST   /pair/qr                       -> start a QR pairing session
   GET    /pair/qr                       -> its status (polled while the dialog is open)
   GET    /pair/qr.svg                   -> the code itself, as an inline SVG
@@ -28,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..models.orm import AndroidDeviceORM
-from ..services import android_qr
+from ..services import android_autopair, android_qr
 from ..services.android import (
     AndroidError,
     discover_connect_port,
@@ -61,6 +63,100 @@ class DiscoverRequest(BaseModel):
 
 class UpdateDeviceRequest(BaseModel):
     custom_name: str | None = Field(default=None, max_length=255)
+
+
+# ==================================================================
+# Pairing with nothing but a six-digit code
+#
+# The QR and manual flows both need the hub to learn a random port the phone chose.
+# Android publishes it over mDNS, and on a network that does not carry multicast
+# between Wi-Fi and Ethernet — measured on the target network: zero mDNS packets from
+# the phone in 60s while ping answers in 40ms — the hub never hears it.
+#
+# Asking the operator to read the port off the phone, or to enable multicast forwarding
+# on their router, is asking a shop owner to become a network engineer in order to add a
+# phone. So the hub finds the port by looking instead of listening. See
+# services/android_autopair.py.
+# ==================================================================
+class AutoPairRequest(BaseModel):
+    host: str = Field(min_length=7, max_length=45)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+@router.get("/pair/candidates")
+async def pair_candidates(db: AsyncSession = Depends(get_db)) -> dict:
+    """Phones already seen by the network scan, so the operator picks one instead of
+    typing an address. Ordered by how likely each is to be the phone in their hand."""
+    from ..models.orm import DeviceORM
+
+    rows = (await db.execute(select(DeviceORM).where(DeviceORM.ip != ""))).scalars().all()
+    known = {d.host for d in (await db.execute(select(AndroidDeviceORM))).scalars().all()}
+
+    def rank(d) -> tuple:
+        # A device the scan already called a phone first, then anything else; already
+        # registered phones last, since they do not need pairing again.
+        return (d.ip in known, d.device_type != "phone", d.ip)
+
+    candidates = [
+        {
+            "ip": d.ip,
+            "name": d.custom_name or d.hostname or d.vendor or d.ip,
+            "vendor": d.vendor,
+            "device_type": d.device_type,
+            "already_added": d.ip in known,
+        }
+        for d in sorted(rows, key=rank)
+    ]
+    return {"candidates": candidates, "total": len(candidates)}
+
+
+@router.post("/pair/auto")
+async def auto_pair(payload: AutoPairRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    """Pair, connect, probe and register — the operator supplied only a code.
+
+    Slow by nature (a port scan plus a pairing handshake), so the client is expected to
+    wait rather than poll: there is nothing useful to report in between beyond "still
+    looking", and a half-finished pairing is not a state worth exposing.
+    """
+    try:
+        paired = await android_autopair.pair_with_code(payload.host, payload.code)
+        connect_port = await android_autopair.find_connect_port(
+            payload.host, exclude=paired["pairing_port"]
+        )
+        if connect_port is None:
+            raise AndroidError(
+                "تمّ الإقران لكن تعذّر إيجاد منفذ الاتّصال. أبقِ «تصحيح الأخطاء "
+                "اللاسلكي» مفعّلًا وأعد المحاولة."
+            )
+        info = await probe(payload.host, connect_port)
+    except AndroidError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    now = datetime.now(UTC)
+    row = (
+        await db.execute(
+            select(AndroidDeviceORM).where(
+                AndroidDeviceORM.host == payload.host,
+                AndroidDeviceORM.port == connect_port,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = AndroidDeviceORM(host=payload.host, port=connect_port, first_seen=now)
+        db.add(row)
+    row.serial = info.serial
+    row.manufacturer = info.manufacturer
+    row.model = info.model
+    row.brand = info.brand
+    row.android_version = info.android_version
+    row.sdk_version = info.sdk_version
+    row.security_patch = info.security_patch
+    row.is_online = True
+    row.last_seen = now
+    await db.commit()
+    await db.refresh(row)
+    logger.info(f"auto-paired and registered {payload.host}:{connect_port}")
+    return {"device": row.to_dict(), "pairing_port": paired["pairing_port"]}
 
 
 # ==================================================================
