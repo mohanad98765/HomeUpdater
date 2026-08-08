@@ -19,7 +19,7 @@ import argparse
 import base64
 import json
 import secrets
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
@@ -58,7 +58,11 @@ def issue(key_path: Path, licensee: str, tier: str, months: int, devices: int | 
     if tier not in TIER_DEVICE_LIMIT:
         raise SystemExit(f"unknown tier {tier!r}; pick one of {sorted(TIER_DEVICE_LIMIT)}")
     priv = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
-    expires = "" if months <= 0 else (date.today() + timedelta(days=30 * months)).isoformat()
+    # UTC, to match both `issued_at` below and the checker in services/licensing.py.
+    # Stamping a local date here made a key's real lifetime depend on the timezone it
+    # was issued from: in Riyadh a key "valid until the 31st" died at 03:00 on the 1st.
+    _today = datetime.now(UTC).date()
+    expires = "" if months <= 0 else (_today + timedelta(days=30 * months)).isoformat()
     payload = {
         "licensee": licensee,
         "tier": tier,

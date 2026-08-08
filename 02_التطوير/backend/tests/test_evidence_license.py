@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -37,7 +37,15 @@ def vendor(monkeypatch):
             "licensee": licensee,
             "tier": tier,
             "devices_max": licensing.TIER_DEVICE_LIMIT.get(tier, 0),
-            "expires": "" if days is None else (date.today() + timedelta(days=days)).isoformat(),
+            # UTC, because the checker compares against datetime.now(UTC).date(). Using
+            # the LOCAL date here made this suite fail for three hours every night in
+            # UTC+3 and never once in CI, which runs in UTC — a test that can only fail
+            # on a developer's machine.
+            "expires": (
+                ""
+                if days is None
+                else (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
+            ),
             "issued_at": datetime.now(UTC).date().isoformat(),
             "key_id": "abc123",
             **extra,
