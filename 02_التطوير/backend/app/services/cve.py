@@ -280,23 +280,61 @@ def matched_ranges(data: dict, product: str) -> list[dict]:
     return out
 
 
-async def fetch_by_cpe(cpe_name: str, results_per_page: int = 50) -> dict:
+# NVD's own maximum page size, and how many pages we are willing to walk. NVD orders
+# results by CVE id, NOT by severity, so reading one short page means ranking a product
+# by its OLDEST advisories. Measured on this product: Chrome 90 has 3,391 advisories and
+# the old 50-record fetch reported 2021 CVEs while the 2026 critical ones sat unseen at
+# index 3000. Two pages of 2,000 cover all but a handful of products in the registry.
+NVD_PAGE_SIZE = 2000
+NVD_MAX_PAGES = 3
+# NVD asks for ~6 seconds between requests from an unkeyed caller. Only paid on the
+# SECOND page onward, so the common single-page product is not slowed at all.
+NVD_PAGE_PAUSE_SECONDS = 6.0
+
+
+async def fetch_by_cpe(
+    cpe_name: str,
+    results_per_page: int = NVD_PAGE_SIZE,
+    max_pages: int = NVD_MAX_PAGES,
+) -> dict:
     """Ask NVD which CVEs apply to ONE exact CPE (product + version).
 
     This is the precise path: NVD evaluates the version against each advisory's
     configuration ranges server-side, so the answer is "is THIS version affected",
     not "has this vendor ever had a CVE".
+
+    Returns the merged pages plus ``examined`` — how many records were actually read.
+    When ``examined < totalResults`` the caller MUST say so rather than present the
+    ranking as if it had seen everything; a report that silently covers part of the
+    answer is the failure this pack exists to avoid.
     """
-    params = {"cpeName": cpe_name, "resultsPerPage": results_per_page}
     timeout = httpx.Timeout(connect=10.0, read=25.0, write=10.0, pool=10.0)
+    merged: list[dict] = []
+    total = 0
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(NVD_URL, params=params, headers=_nvd_headers())
-    if resp.status_code in (429, 403):
-        raise CVERateLimited(_retry_after_seconds(resp))
-    if resp.status_code == 404:  # unknown CPE — treat as "no data", not an error
-        return {"vulnerabilities": [], "totalResults": 0}
-    resp.raise_for_status()
-    return resp.json()
+        for page in range(max_pages):
+            if page:
+                await asyncio.sleep(NVD_PAGE_PAUSE_SECONDS)
+            params = {
+                "cpeName": cpe_name,
+                "resultsPerPage": results_per_page,
+                "startIndex": len(merged),
+            }
+            resp = await client.get(NVD_URL, params=params, headers=_nvd_headers())
+            if resp.status_code in (429, 403):
+                if merged:  # keep what we already have rather than losing the page
+                    break
+                raise CVERateLimited(_retry_after_seconds(resp))
+            if resp.status_code == 404:  # unknown CPE — "no data", not an error
+                return {"vulnerabilities": [], "totalResults": 0, "examined": 0}
+            resp.raise_for_status()
+            data = resp.json()
+            total = int(data.get("totalResults", 0) or 0)
+            got = data.get("vulnerabilities", []) or []
+            merged.extend(got)
+            if not got or len(merged) >= total:
+                break
+    return {"vulnerabilities": merged, "totalResults": total, "examined": len(merged)}
 
 
 async def _fetch_nvd(keyword: str, results_per_page: int = 100) -> dict:
@@ -419,6 +457,7 @@ async def lookup_by_cpe(
         raise CVEError(f"NVD unreachable: {exc}") from exc
 
     cves = parse_cves(data, limit)
+    examined = int(data.get("examined", len(data.get("vulnerabilities", []) or [])))
     ranges = {r["id"]: r for r in matched_ranges(data, identity.product)}
     for c in cves:  # attach the range that made each CVE apply
         c["applies_because"] = ranges.get(c["id"])
@@ -429,6 +468,7 @@ async def lookup_by_cpe(
             row = CVECacheORM(keyword=key)
             db.add(row)
         row.total_results = total
+        row.examined = examined
         row.data = json.dumps(cves, ensure_ascii=False)
         row.fetched_at = now
         await db.commit()
@@ -439,6 +479,7 @@ async def lookup_by_cpe(
         "cpe_name": key,
         "match": "cpe",
         "total_results": total,
+        "examined": examined,
         "cves": cves,
         "fetched_at": now.isoformat(),
         "cached": False,

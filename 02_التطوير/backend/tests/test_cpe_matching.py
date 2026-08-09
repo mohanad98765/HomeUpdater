@@ -506,7 +506,9 @@ def test_fetch_by_cpe_treats_unknown_cpe_404_as_no_data(monkeypatch):
 
     monkeypatch.setattr(cve.httpx, "AsyncClient", lambda **kw: Client())
     data = asyncio.run(cve.fetch_by_cpe("cpe:2.3:a:nobody:nothing:1.0:*:*:*:*:*:*:*"))
-    assert data == {"vulnerabilities": [], "totalResults": 0}
+    # ``examined`` joined the contract when the fetch started paging: a caller has to
+    # be able to tell "NVD has nothing" from "we only read part of what NVD has".
+    assert data == {"vulnerabilities": [], "totalResults": 0, "examined": 0}
 
 
 # --- the endpoint -----------------------------------------------------------

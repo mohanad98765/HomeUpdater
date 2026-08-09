@@ -146,11 +146,26 @@ class AuditWriteError(RuntimeError):
 
 
 async def record_safe(db: AsyncSession, kind: str, **kw) -> None:
-    """Fire-and-forget append for call sites that must never fail because of the log."""
+    """Fire-and-forget append for call sites that must never fail because of the log.
+
+    The caller must have committed its OWN effect first. This used to be the only
+    commit in the agent path, so when the audit append failed the entire transaction
+    was discarded — silently, because the failure is swallowed here and the request
+    still returned 200. Measured consequence: replay protection disappeared, a
+    byte-identical signed request came back 200 instead of 401 because its nonce row
+    was rolled back with everything else.
+
+    On failure the session is rolled back so the request can keep using it; without
+    that, every later statement in the same request fails too.
+    """
     try:
         await record(db, kind, **kw)
     except Exception:  # noqa: BLE001
-        pass  # already logged in record()
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        # already logged in record()
 
 
 async def verify(db: AsyncSession) -> dict:

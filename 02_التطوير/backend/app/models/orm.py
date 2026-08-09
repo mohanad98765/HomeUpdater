@@ -412,6 +412,12 @@ class CVECacheORM(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     keyword: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     total_results: Mapped[int] = mapped_column(Integer, default=0)
+    # How many of those results we actually READ before ranking them. It used to be
+    # implicit and wrong: the fetch asked for 50 records and NVD paginates by CVE id,
+    # so a product with 3,391 advisories was ranked from its OLDEST 50 and the newest
+    # critical records were never seen. Storing the number is what lets the sold report
+    # say "examined N of M" instead of implying it examined everything.
+    examined: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     data: Mapped[str] = mapped_column(Text, default="[]")  # JSON: list of top CVEs
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -419,6 +425,7 @@ class CVECacheORM(Base):
         return {
             "keyword": self.keyword,
             "total_results": self.total_results,
+            "examined": self.examined,
             "cves": json.loads(self.data or "[]"),
             "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }

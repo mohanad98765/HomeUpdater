@@ -114,6 +114,12 @@ async def enrol(body: EnrolBody, request: Request, db: AsyncSession = Depends(ge
         )
         db.add(agent)
     await db.flush()
+    # Persist the request's own effect BEFORE the audit append. get_db() never
+    # commits, so this used to ride on audit.record's commit — and record_safe
+    # swallows every failure, so a failed audit write discarded the whole
+    # transaction while the request still returned 200. Measured: a byte-identical
+    # signed request replayed successfully because its nonce row went with it.
+    await db.commit()
     await audit.record_safe(
         db,
         "agent_enrol",
@@ -184,6 +190,7 @@ async def checkin(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     # The check-in itself is audited as a SUMMARY. Writing a full inventory into the
     # hash-chained log on every heartbeat would bloat a structure that verify() reads
     # end to end — the log records that a machine reported, not what it contains.
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_checkin",
@@ -231,6 +238,7 @@ async def result(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     command.status = "done" if payload.ok else "failed"
     command.completed_at = datetime.now(UTC)
     command.result = payload.summary[:2000]
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_command_result",
@@ -287,6 +295,7 @@ async def regenerate_certificate(body: RegenerateBody, db: AsyncSession = Depend
     if listener.running:
         listener.stop()
         listener.start()
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_tls_regenerated",
@@ -338,6 +347,7 @@ async def create_enrolment_token(
     except enrolment.EnrolmentError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_enrolment_token_minted",
@@ -384,6 +394,7 @@ async def set_listener(body: ListenerBody, db: AsyncSession = Depends(get_db)) -
             time.sleep(0.1)
     else:
         listener.stop()
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_listener_toggled",
@@ -495,6 +506,7 @@ async def confirm(agent_id: str, body: ConfirmBody, db: AsyncSession = Depends(g
     if given != agent.fingerprint[-8:]:
         tries.append(now)
         _CONFIRM_ATTEMPTS[agent_id] = tries
+        await db.commit()  # durable before the audit append — see above
         await audit.record_safe(
             db,
             "agent_confirm_refused",
@@ -508,6 +520,7 @@ async def confirm(agent_id: str, body: ConfirmBody, db: AsyncSession = Depends(g
 
     _CONFIRM_ATTEMPTS.pop(agent_id, None)
     agent.status = "active"
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_confirmed",
@@ -525,6 +538,7 @@ async def revoke(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     if agent is None:
         raise HTTPException(status_code=404, detail="unknown_agent")
     agent.status = "revoked"
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_revoked",
@@ -554,6 +568,7 @@ async def forget(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     await db.execute(delete(AgentNonceORM).where(AgentNonceORM.agent_id == agent_id))
     fingerprint, name = agent.fingerprint, agent.name
     await db.delete(agent)
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_forgotten",
@@ -592,6 +607,7 @@ async def queue_command(
     )
     db.add(command)
     await db.flush()
+    await db.commit()  # durable before the audit append — see above
     await audit.record_safe(
         db,
         "agent_command_issued",

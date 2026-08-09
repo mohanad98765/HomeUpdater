@@ -105,15 +105,39 @@ COPY = {
         "why the chain digest is printed here: keeping a copy off the machine makes a "
         "wholesale replacement detectable."
     ),
+    # Precision here is the product. The stamp is computed over the pack's canonical
+    # JSON body, and the earlier wording ("over this report's own content") was not true
+    # of the printed page it appeared on: a reader holding only the PDF could verify
+    # nothing, because the hash covers the JSON. Saying which file it covers costs one
+    # clause and makes the sentence checkable.
     "stamp_ar": (
-        "بصمة المحتوى أدناه محسوبة على محتوى هذا التقرير نفسه (SHA-256). هي ليست "
-        "توقيعًا رقميًّا: تُثبِت أن النسخة التي بين يديك مطابقة للنسخة الصادرة، ولا "
-        "تُثبِت هويّة جهة الإصدار."
+        "بصمة المحتوى أدناه محسوبة (SHA-256) على **ملفّ البيانات JSON** المرافق لهذه "
+        "الحزمة، لا على هذه الصفحة. للتحقّق: احسب بصمة ملفّ JSON وقارنها بالقيمة أدناه. "
+        "وهي ليست توقيعًا رقميًّا — تُثبِت تطابق النسخة، لا هويّة جهة الإصدار."
     ),
     "stamp_en": (
-        "The content stamp below is a SHA-256 over this report's own content. It is "
-        "not a digital signature: it shows the copy you hold matches the one issued, "
-        "but does not attest to the issuer's identity."
+        "The content stamp below is a SHA-256 over the accompanying JSON data file, not "
+        "over this page. To verify: hash the JSON file and compare it with the value "
+        "below. It is not a digital signature — it shows the copy matches the one "
+        "issued, not who issued it."
+    ),
+    "evidence_ar": (
+        "تاريخ فحص الثغرات أدناه هو تاريخ آخر استعلام من قاعدة NVD، وقد يسبق تاريخ "
+        "إصدار هذا التقرير. وحين لا تُفحص كلّ سجلّات NVD لمنتج ما يُذكر ذلك صراحةً."
+    ),
+    "evidence_en": (
+        "The vulnerability data below carries the date it was last fetched from NVD, "
+        "which may predate this report. Where not every NVD record for a product was "
+        "examined, that is stated explicitly."
+    ),
+    "never_checked_ar": (
+        "لم تُفحص الثغرات بعد على هذا الجهاز، فلا نتائج في هذه الحزمة. الجرد أدناه "
+        "صحيح؛ أمّا غياب النتائج فمعناه أن الفحص لم يجرِ، لا أن الجهاز سليم."
+    ),
+    "never_checked_en": (
+        "Vulnerabilities have not been checked on this machine yet, so this pack "
+        "contains no findings. The inventory below is real; the absence of findings "
+        "means the check has not run, NOT that the machine is clean."
     ),
 }
 
@@ -179,6 +203,8 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
                 "findings": bounded,
                 "broad_matches": [c["id"] for c in broad],
                 "checked_at": cached.get("fetched_at"),
+                "nvd_total": int(cached.get("total_results") or 0),
+                "nvd_examined": int(cached.get("examined") or 0),
             }
         )
 
@@ -198,8 +224,32 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
     chain = await audit.verify(db)
     head = await audit.digest(db)
 
+    # What the vulnerability evidence IS, as opposed to what it says. A pack built from
+    # a 400-day-old cache used to print byte-identically to a fresh one, with today's
+    # date on the cover — so an auditor had no way to know. And a product whose answer
+    # was ranked from part of NVD's reply looked exactly like one ranked from all of it.
+    checked_dates = [m["checked_at"] for m in matched if m.get("checked_at")]
+    capped = [
+        {"name": m["name"], "examined": m["nvd_examined"], "total": m["nvd_total"]}
+        for m in matched
+        if m["nvd_total"] and m["nvd_examined"] and m["nvd_examined"] < m["nvd_total"]
+    ]
+    evidence_state = {
+        "products_checked": len(matched),
+        "products_not_checked": sum(1 for u in unmatched if u["reason"] == "not_yet_checked"),
+        "oldest_checked_at": min(checked_dates) if checked_dates else None,
+        "newest_checked_at": max(checked_dates) if checked_dates else None,
+        "nvd_records_examined": sum(m["nvd_examined"] for m in matched),
+        "nvd_records_total": sum(m["nvd_total"] for m in matched),
+        "capped_products": capped,
+        # The case the old pack could not express at all: nothing has ever been checked,
+        # yet the coverage percentage above happily implied it had.
+        "never_checked": not matched,
+    }
+
     body = {
         "generated_at": now.isoformat(),
+        "evidence_state": evidence_state,
         "app_version": __version__,
         "licensee": licensee,
         "scope": {"machines": 1, "note": "the machine running HomeUpdater"},
@@ -250,6 +300,8 @@ _PRINT_CSS = """
   .limits { border: 1px solid var(--warn); padding: 10px 14px; font-size: 12px; }
   .broken { color: var(--bad); font-weight: 700; }
   .stamp { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
+  .warn-box { border: 1px solid var(--warn); background: #fff8e6; padding: 10px 12px;
+              margin: 10px 0; border-radius: 4px; }
   .toolbar { margin-bottom: 16px; }
   button { font: inherit; padding: 6px 14px; cursor: pointer; }
   @media print { .toolbar { display: none; } body { max-width: none; padding: 0; }
@@ -280,6 +332,48 @@ def _range_text(applies: dict | None) -> str:
     return " · ".join(parts)
 
 
+def _date_only(iso: str | None) -> str:
+    return (iso or "")[:10]
+
+
+def _never_checked_block(ev: dict, c: dict) -> str:
+    """Zero findings because nothing was checked is not the same as zero findings.
+
+    On a fresh install the pack used to print a coverage percentage above an empty
+    findings table, which reads as "we looked and your machine is clean". It is the one
+    sentence in the document that could cost someone real money.
+    """
+    if not ev.get("never_checked"):
+        return ""
+    return (
+        '<div class="warn-box">'
+        f"<p><strong>{_esc(c.get('never_checked_ar', ''))}</strong></p>"
+        f"<p><strong>{_esc(c.get('never_checked_en', ''))}</strong></p>"
+        "</div>"
+    )
+
+
+def _capped_block(ev: dict) -> str:
+    """Name every product whose ranking was drawn from part of NVD's answer."""
+    capped = ev.get("capped_products") or []
+    if not capped:
+        return ""
+    rows = "".join(
+        "<tr>"
+        f"<td>{_esc(x.get('name'))}</td>"
+        f"<td>{_esc(x.get('examined'))} / {_esc(x.get('total'))}</td>"
+        "</tr>"
+        for x in capped
+    )
+    return (
+        '<div class="warn-box"><p><strong>لم تُقرأ كلّ سجلّات NVD لهذه المنتجات، '
+        "فترتيب النتائج مبنيّ على ما قُرئ منها — Not every NVD record was examined for "
+        "these products, so their ranking is drawn from the records read:</strong></p>"
+        "<table><tr><th>المنتج — Product</th><th>قُرئ / الكلّ — Examined / total</th></tr>"
+        f"{rows}</table></div>"
+    )
+
+
 def to_html(pack: dict) -> str:
     """A print-ready document of the pack — Arabic + English, one self-contained file.
 
@@ -292,6 +386,7 @@ def to_html(pack: dict) -> str:
     stamp = pack.get("content_sha256", "")
     c = body.get("copy", COPY)
     cov = body.get("coverage", {})
+    ev = body.get("evidence_state", {})
     audit_info = body.get("audit", {})
     by_reason = cov.get("by_reason", {})
 
@@ -383,6 +478,26 @@ def to_html(pack: dict) -> str:
       <span>{_esc(by_reason.get('not_investigated'))}</span></div>
 </div>
 
+<h2>حالة دليل الثغرات — Vulnerability evidence</h2>
+{_never_checked_block(ev, c)}
+<p class="note">{_esc(c.get('evidence_ar', ''))}</p>
+<p class="note">{_esc(c.get('evidence_en', ''))}</p>
+<table>
+  <tr><th>الحقل — Field</th><th>القيمة — Value</th></tr>
+  <tr><td>آخر فحص من NVD — Last fetched from NVD</td>
+      <td>{_esc(_date_only(ev.get('newest_checked_at')) or '—')}</td></tr>
+  <tr><td>أقدم سجلّ مستخدَم — Oldest record used</td>
+      <td>{_esc(_date_only(ev.get('oldest_checked_at')) or '—')}</td></tr>
+  <tr><td>منتجات فُحصت — Products checked</td>
+      <td>{_esc(ev.get('products_checked', 0))}</td></tr>
+  <tr><td>منتجات لم تُفحص بعد — Products not checked yet</td>
+      <td>{_esc(ev.get('products_not_checked', 0))}</td></tr>
+  <tr><td>سجلّات NVD قُرئت — NVD records examined</td>
+      <td>{_esc(ev.get('nvd_records_examined', 0))} /
+          {_esc(ev.get('nvd_records_total', 0))}</td></tr>
+</table>
+{_capped_block(ev)}
+
 <h2>الثغرات المنطبقة على الإصدارات المثبَّتة — Findings ({_esc(body.get('findings_total'))})</h2>
 <table><thead><tr><th>المنتج</th><th>الإصدار</th><th>CPE</th><th>الثغرة</th>
 <th>الخطورة</th><th>الدرجة</th><th>تنطبق لأنها</th></tr></thead>
@@ -418,10 +533,49 @@ def to_html(pack: dict) -> str:
 """
 
 
+# Excel, LibreOffice and Sheets treat a leading =, +, -, @ (or tab/CR) as the start of a
+# formula. Product names here come from the Windows registry — the inventory code calls
+# them attacker-influenced in its own docstring — and this file is served with a UTF-8
+# BOM precisely so Excel opens it on double-click. A package named =cmd|'/c calc'!A1
+# would therefore run on the auditor's machine.
+_FORMULA_LEAD = ("=", "+", "-", "@", chr(9), chr(13))
+
+
+def _safe_cell(value) -> str:
+    """Neutralize a spreadsheet formula without changing what the cell says.
+
+    A leading apostrophe is the standard mitigation: the spreadsheet treats the cell as
+    text and does not display the apostrophe, so the auditor still reads the real name.
+    """
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(_FORMULA_LEAD) else text
+
+
 def to_csv(pack: dict) -> str:
-    """The findings table as CSV — what a reviewer actually pastes into a workbook."""
+    """The findings table as CSV — what a reviewer actually pastes into a workbook.
+
+    Carries the same identifying header as the printed document. Without it the file was
+    an anonymous table: no licensee, no date, no stamp, nothing tying it to the pack it
+    came from — which is not much use as evidence.
+    """
+    body = pack["pack"]
+    ev = body.get("evidence_state", {})
     out = io.StringIO()
-    w = csv.writer(out, lineterminator="\n")
+    w = csv.writer(out, lineterminator=chr(10))
+    w.writerow(["# HomeUpdater evidence pack"])
+    w.writerow(["# licensee", _safe_cell(body.get("licensee", ""))])
+    w.writerow(["# generated_at", body.get("generated_at", "")])
+    w.writerow(["# vulnerability_data_fetched", ev.get("newest_checked_at") or "never"])
+    w.writerow(
+        [
+            "# nvd_records_examined",
+            ev.get("nvd_records_examined", 0),
+            "of",
+            ev.get("nvd_records_total", 0),
+        ]
+    )
+    w.writerow(["# content_sha256_of_json", pack.get("content_sha256", "")])
+    w.writerow([])
     w.writerow(
         [
             "product_id",
@@ -435,15 +589,14 @@ def to_csv(pack: dict) -> str:
             "status",
         ]
     )
-    body = pack["pack"]
     for m in body["matched"]:
         if not m["findings"]:
             w.writerow(
                 [
-                    m["product_id"],
-                    m["name"],
-                    m["version"],
-                    m["cpe_name"],
+                    _safe_cell(m["product_id"]),
+                    _safe_cell(m["name"]),
+                    _safe_cell(m["version"]),
+                    _safe_cell(m["cpe_name"]),
                     "",
                     "",
                     "",
@@ -458,19 +611,33 @@ def to_csv(pack: dict) -> str:
             )
             w.writerow(
                 [
-                    m["product_id"],
-                    m["name"],
-                    m["version"],
-                    m["cpe_name"],
+                    _safe_cell(m["product_id"]),
+                    _safe_cell(m["name"]),
+                    _safe_cell(m["version"]),
+                    _safe_cell(m["cpe_name"]),
                     c["id"],
                     c.get("severity", ""),
                     c.get("score", ""),
-                    bounds,
+                    _safe_cell(bounds),
                     "applies",
                 ]
             )
     for u in body["unmatched"]:
+        # The name column was blank here, so an auditor got the raw registry key
+        # (MSIX\Microsoft.WindowsCalculator_11.2605…) instead of "Calculator" — the
+        # exact failure this module's own docstring says must not happen. The HTML had
+        # it right all along; only the CSV dropped it.
         w.writerow(
-            [u["product_id"], "", u["version"], "", "", "", "", u.get("detail", ""), u["reason"]]
+            [
+                _safe_cell(u["product_id"]),
+                _safe_cell(u.get("name", "")),
+                _safe_cell(u["version"]),
+                "",
+                "",
+                "",
+                "",
+                _safe_cell(u.get("detail", "")),
+                u["reason"],
+            ]
         )
     return out.getvalue()
