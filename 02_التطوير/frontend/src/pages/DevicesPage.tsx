@@ -73,6 +73,8 @@ interface ProgressState {
   devices_count: number;
   elapsed_seconds: number;
   last_message: string;
+  // What the scan actually covered. Empty when it covered everything asked for.
+  coverage: string;
   error: string | null;
   log: ProgressEvent[];
 }
@@ -128,8 +130,11 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
   const progress = useQuery<ProgressState>({
     queryKey: ["scan-status"],
     queryFn: () => apiFetch<ProgressState>("/api/devices/scan/status"),
-    enabled: scanning,
-    refetchInterval: 1000,
+    // Fetched once on mount, then polled only while a scan is in flight. Reading it
+    // on mount is what lets the coverage notice survive reopening the page: the scan
+    // that covered a fraction of the network was days ago, and the device list on its
+    // own gives no hint of that.
+    refetchInterval: scanning ? 1000 : false,
   });
 
   // When the background scan reaches a terminal phase, stop polling and (on
@@ -218,6 +223,25 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
       {/* Live activity log (only while scanning) */}
       {(isScanning || progress.data?.is_running) && (
         <ActivityLog progress={progress.data} subnet={scanSubnet} />
+      )}
+
+      {/* Coverage — a scan that swept 254 of 2046 addresses and a network that really
+          has 254 devices produce the identical screen. This is the only thing that
+          tells them apart, so it sits above the result and stays there. */}
+      {progress.data?.coverage && (
+        <div className="mb-4 p-4 rounded-lg border border-warning/40 bg-warning/10 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-warning" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <p className="font-bold text-warning">{t("devices.coverageTitle")}</p>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/20 text-warning">
+                {t("devices.coverageBadge")}
+              </span>
+            </div>
+            <p className="text-sm text-fg">{progress.data.coverage}</p>
+            <p className="text-xs text-fg-muted mt-1">{t("devices.coverageHint")}</p>
+          </div>
+        </div>
       )}
 
       {/* Scan result summary (after a completed background scan) */}

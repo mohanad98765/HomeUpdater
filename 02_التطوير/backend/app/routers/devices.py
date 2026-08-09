@@ -179,6 +179,32 @@ def _same_identity(hostname_a: str, vendor_a: str, hostname_b: str, vendor_b: st
     return True
 
 
+def _shared_mac_owners(devices: list[dict], gateway_ip: str | None) -> dict[str, str]:
+    """Decide which single address owns a MAC that several addresses answered with.
+
+    A router answers ARP on behalf of everything it routes to — that is what a router
+    does — so on any network with more than one segment every off-link device carries
+    the gateway's MAC. Identity keyed on MAC then collapsed all of them into ONE row:
+    ten real devices, one entry in the list, and the operator reasonably reports that
+    the app "does not see" his devices.
+
+    The MAC is credited to the gateway (or the lowest address when the gateway is not
+    among them) and every other address behind it is stored on its own, MAC-less row —
+    which the schema already supports, and which is honest: we genuinely do not know
+    those devices' hardware addresses, because ARP never told us.
+    """
+    by_mac: dict[str, list[str]] = {}
+    for raw in devices:
+        if raw.get("mac"):
+            by_mac.setdefault(raw["mac"], []).append(raw["ip"])
+    owners: dict[str, str] = {}
+    for mac, ips in by_mac.items():
+        if len(ips) < 2:
+            continue
+        owners[mac] = gateway_ip if gateway_ip in ips else sorted(ips, key=_ip_sort_key)[0]
+    return owners
+
+
 def _apply_scan_fields(d: DeviceORM, raw: dict, now: datetime) -> None:
     d.last_seen = now
     d.is_online = True
@@ -212,8 +238,13 @@ async def _persist_scan(db: AsyncSession, result: dict, now: datetime) -> int:
     created_by_ip: dict[str, DeviceORM] = {}
     new_count = 0
 
+    info = get_network_info()
+    owners = _shared_mac_owners(result["devices"], info.gateway_ip if info else None)
+
     for raw in result["devices"]:
         mac = raw["mac"] or None
+        if mac and owners.get(mac, raw["ip"]) != raw["ip"]:
+            mac = None  # reached THROUGH the device that owns this MAC, not it
         macless_at_ip = by_ip_macless.get(raw["ip"])
         macless_free = macless_at_ip is not None and id(macless_at_ip) not in matched
 

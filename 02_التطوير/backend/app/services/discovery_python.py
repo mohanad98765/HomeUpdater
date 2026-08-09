@@ -82,25 +82,62 @@ def restore_estimators(data: dict) -> None:
 _RDNS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="rdns")
 
 
+class ScanTargetError(RuntimeError):
+    """The target cannot be scanned at all — say so instead of sweeping nothing."""
+
+
 def _hosts_to_sweep(target: str) -> tuple[list[str], str]:
     """Host list for the sweep, capped so a /16 or /8 doesn't mean millions of
     probes. The size is checked BEFORE materializing the list, otherwise a /8
-    would build ~16M strings."""
+    would build ~16M strings.
+
+    Two rules this function used to break, both measured:
+
+    * **The window stays INSIDE the requested network.** It used to re-derive a /24
+      around the machine's own IP, so asking for 10.20.0.0/16 from a 192.168.3.x
+      machine swept 192.168.3.0/24 — zero of the requested addresses — and reported
+      success. Widening the range by hand was therefore a no-op, which is exactly the
+      first thing anyone tries when devices are missing.
+    * **The cap is stated, not hidden.** Returning a note is not enough on its own;
+      the caller publishes it as scan coverage so it stays on screen.
+    """
     net = ipaddress.IPv4Network(target, strict=False)
-    if net.num_addresses - 2 <= MAX_SWEEP_HOSTS:
+    if net.prefixlen >= 31:
+        # A /32 or /31 is a tunnel address, not a network. The old code sailed past
+        # the size check (num_addresses - 2 is negative), swept the single address —
+        # the machine itself — and reported a successful scan with no warning at all.
+        raise ScanTargetError(
+            f"العنوان {net} نفق (VPN) لا شبكة محليّة، فلا توجد أجهزة حوله لتُفحص. "
+            "افصل الاتّصال المؤمَّن ثمّ أعد الفحص، أو اكتب نطاق شبكتك يدويًّا."
+        )
+
+    total = net.num_addresses - 2
+    if total <= MAX_SWEEP_HOSTS:
         return [str(h) for h in net.hosts()], ""
 
+    # Too wide to sweep in one pass. Narrow AROUND the machine when it sits inside the
+    # requested network, otherwise around the start of what was asked for — but never
+    # to some other network.
+    anchor = ""
     info = get_network_info()
     if info and info.local_ip:
-        small = ipaddress.IPv4Network(f"{info.local_ip}/24", strict=False)
-        return [str(h) for h in small.hosts()], f"شبكة كبيرة — قصر المسح على {small}"
+        try:
+            if ipaddress.IPv4Address(info.local_ip) in net:
+                anchor = info.local_ip
+        except ValueError:
+            anchor = ""
+    if not anchor:
+        anchor = str(next(net.hosts()))
 
-    capped: list[str] = []
-    for host in net.hosts():
-        capped.append(str(host))
-        if len(capped) >= MAX_SWEEP_HOSTS:
-            break
-    return capped, f"شبكة كبيرة — قصر المسح على أول {MAX_SWEEP_HOSTS} عنوان"
+    window = ipaddress.IPv4Network(f"{anchor}/24", strict=False)
+    hosts = [str(h) for h in window.hosts() if h in net]
+    skipped = total - len(hosts)
+    note = (
+        f"الشبكة أوسع ممّا يُفحص دفعةً واحدة: فُحص {window} أي {len(hosts)} عنوانًا "
+        f"من أصل {total}، ولم يُفحص {skipped} عنوانًا. "
+        "الأجهزة خارج هذا النطاق لن تظهر — اكتب نطاقًا آخر لفحصه."
+    )
+    return hosts, note
 
 
 def _probe_deadline(est: AdaptiveNetworkTimeout, second_pass: bool) -> float:
@@ -114,7 +151,14 @@ def _probe_deadline(est: AdaptiveNetworkTimeout, second_pass: bool) -> float:
 
 async def _probe(
     ip: str, sem: asyncio.Semaphore, est: AdaptiveNetworkTimeout, second_pass: bool
-) -> None:
+) -> str | None:
+    """Probe one address. Returns the IP when the host PROVED it is alive.
+
+    A completed handshake, or a refusal, is a full round trip from something that
+    exists — stronger evidence than an ARP cache entry, which the OS may never keep.
+    This used to be thrown away and existence was decided by `arp -a` alone, so a live
+    host the cache had no row for simply did not exist as far as the app was concerned.
+    """
     async with sem:
         # Read lazily (after acquiring the sem) so later probes in a wave see the
         # learning from earlier ones.
@@ -130,28 +174,51 @@ async def _probe(
                 await writer.wait_closed()
             except Exception:
                 pass
+            return ip
         except ConnectionRefusedError:
             # RST is also a completed round-trip to a live host — a clean sample.
             est.on_sample(time.monotonic() - start)
+            return ip
         except Exception:
             # Timeout / unreachable: the SYN already populated the ARP cache, but
             # this is not a clean RTT sample (mostly just "no host at this IP").
             pass
+    return None
 
 
-async def _sweep(hosts: list[str], est: AdaptiveNetworkTimeout, second_pass: bool = False) -> None:
+async def _sweep(
+    hosts: list[str], est: AdaptiveNetworkTimeout, second_pass: bool = False
+) -> set[str]:
+    """Sweep and return the addresses that answered — proof of life independent of ARP."""
     sem = asyncio.Semaphore(PROBE_CONCURRENCY)
     tasks = [asyncio.create_task(_probe(h, sem, est, second_pass)) for h in hosts]
+    alive: set[str] = set()
     done = 0
     for fut in asyncio.as_completed(tasks):
-        await fut
+        answered = await fut
+        if answered:
+            alive.add(answered)
         done += 1
         if done % 64 == 0 or done == len(hosts):
             scan_progress.add("scanning", f"جسّ {done}/{len(hosts)} عنواناً")
+    return alive
 
 
-def parse_arp_table(output: str) -> dict[str, str]:
-    """Parse ``arp -a`` output into {ip: MAC}, skipping broadcast/multicast rows."""
+def parse_arp_table(output: str, network: str = "") -> dict[str, str]:
+    """Parse ``arp -a`` output into {ip: MAC}, skipping broadcast/multicast rows.
+
+    ``network`` is the subnet being scanned. Without it the broadcast test can only
+    guess, and the guess used to be ``ip.endswith(".255")`` — correct on a /24 and
+    wrong everywhere else: on a /23 it deletes one real host, on a /21 seven. Given
+    the network, the true broadcast address is a fact rather than a guess.
+    """
+    broadcast = None
+    if network:
+        try:
+            broadcast = ipaddress.IPv4Network(network, strict=False).broadcast_address
+        except ValueError:
+            broadcast = None
+
     table: dict[str, str] = {}
     for line in output.splitlines():
         parts = line.split()
@@ -159,7 +226,7 @@ def parse_arp_table(output: str) -> dict[str, str]:
             continue
         ip, raw_mac = parts[0], parts[1]
         try:
-            ipaddress.IPv4Address(ip)
+            addr = ipaddress.IPv4Address(ip)
         except ValueError:
             continue
         mac = normalize_mac(raw_mac)
@@ -167,13 +234,25 @@ def parse_arp_table(output: str) -> dict[str, str]:
             continue
         if mac.startswith(("01:00:5E", "33:33")):  # IPv4 / IPv6 multicast
             continue
-        if ip.endswith(".255") or ip.split(".")[0] in ("224", "239", "255"):
+        # is_multicast covers all of 224.0.0.0/4 and is_reserved all of 240.0.0.0/4 —
+        # the old first-octet list let 225.x through 238.x and every 240.x address
+        # past as if it were a device.
+        if (
+            addr.is_multicast
+            or addr.is_reserved
+            or addr == ipaddress.IPv4Address("255.255.255.255")
+        ):
             continue
+        if broadcast is not None:
+            if addr == broadcast:
+                continue
+        elif ip.endswith(".255"):
+            continue  # nothing better to go on: keep the /24-correct guess
         table[ip] = mac
     return table
 
 
-def _read_arp_table() -> dict[str, str]:
+def _read_arp_table(network: str = "") -> dict[str, str]:
     try:
         result = subprocess.run(
             ["arp", "-a"],
@@ -187,7 +266,7 @@ def _read_arp_table() -> dict[str, str]:
     except Exception as exc:
         logger.warning(f"arp -a failed: {exc}")
         return {}
-    return parse_arp_table(result.stdout)
+    return parse_arp_table(result.stdout, network)
 
 
 def _resolve(ip: str) -> str:
@@ -237,11 +316,13 @@ async def discover_python(target: str) -> list[dict[str, Any]]:
     """Discover live hosts on ``target`` without nmap. Updates scan_progress."""
     hosts, note = _hosts_to_sweep(target)
     est = _probe_estimator(target)
-    if note:
-        scan_progress.set_phase("scanning", note)
     scan_progress.set_phase("scanning", f"مسح {len(hosts)} عنواناً (Python: TCP + ARP، بلا nmap)")
-    await _sweep(hosts, est)
-    arp = _read_arp_table()
+    if note:
+        # Not just a log line: coverage stays on screen, because "254 addresses scanned"
+        # and "254 addresses exist" look identical in a result list.
+        scan_progress.set_coverage(note)
+    alive = await _sweep(hosts, est)
+    arp = _read_arp_table(target)
 
     # Second pass over hosts that didn't answer the first (short) window —
     # power-saving phones frequently miss the first probe and reply to a retry.
@@ -250,8 +331,8 @@ async def discover_python(target: str) -> list[dict[str, Any]]:
         scan_progress.set_phase(
             "scanning", f"تمريرة ثانية لـ {len(missing)} عنواناً لم يردّ (أجهزة قد تكون نائمة)"
         )
-        await _sweep(missing, est, second_pass=True)
-        arp = {**arp, **_read_arp_table()}
+        alive |= await _sweep(missing, est, second_pass=True)
+        arp = {**arp, **_read_arp_table(target)}
 
     scan_progress.set_phase("resolving", "قراءة جدول ARP وحلّ الأسماء")
 
@@ -265,7 +346,17 @@ async def discover_python(target: str) -> list[dict[str, Any]]:
         seen.add(local["ip"])
         scan_progress.update_count(len(devices), f"هذا الجهاز {local['ip']}")
 
-    targets = [(ip, arp[ip]) for ip in sorted(arp, key=_ip_sort_key) if ip not in seen]
+    # Everything the ARP cache knows, PLUS every host that answered a probe without the
+    # OS keeping a row for it. The second group is listed with no MAC rather than
+    # dropped: an address that completed a TCP handshake is a device, whatever the
+    # cache says, and on a segmented or isolated network that is the only evidence left.
+    found = {ip: arp[ip] for ip in arp}
+    for ip in alive:
+        found.setdefault(ip, "")
+    targets = [(ip, found[ip]) for ip in sorted(found, key=_ip_sort_key) if ip not in seen]
+    macless = sum(1 for _ip, mac in targets if not mac)
+    if macless:
+        logger.info(f"{macless} host(s) answered a probe but have no ARP entry")
     scan_progress.set_phase("resolving", f"حلّ أسماء {len(targets)} جهازاً")
 
     async def _resolve_async(ip: str) -> str:

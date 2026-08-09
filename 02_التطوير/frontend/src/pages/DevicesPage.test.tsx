@@ -133,6 +133,7 @@ beforeEach(() => {
     devices_count: 0,
     elapsed_seconds: 1.5,
     last_message: "scanning…",
+    coverage: "",
     error: null,
     log: [],
   };
@@ -198,6 +199,45 @@ describe("DevicesPage", () => {
     expect(await screen.findByText("Total devices")).toBeInTheDocument();
     expect(screen.getByText("Online now")).toBeInTheDocument();
     expect(screen.getByText("Routers")).toBeInTheDocument();
+  });
+
+  it("keeps a partial scan on screen instead of leaving it in the log", async () => {
+    // A scan that swept 254 of 2046 addresses and a network that really has 254
+    // devices produce an identical result list. Measured: on a /21 the sweep covers
+    // 254 addresses and skips 1792, and the only signal used to be one line in a
+    // scrolling activity log that disappears when the log is not shown at all.
+    progressState = {
+      is_running: false,
+      phase: "done",
+      subnet: "10.20.0.0/21",
+      devices_count: 3,
+      elapsed_seconds: 6.2,
+      last_message: "done",
+      coverage: "فُحص 10.20.4.0/24 أي 254 عنوانًا من أصل 2046، ولم يُفحص 1792 عنوانًا.",
+      error: null,
+      log: [],
+    };
+    renderPage();
+    expect(await screen.findByText(/1792/)).toBeInTheDocument();
+    expect(screen.getByText("The scan did not cover the whole network")).toBeInTheDocument();
+    expect(screen.getByText("Partial coverage")).toBeInTheDocument();
+  });
+
+  it("says nothing about coverage when the whole network was scanned", async () => {
+    progressState = {
+      is_running: false,
+      phase: "done",
+      subnet: "192.168.1.0/24",
+      devices_count: 3,
+      elapsed_seconds: 6.2,
+      last_message: "done",
+      coverage: "",
+      error: null,
+      log: [],
+    };
+    renderPage();
+    await screen.findByText("Total devices");
+    expect(screen.queryByText(/Partial coverage/i)).toBeNull();
   });
 
   it("calls onBack from the dashboard button", () => {

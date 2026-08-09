@@ -53,6 +53,11 @@ class _ProgressState:
     devices_count: int = 0
     last_message: str = ""
     error: str | None = None
+    # What the scan actually COVERED. A scan that quietly sweeps 254 of 2046 addresses
+    # and reports success is indistinguishable from a network with 254 addresses, and
+    # one line in a scrolling log is not a notice — so coverage is its own field that
+    # the UI keeps on screen.
+    coverage: str = ""
     # Bumped every begin(). An abandoned nmap thread (its async caller gave up on
     # a stalled scan and a NEW scan has since started) must not keep writing into
     # the fresh run's feed — it checks this token and drops stale writes.
@@ -74,6 +79,7 @@ class _ProgressState:
         self.devices_count = 0
         self.last_message = ""
         self.error = None
+        self.coverage = ""
         with self._lock:
             self.log.clear()
         self.add(self.phase, f"Scan started on {subnet}")
@@ -81,6 +87,12 @@ class _ProgressState:
     def set_phase(self, phase: Phase, message: str) -> None:
         self.phase = phase
         self.add(phase, message)
+
+    def set_coverage(self, message: str) -> None:
+        """Record (and log once) what the scan is really covering."""
+        self.coverage = message
+        if message:
+            self.add(self.phase, message)
 
     def update_count(self, count: int, message: str = "") -> None:
         if count != self.devices_count:
@@ -131,6 +143,7 @@ class _ProgressState:
             "devices_count": self.devices_count,
             "elapsed_seconds": round(self._elapsed(), 2),
             "last_message": self.last_message,
+            "coverage": self.coverage,
             "error": self.error,
             "log": [e.to_dict() for e in events],
         }
