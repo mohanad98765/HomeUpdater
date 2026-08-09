@@ -1,22 +1,35 @@
 """
 MAC OUI -> vendor lookup.
 
-We bundle a hand-curated list of common manufacturer prefixes covering the
-most likely devices on a home network (routers, phones, computers, smart
-TVs, IoT). For any MAC outside the list, returns "" -- discovery.py will
-keep nmap's own vendor string when available.
+Two layers, in this order:
 
-Every prefix below is a 24-bit MA-L assignment verified against the official
-IEEE OUI registry (https://standards-oui.ieee.org/oui/oui.csv). Vendor names
-are normalized to a short, human-readable form of the registered holder.
+1. The **curated table** below — 24-bit MA-L assignments verified by hand against the
+   IEEE registry, with names normalized to what a person would recognize ("Samsung",
+   not "Samsung Electronics Co., Ltd.").
+2. The **full IEEE MA-L registry**, ~39 000 prefixes, bundled as ``app/data/oui.json.gz``
+   (about 390 KB) and read lazily on first lookup.
 
-The full IEEE OUI registry has ~40 000 prefixes (~3.8 MB). For a home tool
-the curated list below is enough to identify most consumer devices. If we
-ever want full coverage, we can fetch and cache oui.csv on first run. That
-stays as a future enhancement.
+Layer 2 exists because layer 1 was measured and failed. On the first real network it was
+checked against, the curated 287 prefixes named **0 of 15** manufacturers present — every
+device rendered as "unknown" with no name, which reads to the owner as "the app did not
+find my devices" even when every one of them was found. With the registry the same
+network names 14 of 14 real prefixes; the remaining two are randomized addresses, which
+have no manufacturer to name (see ``is_randomized``).
+
+The curated layer is kept, not replaced: it wins on conflict, because its names are
+shorter and were chosen for a human reading a device list.
+
+Regenerate the bundled registry with ``python tools/build_oui.py``.
 """
 
 from __future__ import annotations
+
+import gzip
+import json
+import sys
+from pathlib import Path
+
+from loguru import logger
 
 # Maps the first 3 octets (uppercase, no separators, e.g. "5C5F67") to a
 # manufacturer name. Covers the most common consumer device makers.
@@ -347,6 +360,63 @@ def _normalize(mac: str) -> str:
     return cleaned if len(cleaned) >= 6 else ""
 
 
+_REGISTRY: dict[str, str] | None = None
+
+
+def _registry_path() -> Path:
+    """Bundled first (PyInstaller onedir), then the source tree."""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        bundled = Path(base) / "app" / "data" / "oui.json.gz"
+        if bundled.is_file():
+            return bundled
+    return Path(__file__).resolve().parent.parent / "data" / "oui.json.gz"
+
+
+def _registry() -> dict[str, str]:
+    """The full IEEE MA-L table, read once on first use.
+
+    Lazy on purpose: a scan needs it, a licence check does not, and paying ~390 KB of
+    decompression at import time would slow every start for a feature most launches never
+    reach. A missing or corrupt file degrades to the curated table rather than failing a
+    scan — a device with no vendor name is worse than nothing, but a scan that raises is
+    worse than both.
+    """
+    global _REGISTRY
+    if _REGISTRY is None:
+        path = _registry_path()
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                _REGISTRY = json.load(fh)
+            logger.info(f"OUI registry loaded: {len(_REGISTRY)} prefixes from {path.name}")
+        except (OSError, ValueError) as exc:
+            logger.warning(f"OUI registry unavailable ({exc}) — using the curated table only")
+            _REGISTRY = {}
+    return _REGISTRY
+
+
+def registry_size() -> int:
+    """How many prefixes the full registry holds (0 if it could not be read)."""
+    return len(_registry())
+
+
+def is_randomized(mac: str) -> bool:
+    """True for a locally-administered address — the second-least-significant bit of the
+    first octet is set.
+
+    Android 10+ and iOS 14+ randomize their MAC per network by default, so this is not an
+    edge case: such an address is *invented by the phone*, is in no registry, and never
+    will be. Asking "why does the app not know this device's manufacturer" has an answer,
+    and it is not a missing table.
+    """
+    norm = _normalize(mac)
+    # _normalize only strips separators and length-checks — it does not validate hex, and
+    # a hostname or a vendor string can reach here from a scan result.
+    if len(norm) < 2 or norm[1] not in "0123456789ABCDEF":
+        return False
+    return bool(int(norm[1], 16) & 0x2)
+
+
 def lookup(mac: str) -> str:
     """
     Return the manufacturer name for the given MAC, or "" if unknown.
@@ -355,7 +425,13 @@ def lookup(mac: str) -> str:
     norm = _normalize(mac)
     if not norm:
         return ""
-    return _OUI_DB.get(norm[:6], "")
+    prefix = norm[:6]
+    curated = _OUI_DB.get(prefix)
+    if curated:
+        return curated
+    if is_randomized(mac):
+        return ""  # nothing to find: the phone made this address up
+    return _registry().get(prefix, "")
 
 
 def enrich_vendor(mac: str, current: str) -> str:
