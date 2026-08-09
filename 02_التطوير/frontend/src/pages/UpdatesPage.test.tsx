@@ -27,6 +27,7 @@ interface UpdateRow {
   install_result: number;
   release_date: string;
   last_checked: string | null;
+  version: string;
 }
 
 interface UpdatesList {
@@ -35,6 +36,7 @@ interface UpdatesList {
   total_pending: number;
   total_size_mb: number;
   last_checked: string | null;
+  last_check_found: number | null;
 }
 
 function makeUpdate(over: Partial<UpdateRow> = {}): UpdateRow {
@@ -53,6 +55,7 @@ function makeUpdate(over: Partial<UpdateRow> = {}): UpdateRow {
     install_result: 0,
     release_date: "2026-07-01",
     last_checked: "2026-07-20T10:00:00Z",
+    version: "1.457.69.0",
     ...over,
   };
 }
@@ -130,6 +133,7 @@ const emptyList: UpdatesList = {
   total_pending: 0,
   total_size_mb: 0,
   last_checked: null,
+  last_check_found: null,
 };
 
 beforeAll(async () => {
@@ -191,6 +195,7 @@ describe("UpdatesPage", () => {
       total_pending: 1,
       total_size_mb: 42.5,
       last_checked: "2026-07-20T10:00:00Z",
+      last_check_found: 1,
     };
     sysInfo = { hostname: "HOME-PC", user: "mohanad", system: "Windows", release: "11", machine: "x64" };
     renderPage();
@@ -206,6 +211,7 @@ describe("UpdatesPage", () => {
       total_pending: 1,
       total_size_mb: 12,
       last_checked: "2026-07-20T10:00:00Z",
+      last_check_found: 1,
     };
     renderPage();
     // Wait for the initial (empty) Windows tab to settle, then switch tabs.
@@ -221,6 +227,7 @@ describe("UpdatesPage", () => {
       total_pending: 1,
       total_size_mb: 5,
       last_checked: "2026-07-20T10:00:00Z",
+      last_check_found: 1,
     };
     checkShouldFail = true;
     renderPage();
@@ -236,5 +243,53 @@ describe("UpdatesPage", () => {
     await screen.findByRole("heading", { name: "Updates" });
     fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Two things the owner reported, both visible on this page.
+describe("telling two identical-looking updates apart", () => {
+  it("shows the version and the release date outside the truncated title", async () => {
+    // Measured on the owner's machine: 14 stored updates, all KB2267602, all with the
+    // same visible title — the version was the only difference and sat at the end of a
+    // 118-character string, i.e. the first thing a truncated cell removes. He installed
+    // one, checked again, saw the next day's definition rendered identically, and
+    // reasonably concluded the install had not worked.
+    windowsList = {
+      pending: [
+        makeUpdate({
+          title: "تحديث معلومات الأمان Microsoft Defender Antivirus -2267602 قاعدة المعارف",
+          version: "1.457.77.0",
+          release_date: "2026-08-09",
+        }),
+      ],
+      installed_recent: [],
+      total_pending: 1,
+      total_size_mb: 1523,
+      last_checked: "2026-08-09T09:53:47Z",
+      last_check_found: 1,
+    };
+    renderPage();
+    expect(await screen.findByText(/1\.457\.77\.0/)).toBeInTheDocument();
+    expect(screen.getByText(/2026-08-09/)).toBeInTheDocument();
+  });
+
+  it("says a check ran even when it found nothing", async () => {
+    // "Checked, nothing found" used to be indistinguishable from "never checked": the
+    // header read its date off the newest stored row, so a check that found nothing
+    // wrote nothing and the screen went on denying the button had been pressed.
+    windowsList = {
+      ...emptyList,
+      last_checked: "2026-08-09T09:53:47Z",
+      last_check_found: 0,
+    };
+    renderPage();
+    expect(await screen.findByText(/nothing new/i)).toBeInTheDocument();
+  });
+
+  it("still says never-checked when it genuinely never ran", async () => {
+    windowsList = { ...emptyList };
+    renderPage();
+    expect(await screen.findByText(/never/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing new/i)).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ Pydantic request bodies in routers/*.py. (models/device.py is legacy/unused.)
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
@@ -208,6 +209,20 @@ class SoftwarePackageORM(Base):
         }
 
 
+_VERSION_IN_TITLE = re.compile(r"\b\d+(?:\.\d+){2,}\b")
+
+
+def title_version(title: str) -> str:
+    """The version buried in a Windows Update title, or "".
+
+    Microsoft ships Defender definition updates several times a day under one KB number
+    and one title; only the version distinguishes them. It is written in Latin digits in
+    every localization, so a digit-group match works regardless of the display language.
+    """
+    match = _VERSION_IN_TITLE.search(title or "")
+    return match.group(0) if match else ""
+
+
 class WindowsUpdateORM(Base):
     """Cached Windows Update entry from the local Windows Update Agent.
 
@@ -269,6 +284,13 @@ class WindowsUpdateORM(Base):
             "install_result": self.install_result,
             "release_date": self.release_date,
             "last_checked": self.last_checked.isoformat() if self.last_checked else None,
+            # The one field that tells two Defender definition updates apart. It lives at
+            # the END of a ~118-character localized title, which is exactly the part a
+            # truncated table cell cuts off — so the owner installed one, checked again,
+            # saw a genuinely different update rendered identically, and reasonably
+            # concluded the install had not worked. Measured on his own data: 14 rows,
+            # 14 distinct (version, release_date) pairs, 0 without a version.
+            "version": title_version(self.title),
         }
 
 
@@ -621,3 +643,30 @@ class AgentNonceORM(Base):
     nonce: Mapped[str] = mapped_column(String(64), primary_key=True)
     agent_id: Mapped[str] = mapped_column(String(36), index=True)
     seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
+class UpdateCheckORM(Base):
+    """When an update check last RAN, and what it found.
+
+    Separate from ``windows_updates`` on purpose. That table records updates; this one
+    records checks. The old UI conflated them — it showed the newest row's timestamp as
+    "last checked", so a check that found nothing left no trace, and a tab with no rows
+    claimed it had never been checked however often the user checked it. Zero results is
+    a real answer and now has somewhere to live.
+    """
+
+    __tablename__ = "update_checks"
+    __table_args__ = (UniqueConstraint("device_id", "kind", name="uq_update_checks_device_kind"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(Integer, default=HUB_DEVICE_ID, server_default="0")
+    kind: Mapped[str] = mapped_column(String(16))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    found: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    def to_dict(self) -> dict:
+        return {
+            "kind": self.kind,
+            "checked_at": self.checked_at.isoformat() if self.checked_at else None,
+            "found": self.found,
+        }

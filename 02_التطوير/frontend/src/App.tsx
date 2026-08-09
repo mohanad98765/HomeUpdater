@@ -67,6 +67,15 @@ interface UpdateCheck {
   update_available: boolean;
   url: string | null;
   checked: boolean;
+  // Why the check failed. A silent failure is indistinguishable from "you are on the
+  // newest version", so the user waits for a banner that was never coming.
+  error: string;
+}
+interface UpdateDownload {
+  ready: boolean;
+  version: string;
+  publisher: string;
+  size_mb: number;
 }
 interface UpgradeNotice {
   upgraded: boolean;
@@ -137,10 +146,40 @@ function App() {
     staleTime: 60 * 60 * 1000,
     retry: false,
     refetchOnWindowFocus: false,
+    // A machine that stays open for days used to check exactly once, at login, and never
+    // again — so a release published an hour later was never noticed. The backend caches
+    // for an hour anyway, so this costs one request every six hours.
+    refetchInterval: 6 * 60 * 60 * 1000,
   });
   const update = updateCheck.data;
   const showUpdateBanner =
     !updateDismissed && !!update?.checked && update.update_available && !!update.url;
+  // Failed checks were rendered as nothing at all. Say it, quietly, once.
+  const showCheckFailed = !updateDismissed && !!update && !update.checked && !!update.error;
+
+  // Fetch the new build and refuse it unless it is signed by the same publisher as the
+  // build already running. Nothing is downloaded or run without this click.
+  const [updateStage, setUpdateStage] = useState<"idle" | "working" | "ready" | "failed">("idle");
+  const [updateError, setUpdateError] = useState("");
+  const downloadUpdate = useMutation<UpdateDownload>({
+    mutationFn: () => apiFetch<UpdateDownload>("/api/system/update/download", { method: "POST" }),
+    onMutate: () => {
+      setUpdateStage("working");
+      setUpdateError("");
+    },
+    onSuccess: () => setUpdateStage("ready"),
+    onError: (e: unknown) => {
+      setUpdateStage("failed");
+      setUpdateError((e as Error)?.message || "");
+    },
+  });
+  const runUpdate = useMutation({
+    mutationFn: () => apiFetch("/api/system/update/install", { method: "POST" }),
+    onError: (e: unknown) => {
+      setUpdateStage("failed");
+      setUpdateError((e as Error)?.message || "");
+    },
+  });
 
   // Post-upgrade toast: after the signed installer replaced files + relaunched,
   // the backend reports the version went up. Show "upgraded from X to Y" once,
@@ -204,11 +243,31 @@ function App() {
         <div className="bg-primary text-primary-fg px-4 py-2 text-sm font-medium flex items-center justify-center gap-3 shadow-md">
           <Download className="w-4 h-4 flex-shrink-0" />
           <span>{t("banner.updateAvailable", { latest: update!.latest })}</span>
+          {updateStage === "idle" && (
+            <button
+              type="button"
+              onClick={() => downloadUpdate.mutate()}
+              className="underline font-bold hover:opacity-80"
+            >
+              {t("banner.downloadInstall")}
+            </button>
+          )}
+          {updateStage === "working" && <span>{t("banner.verifying")}</span>}
+          {updateStage === "ready" && (
+            <button
+              type="button"
+              onClick={() => runUpdate.mutate()}
+              className="underline font-bold hover:opacity-80"
+            >
+              {t("banner.readyToInstall")}
+            </button>
+          )}
+          {updateStage === "failed" && <span className="font-normal">{updateError}</span>}
           <a
             href={update!.url!}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline font-bold hover:opacity-80"
+            className="underline opacity-80 hover:opacity-100 text-xs"
           >
             {t("banner.updateDownload")}
           </a>
@@ -219,6 +278,23 @@ function App() {
             aria-label={t("banner.dismiss")}
           >
             <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* تعذّر التحقّق — يُقال بهدوء بدل الصمت الذي يشبه «أنت على الأحدث» */}
+      {showCheckFailed && (
+        <div className="bg-warning/15 text-warning px-4 py-1.5 text-xs flex items-center justify-center gap-2">
+          <span>
+            {t("banner.checkFailed")} — {update!.error}
+          </span>
+          <button
+            type="button"
+            onClick={() => setUpdateDismissed(true)}
+            className="rounded p-0.5 hover:bg-black/10 transition-colors"
+            aria-label={t("banner.dismiss")}
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

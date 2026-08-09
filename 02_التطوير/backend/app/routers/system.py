@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Literal
 
 import httpx
@@ -20,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import __version__
 from ..config import settings
 from ..db import get_db
-from ..services import audit, cve, notifications
+from ..services import audit, cve, notifications, self_update
 
 router = APIRouter()
 
@@ -91,6 +92,10 @@ async def update_check() -> dict:
         "update_available": False,
         "url": None,
         "checked": True,
+        # Why it failed, in one short phrase. A check that fails silently is
+        # indistinguishable from a check that found nothing, and the user waits forever
+        # for a banner that is never coming.
+        "error": "",
     }
     try:
         timeout = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
@@ -101,6 +106,7 @@ async def update_check() -> dict:
             )
         resp.raise_for_status()
         data = resp.json()
+        _update_cache["release"] = data
         latest = str(data.get("tag_name", "")).lstrip("vV")
         result["latest"] = latest
         result["url"] = data.get("html_url")
@@ -108,10 +114,74 @@ async def update_check() -> dict:
     except Exception as exc:  # noqa: BLE001 — never let a self-update check break the app
         logger.warning(f"update-check failed: {exc}")
         result["checked"] = False
+        result["error"] = _why(exc)
 
     _update_cache["at"] = now
     _update_cache["data"] = result
     return result
+
+
+def _why(exc: Exception) -> str:
+    """A cause a non-technical reader can act on, not a stack trace."""
+    if isinstance(exc, httpx.TimeoutException):
+        return "انتهت المهلة — تحقّق من الاتّصال بالإنترنت"
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code in (403, 429):
+            return "تجاوزنا حدّ الطلبات المسموح مؤقّتًا — أعد المحاولة لاحقًا"
+        return f"استجابة غير متوقّعة من الخادم ({exc.response.status_code})"
+    if isinstance(exc, httpx.HTTPError):
+        return "تعذّر الوصول إلى الإنترنت"
+    return "تعذّر التحقّق"
+
+
+# T4 delivery: the check above only ever produced a link, so every upgrade meant leaving
+# the app, finding an asset on a web page, and running an installer past SmartScreen.
+# These two endpoints do the fetching, and refuse anything not signed by the same
+# publisher as the running build. Nothing installs without the operator pressing install.
+@router.post("/update/download")
+async def update_download() -> dict:
+    """Download the newest release's installer and verify its publisher."""
+    check = await update_check()
+    if not check["checked"]:
+        raise HTTPException(status_code=503, detail=check["error"] or "تعذّر التحقّق")
+    if not check["update_available"]:
+        raise HTTPException(status_code=409, detail="لا يوجد إصدار أحدث.")
+
+    release = _update_cache.get("release") or {}
+    try:
+        running = self_update.running_installer_signature()
+        asset = self_update.pick_asset(release)
+        path = await self_update.download(
+            asset["browser_download_url"], int(asset.get("size") or 0)
+        )
+        sig = self_update.verify_same_publisher(path, running)
+    except self_update.SelfUpdateError as exc:
+        logger.warning(f"self-update download refused: {exc}")
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _update_cache["installer"] = str(path)
+    return {
+        "ready": True,
+        "version": check["latest"],
+        "path": str(path),
+        "publisher": sig.subject,
+        "size_mb": round(int(asset.get("size") or 0) / (1024 * 1024), 1),
+    }
+
+
+@router.post("/update/install")
+async def update_install() -> dict:
+    """Run the already-verified installer. The operator asked for this explicitly, and
+    Windows still shows its own elevation prompt."""
+    path = _update_cache.get("installer")
+    if not path:
+        raise HTTPException(status_code=409, detail="لم يُنزَّل تحديث بعد.")
+    try:
+        self_update.launch(Path(path))
+    except self_update.SelfUpdateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(f"self-update installer launched: {path}")
+    return {"launched": True}
 
 
 @router.get("/upgrade-notice")

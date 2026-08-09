@@ -40,6 +40,10 @@ interface UpdateRow {
   install_result: number;
   release_date: string;
   last_checked: string | null;
+  // The only field that separates two Defender definition updates. It is the tail of a
+  // ~118-character title, i.e. precisely what a truncated cell removes — which is how
+  // "I installed it and it came back" happens when nothing came back.
+  version: string;
 }
 
 interface UpdatesList {
@@ -48,6 +52,8 @@ interface UpdatesList {
   total_pending: number;
   total_size_mb: number;
   last_checked: string | null;
+  // null = never checked. 0 = checked, and there was genuinely nothing.
+  last_check_found: number | null;
 }
 
 type Phase =
@@ -265,6 +271,9 @@ function WUAUpdatesView({ kind }: { kind: "windows" | "drivers" }) {
   const lastChecked = list.data?.last_checked
     ? new Date(list.data.last_checked).toLocaleString(i18n.language)
     : t("updates.neverChecked");
+  // "Checked, nothing found" used to be indistinguishable from "never checked": a check
+  // that found nothing wrote no row, and the header read its date off the newest row.
+  const foundNothing = list.data?.last_checked != null && list.data?.last_check_found === 0;
 
   return (
     <div>
@@ -274,6 +283,9 @@ function WUAUpdatesView({ kind }: { kind: "windows" | "drivers" }) {
           <h2 className="text-xl font-display font-bold">{t("updates.title")}</h2>
           <p className="text-xs text-fg-muted">
             {t("updates.lastChecked")}: {lastChecked}
+            {foundNothing && (
+              <span className="ms-2 text-success">{t("updates.checkedNothingNew")}</span>
+            )}
           </p>
         </div>
 
@@ -715,6 +727,23 @@ function UpdateRow({
         <div className="font-medium truncate" title={update.title}>
           {update.title}
         </div>
+        {/* Pinned OUTSIDE the truncating div on purpose: these two facts are what make
+            today's definition update different from yesterday's, and inside the title
+            they were the first thing cut. */}
+        {(update.version || update.release_date) && (
+          <div className="flex items-center gap-2 text-[11px] text-fg-muted mt-0.5 font-mono">
+            {update.version && (
+              <span>
+                {t("updates.version")} {update.version}
+              </span>
+            )}
+            {update.release_date && (
+              <span>
+                {t("updates.released")} {update.release_date}
+              </span>
+            )}
+          </div>
+        )}
         {update.requires_reboot && (
           <span className="inline-flex items-center gap-1 text-xs text-warning mt-0.5">
             <RotateCw className="w-3 h-3" />

@@ -24,6 +24,7 @@ from ..models.orm import (
     HUB_DEVICE_ID,
     InstalledSoftwareORM,
     SoftwarePackageORM,
+    UpdateCheckORM,
     WindowsUpdateORM,
 )
 from ..services import audit, notifications
@@ -112,15 +113,41 @@ async def _list_wua_updates(db: AsyncSession, kind: str) -> dict:
     pending = [r.to_dict() for r in rows if not r.is_installed]
     installed = [r.to_dict() for r in rows if r.is_installed]
     total_size_mb = sum(r.size_mb for r in rows if not r.is_installed)
-    last_checked = rows[0].last_checked.isoformat() if rows else None
+    # "Last checked" is a fact about the CHECK, not about the newest row. Reading it off
+    # the rows meant a check that found nothing left no trace: the user pressed the
+    # button, the app found his machine already up to date, and the screen went on
+    # insisting he had never checked — on a tab with no rows, forever.
+    check = await _last_check(db, kind)
     return {
         "kind": kind,
         "pending": pending,
         "installed_recent": installed[:10],
         "total_pending": len(pending),
         "total_size_mb": round(total_size_mb, 2),
-        "last_checked": last_checked,
+        "last_checked": check.checked_at.isoformat() if check else None,
+        # None = never checked. 0 = checked, and there was genuinely nothing.
+        "last_check_found": check.found if check else None,
     }
+
+
+async def _last_check(db: AsyncSession, kind: str) -> UpdateCheckORM | None:
+    row = await db.execute(
+        select(UpdateCheckORM).where(
+            UpdateCheckORM.device_id == HUB_DEVICE_ID, UpdateCheckORM.kind == kind
+        )
+    )
+    return row.scalar_one_or_none()
+
+
+async def _record_check(db: AsyncSession, kind: str, found: int, now: datetime) -> None:
+    """Stamp that a check RAN. Called on every completed check, including empty ones —
+    that is the whole point."""
+    row = await _last_check(db, kind)
+    if row is None:
+        row = UpdateCheckORM(device_id=HUB_DEVICE_ID, kind=kind)
+        db.add(row)
+    row.checked_at = now
+    row.found = found
 
 
 # ===================================================================
@@ -194,6 +221,7 @@ async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
             row.is_installed = True
             row.install_result = 2
 
+    await _record_check(db, kind, len(found), now)
     await db.commit()
     if found:
         label = "تحديثات Windows" if kind == "windows" else "تحديثات تعريفات"
@@ -391,11 +419,12 @@ async def list_software(db: AsyncSession = Depends(get_db)) -> dict:
     )
     rows = result.scalars().all()
     pending = [r.to_dict() for r in rows if not r.is_installed]
-    last_checked = rows[0].last_checked.isoformat() if rows else None
+    check = await _last_check(db, "software")  # the check, not the newest row — see above
     return {
         "pending": pending,
         "total_pending": len(pending),
-        "last_checked": last_checked,
+        "last_checked": check.checked_at.isoformat() if check else None,
+        "last_check_found": check.found if check else None,
     }
 
 
@@ -441,6 +470,7 @@ async def trigger_software_check(db: AsyncSession = Depends(get_db)) -> dict:
                 row.is_installed = True
                 row.install_result = 0
 
+    await _record_check(db, "software", len(found), now)
     await db.commit()
     if found:
         notifications.notify("HomeUpdater — محدِّث المنزل", f"توفّرت {len(found)} تحديثات برامج")
