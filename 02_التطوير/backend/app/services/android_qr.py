@@ -56,6 +56,7 @@ from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 
+from . import android_autopair
 from .android import (
     AndroidError,
     _have_adb,
@@ -86,6 +87,10 @@ class PairingSession:
     # Pairing services already advertising before we showed the code. Anything not in
     # here is something that happened because of us.
     known_instances: set[str] = field(default_factory=set)
+    # The phone to sweep, and the ports it already had open before the code was shown.
+    # Anything new after that is the pairing listener the scan opened.
+    target_host: str = ""
+    known_ports: set[int] = field(default_factory=set)
     status: str = "waiting"  # waiting | choose | pairing | paired | failed | expired
     candidates: list[dict] = field(default_factory=list)
     device: dict | None = None
@@ -237,8 +242,16 @@ def _connect_port_for(address: str) -> int | None:
         time.sleep(0.8)
 
 
-async def start() -> PairingSession:
-    """Begin a session: warm adb, snapshot the network, mint a password, show a code."""
+async def start(target_host: str = "") -> PairingSession:
+    """Begin a session: warm adb, snapshot the network, mint a password, show a code.
+
+    ``target_host`` is the phone the operator picked. When given, the session does not
+    depend on hearing the phone at all: after the scan the phone opens a pairing port,
+    and the password in the code is ours, so sweeping that one host finds the port and
+    pairs with no further action. That is what makes "scan it and it connects" true on
+    a network that does not carry multicast — which, measured here and reported from a
+    workplace network, is the common case rather than the exception.
+    """
     global _session, _task
     if not _have_adb():
         raise AndroidError("الإقران بالرمز يتطلّب أداة adb المضمّنة.")
@@ -246,6 +259,11 @@ async def start() -> PairingSession:
 
     await _in_executor(_warm_adb_server)
     known = await _in_executor(_pairing_snapshot)
+    # Baseline the target's open ports BEFORE the code is shown, so a port that was
+    # already listening is never mistaken for the one the scan opened.
+    known_ports: set[int] = set()
+    if target_host:
+        known_ports = set(await android_autopair.find_open_ports(target_host))
 
     name, password = _new_service_name(), _new_password()
     session = PairingSession(
@@ -255,6 +273,8 @@ async def start() -> PairingSession:
         payload=build_payload(name, password),
         expires_at=datetime.now(UTC) + timedelta(seconds=SESSION_TTL_SECONDS),
         known_instances=known,
+        target_host=target_host,
+        known_ports=known_ports,
     )
     _session = session
     # Never the payload and never the password: this line goes to a file on disk.
@@ -285,6 +305,10 @@ async def _watch(session: PairingSession) -> None:
                     "by code is the path that does not need it"
                 )
                 return
+            # The sweep first: it works on every network, where mDNS works on some.
+            if session.target_host and await _try_sweep(session):
+                return
+
             rows = await _in_executor(_new_pairing_rows, session.known_instances)
             if rows:
                 # If the phone did adopt the name from the QR, that is the one. If it
@@ -307,6 +331,52 @@ async def _watch(session: PairingSession) -> None:
         logger.exception("QR pairing watcher failed")
         session.status = "failed"
         session.error = str(exc)
+
+
+async def _try_sweep(session: PairingSession) -> bool:
+    """Look for a pairing port the scan opened, and use the password we already hold.
+
+    This is the half that makes QR pairing automatic. mDNS asks the network to carry an
+    announcement; this asks nothing of the network beyond what a ping already proves.
+    Only the phone the operator picked is swept, and only ports that were not open
+    before the code appeared.
+    """
+    try:
+        ports = await android_autopair.find_open_ports(session.target_host)
+    except AndroidError as exc:
+        logger.warning(f"QR sweep failed: {exc}")
+        return False
+
+    fresh = [p for p in ports if p not in session.known_ports]
+    if not fresh:
+        return False
+
+    logger.info(f"QR sweep found {len(fresh)} new port(s) on {session.target_host}")
+    for port in fresh:
+        ok, message = await _in_executor(
+            android_autopair._pair_blocking, session.target_host, port, session.password
+        )
+        if ok:
+            await _pair_succeeded(session, session.target_host, port)
+            return True
+        # A port that is not the pairing listener answers something else; that is not a
+        # failure worth reporting, and the next sweep will try again.
+        logger.debug(f"sweep: {session.target_host}:{port} is not it ({message[:60]})")
+    # Remember them so the next sweep does not re-try the same wrong ports.
+    session.known_ports.update(fresh)
+    return False
+
+
+async def _pair_succeeded(session: PairingSession, host: str, port: int) -> None:
+    """Shared ending for both routes — the operator cannot tell which one found it,
+    and should not have to."""
+    session.status = "pairing"
+    connect_port = await android_autopair.find_connect_port(host, exclude=port)
+    session.device = {"host": host, "port": connect_port, "instance": f"{host}:{port}"}
+    session.status = "paired"
+    session.password = ""
+    session.payload = ""
+    logger.info(f"QR pairing succeeded with {host} (connect port {connect_port})")
 
 
 async def _pair_with(session: PairingSession, row: dict) -> None:

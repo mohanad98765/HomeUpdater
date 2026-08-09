@@ -43,8 +43,12 @@ from .android import AndroidError, _have_adb, _in_executor, _run_adb_blocking, _
 # Android's wireless-debugging listeners land in the ephemeral range. Kept as one
 # constant so the bench in tools/ and the service cannot drift apart.
 PORT_RANGE = (30000, 50000)
-SCAN_CONCURRENCY = 800
-PROBE_TIMEOUT = 0.6
+# Measured on the real phone across four settings: 800/0.6s took 16.0s per sweep,
+# 2500/0.3s takes 6.2s, and pushing to 4000 gets slower again. 6 seconds is what makes
+# QR pairing feel automatic — nineteen sweeps fit inside the two-minute window, so the
+# port is found within moments of the scan rather than at the end of a long wait.
+SCAN_CONCURRENCY = 2500
+PROBE_TIMEOUT = 0.3
 CODE_RE = re.compile(r"^\d{6}$")
 
 

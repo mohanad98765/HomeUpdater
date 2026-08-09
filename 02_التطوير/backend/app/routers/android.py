@@ -170,11 +170,20 @@ class ChooseRequest(BaseModel):
     instance: str = Field(min_length=1, max_length=128)
 
 
+class StartQrRequest(BaseModel):
+    # The phone the operator picked. Optional, but with it the flow needs nothing from
+    # the network beyond what a ping already proves: after the scan the phone opens a
+    # pairing port, the password is the one in our own code, and sweeping that single
+    # host finds the port. Without it the session can only listen for an mDNS
+    # announcement, which many networks do not carry.
+    host: str = Field(default="", max_length=45)
+
+
 @router.post("/pair/qr")
-async def start_qr_pairing() -> dict:
+async def start_qr_pairing(payload: StartQrRequest | None = None) -> dict:
     """Mint a pairing password and start watching for the phone that scanned it."""
     try:
-        session = await android_qr.start()
+        session = await android_qr.start(target_host=(payload.host if payload else ""))
     except AndroidError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return session.public()

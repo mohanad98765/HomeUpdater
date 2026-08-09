@@ -15,6 +15,7 @@ import { QrPairing } from "./QrPairing";
 
 let session: Record<string, unknown>;
 let calls: string[];
+let bodies: string[];
 
 function res(status: number, body: unknown, ok = status < 400): Response {
   return {
@@ -29,6 +30,17 @@ function router(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const u = String(url);
   const method = init?.method ?? "GET";
   calls.push(`${method} ${u.split("?")[0]}`);
+  if (typeof init?.body === "string") bodies.push(init.body);
+  if (u.includes("/pair/candidates")) {
+    return Promise.resolve(
+      res(200, {
+        candidates: [
+          { ip: "192.168.3.24", name: "Galaxy", device_type: "phone", already_added: false },
+          { ip: "192.168.3.7", name: "Printer", device_type: "printer", already_added: true },
+        ],
+      }),
+    );
+  }
   if (u.includes("/pair/qr.svg")) {
     // The app's API rejects anything without the per-launch session token. An <img src>
     // cannot send it, so this fake refuses that case the way the real server does — the
@@ -97,6 +109,7 @@ beforeAll(async () => {
 beforeEach(() => {
   session = { status: "none" };
   calls = [];
+  bodies = [];
 });
 
 afterEach(() => {
@@ -302,5 +315,53 @@ describe("the credential's lifetime", () => {
     await waitFor(() =>
       expect(calls.some((c) => c === "DELETE /api/android/pair/qr")).toBe(true),
     );
+  });
+});
+
+// The half that makes scanning enough: the hub sweeps the phone the operator picked, so
+// the pick has to actually reach the server. An unsent field is exactly the class of bug
+// that made the code invisible once already (an <img src> that could not authenticate).
+describe("picking the phone is what makes it automatic", () => {
+  async function pickGalaxy() {
+    // Wait for the option itself: the list arrives from the app's own network scan, and
+    // setting a select to a value it does not have yet silently leaves it empty.
+    await screen.findByRole("option", { name: /Galaxy/i });
+    const picker = screen.getByLabelText(/pick your phone/i) as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: "192.168.3.24" } });
+    expect(picker.value).toBe("192.168.3.24");
+    return picker;
+  }
+
+  it("sends the picked address when the session starts", async () => {
+    renderPanel();
+    await pickGalaxy();
+    fireEvent.click(screen.getByRole("button", { name: /show the pairing code/i }));
+
+    await waitFor(() =>
+      expect(bodies.some((b) => JSON.parse(b).host === "192.168.3.24")).toBe(true),
+    );
+  });
+
+  it("offers phones to pick but not devices already added", async () => {
+    renderPanel();
+    await pickGalaxy();
+    const labels = [...(screen.getByLabelText(/pick your phone/i) as HTMLSelectElement).options]
+      .map((o) => o.textContent ?? "");
+    expect(labels.some((l) => l.includes("Printer"))).toBe(false);
+  });
+
+  it("says which of the two routes is in play, instead of leaving it to be discovered", async () => {
+    renderPanel();
+    await pickGalaxy();
+    fireEvent.click(screen.getByRole("button", { name: /show the pairing code/i }));
+    expect(await screen.findByText(/added automatically/i)).toBeTruthy();
+  });
+
+  it("does not promise an automatic result when no phone was picked", async () => {
+    // Over-claiming here is what wasted six real sessions: the panel implied scanning was
+    // enough while it was in fact waiting on an announcement this network does not carry.
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
+    expect(await screen.findByText(/wait for an announcement/i)).toBeTruthy();
   });
 });

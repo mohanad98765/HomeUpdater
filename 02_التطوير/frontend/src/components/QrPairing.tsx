@@ -46,6 +46,13 @@ interface QrSession {
   diagnosis?: string;
 }
 
+interface PhoneCandidate {
+  ip: string;
+  name: string;
+  device_type: string;
+  already_added: boolean;
+}
+
 export function QrPairing({
   onPaired,
 }: {
@@ -58,6 +65,12 @@ export function QrPairing({
   const [svg, setSvg] = useState("");
   const [svgError, setSvgError] = useState("");
   const [zoom, setZoom] = useState(false);
+  const [targetHost, setTargetHost] = useState("");
+
+  const candidates = useQuery<{ candidates: PhoneCandidate[] }>({
+    queryKey: ["android-pair-candidates"],
+    queryFn: () => apiFetch("/api/android/pair/candidates"),
+  });
 
   const session = useQuery<QrSession>({
     queryKey: ["android-qr"],
@@ -69,7 +82,11 @@ export function QrPairing({
   });
 
   const start = useMutation<QrSession, ApiError, void>({
-    mutationFn: () => apiFetch<QrSession>("/api/android/pair/qr", { method: "POST" }),
+    mutationFn: () =>
+      apiFetch<QrSession>("/api/android/pair/qr", {
+        method: "POST",
+        body: JSON.stringify({ host: targetHost }),
+      }),
     onSuccess: async () => {
       setActive(true);
       setSvg("");
@@ -132,6 +149,33 @@ export function QrPairing({
           {t("android.qr.title")}
         </div>
         <p className="text-xs text-fg-muted">{t("android.qr.intro")}</p>
+
+        {/* Picking the phone is what removes the dependency on the network carrying an
+            announcement: the hub sweeps that one host for the port the scan opens and
+            pairs with the password from its own code. Optional, because a network that
+            does carry mDNS does not need it - but recommended, and said so. */}
+        <div>
+          <label className="text-[11px] text-fg-muted mb-1 block" htmlFor="qr-target">
+            {t("android.qr.pickPhone")}
+          </label>
+          <select
+            id="qr-target"
+            value={targetHost}
+            onChange={(e) => setTargetHost(e.target.value)}
+            className="w-full px-3 py-2 rounded-md border border-border bg-bg text-fg focus:border-primary focus:outline-none text-sm"
+          >
+            <option value="">{t("android.qr.pickAny")}</option>
+            {(candidates.data?.candidates ?? [])
+              .filter((c) => !c.already_added)
+              .map((c) => (
+                <option key={c.ip} value={c.ip}>
+                  {c.name} - {c.ip}
+                </option>
+              ))}
+          </select>
+          <p className="text-[11px] text-fg-subtle mt-1">{t("android.qr.pickHint")}</p>
+        </div>
+
         <button
           type="button"
           onClick={() => start.mutate()}
@@ -185,6 +229,10 @@ export function QrPairing({
             <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
             <p className="text-xs text-fg">{t("android.qr.cameraWarning")}</p>
           </div>
+
+          <p className="text-xs text-success">
+            {targetHost ? t("android.qr.autoMode") : t("android.qr.listenMode")}
+          </p>
 
           <ol className="text-xs text-fg-muted space-y-1 list-decimal ms-4">
             <li>{t("android.qr.step1")}</li>

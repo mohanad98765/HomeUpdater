@@ -282,3 +282,96 @@ def test_it_is_pure_black_on_pure_white():
     svg = android_qr.render_qr_svg(android_qr.build_payload("homeupdater-abcd1234", "483920"))
     colours = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{3,6}", svg)}
     assert colours == {"#000", "#fff"}, colours
+
+
+# --- QR made automatic: the sweep, not the announcement --------------------------
+def test_scanning_the_code_pairs_without_any_mdns_at_all(adb, monkeypatch):
+    """The whole point of the change: on a network that carries no multicast, the phone
+    still opens a pairing port after the scan, and the password is the one WE put in the
+    code. So the hub sweeps the phone the operator picked and pairs itself.
+
+    mDNS returns nothing here — deliberately — because that is the measured reality on
+    the first customer network and on a colleague's workplace network.
+    """
+    swept = []
+
+    async def fake_find(host, first=None, last=None):
+        swept.append(host)
+        # Before the code is shown: one unrelated listener. After: the pairing port too.
+        return [30001] if len(swept) == 1 else [30001, 34887]
+
+    paired = {}
+
+    def fake_pair(host, port, code):
+        paired["args"] = (host, port, code)
+        return (port == 34887), "Successfully paired" if port == 34887 else "no"
+
+    async def fake_connect(host, exclude=None):
+        return 34677
+
+    monkeypatch.setattr(android_qr.android_autopair, "find_open_ports", fake_find)
+    monkeypatch.setattr(android_qr.android_autopair, "_pair_blocking", fake_pair)
+    monkeypatch.setattr(android_qr.android_autopair, "find_connect_port", fake_connect)
+
+    session = asyncio.run(android_qr.start(target_host="192.168.3.24"))
+    assert session.known_ports == {30001}, "the baseline was taken before the code showed"
+
+    asyncio.run(android_qr._watch(session))
+    assert session.status == "paired", session.error
+    # It paired with OUR password, on the port that appeared after the scan.
+    assert paired["args"][0] == "192.168.3.24"
+    assert paired["args"][1] == 34887
+    assert paired["args"][2].isdigit() and len(paired["args"][2]) == 6
+    assert session.device == {
+        "host": "192.168.3.24",
+        "port": 34677,
+        "instance": "192.168.3.24:34887",
+    }
+
+
+def test_a_port_that_was_already_open_is_never_mistaken_for_the_new_one(adb, monkeypatch):
+    tried = []
+
+    async def fake_find(host, first=None, last=None):
+        return [30001, 30002]
+
+    def fake_pair(host, port, code):
+        tried.append(port)
+        return False, "no"
+
+    monkeypatch.setattr(android_qr.android_autopair, "find_open_ports", fake_find)
+    monkeypatch.setattr(android_qr.android_autopair, "_pair_blocking", fake_pair)
+
+    session = asyncio.run(android_qr.start(target_host="192.168.3.24"))
+    session.expires_at = session.expires_at.replace(year=2000)
+    asyncio.run(android_qr._watch(session))
+    assert tried == [], "nothing new appeared, so nothing was probed"
+    assert session.status == "expired"
+
+
+def test_the_password_is_dropped_after_the_sweep_pairs(adb, monkeypatch):
+    async def fake_find(host, first=None, last=None):
+        return [34887]
+
+    monkeypatch.setattr(android_qr.android_autopair, "find_open_ports", fake_find)
+    monkeypatch.setattr(
+        android_qr.android_autopair, "_pair_blocking", lambda h, p, c: (True, "Successfully paired")
+    )
+
+    async def fake_connect(host, exclude=None):
+        return 34677
+
+    monkeypatch.setattr(android_qr.android_autopair, "find_connect_port", fake_connect)
+    session = asyncio.run(android_qr.start(target_host="192.168.3.24"))
+    session.known_ports = set()
+    asyncio.run(android_qr._watch(session))
+    assert session.status == "paired"
+    assert session.password == "" and session.payload == ""
+
+
+def test_without_a_picked_phone_nothing_is_swept(adb):
+    """Sweeping every device on a network because nobody said which phone would be a
+    scan of other people's machines. It only ever probes the one that was chosen."""
+    session = asyncio.run(android_qr.start())
+    assert session.target_host == ""
+    assert session.known_ports == set()
