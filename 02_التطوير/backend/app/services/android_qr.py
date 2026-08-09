@@ -90,6 +90,9 @@ class PairingSession:
     candidates: list[dict] = field(default_factory=list)
     device: dict | None = None
     error: str = ""
+    # Set when the failure has a known cause the operator can act on, so the UI can
+    # offer the remedy instead of a status word.
+    diagnosis: str = ""
 
     def public(self) -> dict:
         """What the UI may see. The password is inside ``payload`` because the QR is
@@ -107,6 +110,7 @@ class PairingSession:
             ],
             "device": self.device,
             "error": self.error,
+            "diagnosis": self.diagnosis,
         }
 
 
@@ -265,7 +269,21 @@ async def _watch(session: PairingSession) -> None:
         while session.status == "waiting":
             if datetime.now(UTC) >= session.expires_at:
                 session.status = "expired"
-                logger.info("QR pairing session expired unused")
+                # An expired session is the moment to say WHY, because by now this
+                # failure has a known cause and a known remedy. mDNS is the fragile
+                # part of Android's design: the phone announces a random port and the
+                # host must hear it. Measured on the first customer network — the phone
+                # answers a ping in 40ms and sends zero mDNS packets in sixty seconds —
+                # and reported again from a workplace network, where client isolation
+                # and separate VLANs make multicast blocking the norm rather than the
+                # exception. Leaving the operator with "expired" and nothing else is
+                # what turned six attempts into six dead ends.
+                session.diagnosis = "no_announcement"
+                logger.info(
+                    "QR pairing session expired unused — nothing advertised; on a "
+                    "network that does not carry mDNS this is expected, and pairing "
+                    "by code is the path that does not need it"
+                )
                 return
             rows = await _in_executor(_new_pairing_rows, session.known_instances)
             if rows:

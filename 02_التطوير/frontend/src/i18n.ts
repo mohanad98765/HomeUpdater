@@ -555,6 +555,8 @@ const resources = {
           whyThisWorks: "لماذا هذه الطريقة أضمن: إقران QR يحتاج أن يسمع الحاسب إعلان الهاتف عبر الشبكة، وكثير من الراوترات لا تمرّر ذلك بين الواي فاي والكابل. هذه الطريقة لا تحتاجه.",
         },
         qr: {
+          likelyCause: "الأرجح: شبكتك لا تنقل إعلان الهاتف.",
+          useCodeInstead: "إقران QR يحتاج أن يسمع الحاسب إعلان هاتفك عبر الشبكة، وكثير من شبكات العمل والراوترات المنزليّة لا تنقله بين الواي فاي والكابل. استعمل «إقران بالرمز» في الأعلى — لا يحتاج ذلك ويعمل على أي شبكة.",
           cameraWarning: "لا تستعمل تطبيق الكاميرا ولا أي قارئ QR — لن يعمل. هذا الرمز يفهمه مكانٌ واحد فقط في الهاتف: شاشة «إقران جهاز برمز QR» داخل «تصحيح الأخطاء اللاسلكي».",
           adding: "يُضاف الجهاز…",
           addFailed: "تمّ الإقران لكن تعذّرت إضافة الجهاز:",
@@ -1353,6 +1355,8 @@ const resources = {
           whyThisWorks: "Why this way is dependable: QR pairing needs the PC to hear the phone announce itself over the network, and many routers do not carry that between Wi-Fi and cable. This way does not need it.",
         },
         qr: {
+          likelyCause: "Most likely: your network does not carry the phone's announcement.",
+          useCodeInstead: "QR pairing needs the PC to hear your phone announce itself over the network, and many workplace networks and home routers do not carry that between Wi-Fi and cable. Use “Pair with a code” above — it does not need this and works on any network.",
           cameraWarning: "Do not use the camera app or any QR reader — it will not work. Exactly one place on the phone understands this code: the “Pair device with QR code” screen inside Wireless debugging.",
           adding: "Adding the phone…",
           addFailed: "Paired, but the phone could not be added:",
@@ -2094,6 +2098,8 @@ const resources = {
           whyThisWorks: "Pourquoi cette méthode est fiable : l'appairage par QR exige que le PC entende le téléphone s'annoncer sur le réseau, et beaucoup de routeurs ne transmettent pas cela entre le Wi-Fi et le câble. Cette méthode n'en a pas besoin.",
         },
         qr: {
+          likelyCause: "Le plus probable : votre réseau ne transporte pas l'annonce du téléphone.",
+          useCodeInstead: "L'appairage par QR exige que le PC entende le téléphone s'annoncer sur le réseau, et beaucoup de réseaux d'entreprise et de routeurs domestiques ne le transmettent pas entre le Wi-Fi et le câble. Utilisez « Appairage par code » ci-dessus — il n'en a pas besoin et fonctionne sur tout réseau.",
           cameraWarning: "N'utilisez pas l'application appareil photo ni un lecteur de QR — cela ne marchera pas. Un seul endroit du téléphone comprend ce code : l'écran « Associer l'appareil à l'aide d'un QR code » dans le débogage sans fil.",
           adding: "Ajout du téléphone…",
           addFailed: "Appairé, mais le téléphone n'a pas pu être ajouté :",
@@ -2864,6 +2870,8 @@ const resources = {
           whyThisWorks: "Por qué esta forma es fiable: el emparejamiento por QR necesita que el PC oiga al teléfono anunciarse en la red, y muchos routers no lo transmiten entre el Wi-Fi y el cable. Esta forma no lo necesita.",
         },
         qr: {
+          likelyCause: "Lo más probable: su red no transporta el anuncio del teléfono.",
+          useCodeInstead: "El emparejamiento por QR necesita que el PC oiga al teléfono anunciarse en la red, y muchas redes de trabajo y routers domésticos no lo transmiten entre el Wi-Fi y el cable. Use “Emparejar con un código” arriba: no lo necesita y funciona en cualquier red.",
           cameraWarning: "No use la aplicación de cámara ni ningún lector de QR: no funcionará. Solo un lugar del teléfono entiende este código: la pantalla “Emparejar dispositivo mediante código QR” dentro de Depuración inalámbrica.",
           adding: "Añadiendo el teléfono…",
           addFailed: "Emparejado, pero no se pudo añadir el teléfono:",
@@ -3662,6 +3670,8 @@ const resources = {
           whyThisWorks: "Bu yol neden güvenilir: QR eşleştirme, bilgisayarin telefonun ag üzerindeki duyurusunu duymasini gerektirir ve birçok yönlendirici bunu Wi-Fi ile kablo arasinda taşimaz. Bu yol buna ihtiyaç duymaz.",
         },
         qr: {
+          likelyCause: "Muhtemelen: aginiz telefonun duyurusunu taşimiyor.",
+          useCodeInstead: "QR eşleştirme, bilgisayarin telefonun ag üzerindeki duyurusunu duymasini gerektirir; birçok iş yeri agi ve ev yönlendiricisi bunu Wi-Fi ile kablo arasinda taşimaz. Yukaridaki “Kodla eşleştir”’i kullanin — buna ihtiyaç duymaz ve her agda çalişir.",
           cameraWarning: "Kamera uygulamasini veya herhangi bir QR okuyucuyu kullanmayin — işe yaramaz. Bu kodu telefonda yalnizca tek bir yer anlar: Kablosuz hata ayiklama içindeki “Cihazi QR kodu ile eşleştir” ekrani.",
           adding: "Telefon ekleniyor…",
           addFailed: "Eşleştirildi, ancak telefon eklenemedi:",
@@ -4460,6 +4470,8 @@ const resources = {
           whyThisWorks: "یہ طریقہ کیوں قابلِ اعتماد ہے: QR جوڑنے کے لیے پی سی کو فون کا نیٹ ورک اعلان سننا پڑتا ہے، اور بہت سے راؤٹر یہ وائی فائی اور کیبل کے درمیان منتقل نہیں کرتے۔ اس طریقے کو اس کی ضرورت نہیں۔",
         },
         qr: {
+          likelyCause: "غالباً: آپ کا نیٹ ورک فون کا اعلان منتقل نہیں کرتا۔",
+          useCodeInstead: "QR جوڑنے کے لیے پی سی کو فون کا نیٹ ورک اعلان سننا پڑتا ہے، اور بہت سے دفتری نیٹ ورک اور گھریلو راؤٹر یہ وائی فائی اور کیبل کے درمیان منتقل نہیں کرتے۔ اوپر «کوڈ سے جوڑیں» استعمال کریں — اسے اس کی ضرورت نہیں اور یہ ہر نیٹ ورک پر کام کرتا ہے۔",
           cameraWarning: "کیمرا ایپ یا کوئی QR ریڈر استعمال نہ کریں — یہ کام نہیں کرے گا۔ اس کوڈ کو فون میں صرف ایک جگہ سمجھتی ہے: وائرلیس ڈی بگنگ کے اندر «Pair device with QR code» سکرین۔",
           adding: "فون شامل کیا جا رہا ہے…",
           addFailed: "جُڑ گیا، مگر فون شامل نہیں ہو سکا:",

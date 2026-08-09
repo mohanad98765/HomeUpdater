@@ -243,6 +243,35 @@ describe("when nothing arrives", () => {
   });
 });
 
+describe("a dead end must become a signpost", () => {
+  it("names the likely cause and points at the path that does not need mDNS", async () => {
+    // Two independent reports now: a home network where the phone answers a ping in
+    // 40ms and sends zero mDNS packets in sixty seconds, and a workplace network where
+    // client isolation makes multicast blocking the norm. "Expired" on its own turned
+    // six attempts into six dead ends; the remedy is one panel away and must be named.
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
+    await screen.findByRole("img", { name: /pairing code/i });
+    session = { ...session, status: "expired", seconds_left: 0, diagnosis: "no_announcement" };
+
+    const cause = await screen.findByText(/does not carry the phone's announcement/i, {}, {
+      timeout: 4000,
+    });
+    expect(cause).toBeTruthy();
+    const remedy = screen.getByText(/Pair with a code/i);
+    expect(remedy.textContent).toMatch(/works on any network/i);
+  });
+
+  it("does not blame the network when the hub has no reason to", async () => {
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /show the pairing code/i }));
+    await screen.findByRole("img", { name: /pairing code/i });
+    session = { ...session, status: "failed", error: "adb refused", diagnosis: "" };
+    await screen.findByText(/adb refused/i, {}, { timeout: 4000 });
+    expect(screen.queryByText(/does not carry the phone's announcement/i)).toBeNull();
+  });
+});
+
 describe("the credential's lifetime", () => {
   it("hands the paired phone back so nothing is retyped", async () => {
     const onPaired = vi.fn();

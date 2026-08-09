@@ -43,6 +43,7 @@ interface QrSession {
   candidates?: Candidate[];
   device?: { host: string; port: number | null; instance: string } | null;
   error?: string;
+  diagnosis?: string;
 }
 
 export function QrPairing({
@@ -317,6 +318,19 @@ export function QrPairing({
               {session.data.error}
             </p>
           )}
+          {session.data?.diagnosis === "no_announcement" && (
+            // By now this failure has a known cause and a known remedy. Android's QR
+            // pairing needs the PC to hear the phone announce a random port over the
+            // network; measured on the first customer network, the phone answers a ping
+            // in 40ms and sends zero such announcements in sixty seconds. Reported again
+            // from a workplace network, where client isolation makes it the norm. The
+            // page now says which door to use instead of listing four maybes.
+            <div className="rounded-md border border-primary/50 bg-primary/10 p-2 space-y-1">
+              <p className="text-xs text-fg font-bold">{t("android.qr.likelyCause")}</p>
+              <p className="text-xs text-fg-muted">{t("android.qr.useCodeInstead")}</p>
+            </div>
+          )}
+
           {/* The hub cannot distinguish these, so it lists them instead of picking one. */}
           <ul className="text-xs text-fg-muted space-y-1 list-disc ms-4">
             <li>{t("android.qr.why1")}</li>
