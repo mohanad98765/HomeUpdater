@@ -163,3 +163,27 @@ def test_auto_pair_rejects_a_malformed_code_at_the_edge(client):
         "/api/android/pair/auto", json={"host": "192.168.3.24", "code": "12345"}, headers=H
     )
     assert r.status_code == 422, "pydantic refuses it before any scanning happens"
+
+
+def test_a_stalled_port_costs_one_attempt_not_the_whole_pairing(monkeypatch):
+    """Measured: the sweep aborted after 2 of 8 candidates and showed the operator a raw
+    adb timeout string. A port that accepts a connection without completing adb's
+    handshake stalls the full 25s and used to raise straight out of the loop, even
+    though _pair_blocking is documented as never raising."""
+    tried = []
+
+    def fake_run(args, timeout=30.0, input_text=None):
+        target = args[1]
+        tried.append(target)
+        if target.endswith(":49664"):  # the black hole
+            raise AndroidError(f"انتهت مهلة adb (pair {target}).")
+        if target.endswith(":34887"):
+            return 0, f"Successfully paired to {target}", ""
+        return 1, "", "failed to connect"
+
+    monkeypatch.setattr(ap, "_run_adb_blocking", fake_run)
+    ok, _msg = ap._pair_blocking("192.168.3.24", 49664, "123456")
+    assert ok is False, "a stall is an answer, not an exception"
+    ok, msg = ap._pair_blocking("192.168.3.24", 34887, "123456")
+    assert ok is True and "aired" in msg
+    assert len(tried) == 2, "both ports were attempted"

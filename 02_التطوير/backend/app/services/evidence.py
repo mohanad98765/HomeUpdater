@@ -254,7 +254,8 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
         "licensee": licensee,
         "scope": {"machines": 1, "note": "the machine running HomeUpdater"},
         "inventory_total": len(inventory),
-        "coverage": cpe.coverage([(r.product_id, r.name) for r in inventory]),
+        # Versions passed on purpose: a product can be in the map and still unmatchable.
+        "coverage": cpe.coverage([(r.product_id, r.name, r.version) for r in inventory]),
         "matched": matched,
         "unmatched": unmatched,
         "findings_total": sum(len(m["findings"]) for m in matched),

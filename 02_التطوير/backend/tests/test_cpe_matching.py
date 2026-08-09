@@ -217,6 +217,10 @@ def test_coverage_separates_store_packages_from_the_real_gap():
         "documented_exclusion": 1,
         "store_package": 1,
         "not_investigated": 1,
+        # Present and zero here because this call passes no versions. It is the bucket
+        # for a product that IS in the map but whose installed version cannot be
+        # compared — counted as mapped until it was measured on a real inventory.
+        "version_not_comparable": 0,
     }
     assert sum(cov["by_reason"].values()) == cov["total"]
     assert cov["percent"] == 25.0, "the raw percentage must stay the headline"
@@ -537,7 +541,11 @@ def test_precise_separates_mapped_from_unmapped(client, monkeypatch):
     assert reasons["Bad.Version"] == "version_not_comparable"
     # 7zip is mapped but has no cached NVD result and refresh wasn't requested
     assert reasons["7zip.7zip"] == "not_yet_checked"
-    assert body["coverage"]["mapped"] == 2
+    # This assertion used to demand 2 — it counted Bad.Version as covered while the
+    # very same response reported it as version_not_comparable. Coverage now agrees
+    # with the reasons printed beside it: a product we cannot check is not covered.
+    assert body["coverage"]["mapped"] == 1
+    assert body["coverage"]["by_reason"]["version_not_comparable"] == 1
 
 
 def test_precise_never_calls_nvd_unless_asked(client, monkeypatch):

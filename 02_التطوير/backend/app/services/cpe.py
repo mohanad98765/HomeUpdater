@@ -745,14 +745,39 @@ def coverage(products: list[tuple[str, str]] | list[str]) -> dict:
     ``percent`` stays the headline — the breakdown explains it, it does not replace
     it, and ``addressable_percent`` is reported next to it, never instead of it.
 
-    Accepts ``(product_id, name)`` pairs; a bare list of ids still works, but then
-    the name-based rules cannot apply and coverage reads lower than reality.
+    Accepts ``(product_id, name)`` pairs, or ``(product_id, name, version)`` triples; a
+    bare list of ids still works, but then the name-based rules cannot apply and coverage
+    reads lower than reality.
+
+    **Pass the version when you have it.** Without it "mapped" means only that the
+    product is in the curated map — and a product can be in the map and still be
+    unmatchable, because its installed version is not comparable. Measured on a real
+    inventory: "PowerToys (Preview)" at version "> 0.75.1" was counted as mapped while
+    ``resolve`` refused it, so the pack printed 78.6% where the honest figure was 71.4%.
+    A coverage number that counts products it could not actually check is the one number
+    in this document that must not be optimistic.
     """
-    pairs = [(p, "") if isinstance(p, str) else (p[0], p[1] or "") for p in products]
-    total = len(pairs)
-    buckets = {"mapped": 0, "documented_exclusion": 0, "store_package": 0, "not_investigated": 0}
-    for pid, nm in pairs:
-        buckets[classify_unmapped(pid, nm)] += 1
+    rows = []
+    for p in products:
+        if isinstance(p, str):
+            rows.append((p, "", None))
+        elif len(p) >= 3:
+            rows.append((p[0], p[1] or "", p[2]))
+        else:
+            rows.append((p[0], p[1] or "", None))
+    total = len(rows)
+    buckets = {
+        "mapped": 0,
+        "documented_exclusion": 0,
+        "store_package": 0,
+        "not_investigated": 0,
+        "version_not_comparable": 0,
+    }
+    for pid, nm, version in rows:
+        bucket = classify_unmapped(pid, nm)
+        if bucket == "mapped" and version is not None and resolve(pid, version, nm) is None:
+            bucket = "version_not_comparable"
+        buckets[bucket] += 1
     mapped = buckets["mapped"]
     addressable = mapped + buckets["not_investigated"]
     return {

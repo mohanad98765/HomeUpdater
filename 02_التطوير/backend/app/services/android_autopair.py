@@ -88,10 +88,22 @@ async def find_open_ports(
 
 def _pair_blocking(host: str, port: int, code: str) -> tuple[bool, str]:
     """One pairing attempt. Returns (ok, message) rather than raising: during a scan
-    most candidates are simply the wrong port, and that is not an error."""
-    rc, out, err = _run_adb_blocking(
-        ["pair", f"{host}:{port}", code], timeout=25, input_text=f"{code}\n"
-    )
+    most candidates are simply the wrong port, and that is not an error.
+
+    The contract said "never raises" and did not hold: ``_run_adb_blocking`` raises on
+    its 25-second timeout, and a port that accepts a TCP connection without completing
+    adb's handshake stalls for exactly that long. Measured — the sweep aborted after 2
+    of 8 candidates and showed the operator a raw adb timeout string. A half-open port
+    is the most ordinary thing on a network (a printer, a router service); it must cost
+    this attempt, not the whole pairing.
+    """
+    try:
+        rc, out, err = _run_adb_blocking(
+            ["pair", f"{host}:{port}", code], timeout=25, input_text=f"{code}\n"
+        )
+    except AndroidError as exc:  # the 25s timeout, or adb refusing to start
+        logger.debug(f"pair attempt on {host}:{port} did not complete: {exc}")
+        return False, str(exc)
     text = f"{out}\n{err}".strip()
     return (rc == 0 and "uccessfully paired" in text), text
 

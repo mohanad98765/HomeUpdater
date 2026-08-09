@@ -190,5 +190,5 @@ async def precise_findings(
         "match_mode": "cpe",
         "matched": matched,
         "unmatched": unmatched,
-        "coverage": cpe.coverage([(r.product_id, r.name) for r in rows]),
+        "coverage": cpe.coverage([(r.product_id, r.name, r.version) for r in rows]),
     }
