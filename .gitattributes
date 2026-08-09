@@ -1,0 +1,11 @@
+# Source is LF in the repository. Writing a file with CRLF on Windows turned a
+# three-line edit into a 553-line diff, which makes review impossible and is how a
+# mistake hides. Git normalizes on commit and leaves the working tree alone.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.gz binary
+*.exe binary
