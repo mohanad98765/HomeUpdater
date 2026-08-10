@@ -482,12 +482,18 @@ async def loop(state: AgentState, interval: int = CHECKIN_SECONDS) -> None:
 
 # ------------------------------------------------------------------------ CLI
 def main(argv: list[str] | None = None) -> int:
-    """``--agent [--hub URL --token T] [--name N] [--once] [--show-id]``.
+    """``--agent [--hub URL --token T] [--name N] [--once] [--show-id]``
+    ``[--install-task] [--remove-task]``.
 
     With a token it enrols (first run); without one it uses the saved state. ``--once``
-    performs a single check-in and exits, which is what a scheduled task would call and
-    what makes the mode testable without a service. ``--show-id`` prints this machine's
+    performs a single check-in and exits, which is what a scheduled task calls and what
+    makes the mode testable without a service. ``--show-id`` prints this machine's
     fingerprint and exits without touching the network or the saved state.
+
+    Enrolling installs the scheduled task, because an agent that stops when its window
+    closes is not a fleet feature — it is a demo, and the operator only finds out days
+    later when the machine has quietly gone silent. ``--no-task`` opts out for someone
+    who runs it their own way; ``--remove-task`` undoes it.
     """
     args = list(argv if argv is not None else sys.argv[1:])
 
@@ -507,12 +513,44 @@ def main(argv: list[str] | None = None) -> int:
         print(show_id())  # noqa: T201 — this IS the output of this mode
         return 0
 
+    from .services import agent_task
+
+    if "--remove-task" in args:
+        try:
+            print(agent_task.remove())  # noqa: T201
+        except agent_task.TaskError as exc:
+            logger.error(f"agent: {exc}")
+            return 2
+        return 0
+
+    if "--install-task" in args:
+        try:
+            print(agent_task.install())  # noqa: T201
+        except agent_task.TaskError as exc:
+            logger.error(f"agent: {exc}")
+            return 2
+        return 0
+
     try:
         state = load_state()
         if token:
             if not hub:
                 raise AgentError("--token requires --hub")
             state, _body = enrol(hub, token, name)
+            # Right after a successful enrolment is the only moment the operator is
+            # certainly standing at this machine with the rights to create the task.
+            # A failure here is reported and does NOT undo the enrolment: a machine
+            # that is enrolled but not scheduled is still usable by hand, and losing
+            # the enrolment over a scheduling problem would be the worse trade.
+            if "--no-task" not in args:
+                try:
+                    print(agent_task.install())  # noqa: T201
+                except agent_task.TaskError as exc:
+                    logger.warning(f"scheduled task not created: {exc}")
+                    print(  # noqa: T201
+                        "تنبيه: لم تُنشأ المهمّة المجدولة، فسيتوقّف الوكيل عند إغلاق "
+                        "النافذة. أعد المحاولة بـ: HomeUpdater.exe --agent --install-task"
+                    )
         if state is None:
             raise AgentError("not enrolled: pass --hub and --token once")
         if once:
