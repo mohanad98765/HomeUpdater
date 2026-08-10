@@ -205,15 +205,21 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
                 "checked_at": cached.get("fetched_at"),
                 "nvd_total": int(cached.get("total_results") or 0),
                 "nvd_examined": int(cached.get("examined") or 0),
+                "nvd_applicable": int(cached.get("applicable") or 0),
             }
         )
 
+    # ONLY what this app installed and saw succeed. Selecting on is_installed also
+    # returned updates Windows had merely stopped offering — superseded, expired,
+    # declined or hidden — and printed them under "Applied updates" with result code 2.
+    # A hash-stamped report asserting a security patch was applied when it was not is
+    # the one failure this document cannot survive.
     applied = (
         (
             await db.execute(
                 select(WindowsUpdateORM).where(
                     WindowsUpdateORM.device_id == HUB_DEVICE_ID,
-                    WindowsUpdateORM.is_installed.is_(True),
+                    WindowsUpdateORM.applied_by_us.is_(True),
                 )
             )
         )
@@ -239,8 +245,16 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
         for m in matched
         if m["nvd_total"] and m["nvd_examined"] < m["nvd_total"]
     ]
+    # Findings are capped for readability at the most severe few per product. Printing
+    # them beside "examined N of N" read as "these are all of them" — the cap has to be
+    # a stated number, not an unstated one.
+    shown = sum(len(m["findings"]) for m in matched)
+    applicable_total = sum(m.get("nvd_applicable", 0) for m in matched)
     evidence_state = {
         "products_checked": len(matched),
+        "findings_shown": shown,
+        "findings_applicable": max(applicable_total, shown),
+        "findings_capped": applicable_total > shown,
         "products_not_checked": sum(1 for u in unmatched if u["reason"] == "not_yet_checked"),
         "oldest_checked_at": min(checked_dates) if checked_dates else None,
         "newest_checked_at": max(checked_dates) if checked_dates else None,
@@ -336,6 +350,13 @@ def _range_text(applies: dict | None) -> str:
         if applies.get(key):
             parts.append(f"{label} {applies[key]}")
     return " · ".join(parts)
+
+
+def _cap_note(ev: dict) -> str:
+    """Said only when it is true — a cap notice on an uncapped list is noise."""
+    if not ev.get("findings_capped"):
+        return ""
+    return " — عُرضت الأشدّ خطورة فقط / most severe only"
 
 
 def _date_only(iso: str | None) -> str:
@@ -483,6 +504,10 @@ def to_html(pack: dict) -> str:
       <td>{_esc(ev.get('products_checked', 0))}</td></tr>
   <tr><td>منتجات لم تُفحص بعد — Products not checked yet</td>
       <td>{_esc(ev.get('products_not_checked', 0))}</td></tr>
+  <tr><td>نتائج معروضة — Findings shown</td>
+      <td>{_esc(ev.get('findings_shown', 0))} /
+          {_esc(ev.get('findings_applicable', 0))}
+          {_cap_note(ev)}</td></tr>
   <tr><td>سجلّات NVD قُرئت — NVD records examined</td>
       <td>{_esc(ev.get('nvd_records_examined', 0))} /
           {_esc(ev.get('nvd_records_total', 0))}</td></tr>

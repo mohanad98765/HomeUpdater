@@ -43,6 +43,11 @@ from ..services.windows_updates import (
 
 router = APIRouter()
 
+# Not a WUA result code: WUA uses 0..5, so a negative value cannot collide with one. It
+# means "Windows stopped offering this", which is a fact we know, unlike "it was
+# installed", which we were inferring.
+NO_LONGER_OFFERED = -1
+
 
 def _claims_update_slot(operation: str):
     """Decorator: reserve the single update slot for the whole handler.
@@ -215,11 +220,16 @@ async def _check_wua(db: AsyncSession, *, kind: str, wua_type: str) -> dict:
         row.is_installed = False
         row.last_checked = now
 
-    # Mark previously-pending of this kind that are no longer pending as installed
+    # An update that stopped being offered is no longer PENDING — but "not offered" is
+    # not "installed". Windows also withdraws an update when it is superseded, expired,
+    # declined or hidden, and Defender definitions are superseded several times a day.
+    # Recording result code 2 ("Succeeded") here is what put updates nobody installed
+    # into a hash-stamped report under "Applied updates"; ``applied_by_us`` stays False
+    # so the pack can tell the two apart.
     for uid, row in existing.items():
         if uid not in found_ids and not row.is_installed:
             row.is_installed = True
-            row.install_result = 2
+            row.install_result = NO_LONGER_OFFERED
 
     await _record_check(db, kind, len(found), now)
     await db.commit()
@@ -290,6 +300,9 @@ async def _install_wua(db: AsyncSession, payload: InstallRequest, *, kind: str) 
         if r:
             row.install_result = r["result_code"]
             row.is_installed = bool(r["succeeded"])
+            # The only place this is ever set. Everything the pack claims as applied
+            # comes from here, where an install genuinely ran and reported success.
+            row.applied_by_us = row.applied_by_us or bool(r["succeeded"])
     await db.commit()
     # الحدث الأهمّ في حزمة الدليل: أيّ تحديث ثُبِّت ومتى ونتيجته — هذا ما يُطالَب
     # بإثباته أمام المُراجِع، فيُسجَّل نجاحًا كان أو فشلًا.

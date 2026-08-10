@@ -357,3 +357,109 @@ def test_the_stamp_covers_exactly_what_the_reader_is_told_to_hash():
 
     envelope = _json.dumps(pack, indent=2, ensure_ascii=False).encode("utf-8")
     assert hashlib.sha256(envelope).hexdigest() != pack["content_sha256"]
+
+
+# --- "not offered any more" is not "we installed it" ----------------------------------
+def test_a_superseded_update_is_not_printed_as_applied():
+    """Reproduced by the audit on the real handler: a January cumulative update nobody
+    installed appeared in the hash-stamped pack under "Applied updates" with result code
+    2. Windows withdraws an update when it is superseded, expired, declined or hidden,
+    and Defender definitions are superseded several times a day — so "it stopped being
+    offered" is the common case, not the rare one."""
+    from app.models.orm import WindowsUpdateORM
+    from app.routers.updates import NO_LONGER_OFFERED
+
+    async def run():
+        engine, Session = await _db()
+        async with Session() as db:
+            db.add(
+                WindowsUpdateORM(
+                    device_id=0,
+                    kind="windows",
+                    update_id="{JAN-CU}",
+                    title="2026-01 Cumulative Update (KB5099001)",
+                    is_installed=True,
+                    install_result=NO_LONGER_OFFERED,
+                    applied_by_us=False,  # nobody installed it; Windows stopped offering it
+                )
+            )
+            db.add(
+                WindowsUpdateORM(
+                    device_id=0,
+                    kind="windows",
+                    update_id="{REAL}",
+                    title="Something we actually installed",
+                    is_installed=True,
+                    install_result=2,
+                    applied_by_us=True,
+                )
+            )
+            await db.commit()
+            pack = await evidence.build(db, licensee="Acme")
+            applied = [u["update_id"] for u in pack["pack"]["updates_applied"]]
+            assert applied == ["{REAL}"], applied
+            html = evidence.to_html(pack)
+            assert "KB5099001" not in html, "a patch nobody installed was claimed as applied"
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_the_check_no_longer_records_a_success_it_did_not_see(monkeypatch):
+    """The sweep that closes out disappeared rows must not write WUA's success code."""
+    from app.routers.updates import NO_LONGER_OFFERED
+
+    assert NO_LONGER_OFFERED not in (0, 1, 2, 3, 4, 5), "must not collide with a WUA code"
+    source = __import__("pathlib").Path("app/routers/updates.py").read_text(encoding="utf-8")
+    assert "row.install_result = NO_LONGER_OFFERED" in source
+    assert "row.install_result = 2" not in source, "the inferred success is gone"
+
+
+# --- a capped findings list must say it is capped -------------------------------------
+def test_the_findings_cap_is_a_number_on_the_page():
+    """Eight findings printed beside "examined 2000 of 2000" reads as "these are all of
+    them". The cap is for readability; leaving it unstated is not."""
+
+    async def run():
+        engine, Session = await _db()
+        async with Session() as db:
+            from app.services import cpe as cpe_mod
+
+            _software(db, "7zip.7zip", "7-Zip", "21.07")
+            await db.commit()
+            identity = cpe_mod.resolve("7zip.7zip", "21.07", "7-Zip")
+            if identity is None:
+                pytest.skip("this build maps 7-Zip differently")
+            db.add(
+                CVECacheORM(
+                    keyword=identity.cpe_name,
+                    total_results=17,
+                    examined=17,
+                    applicable=23,  # more applied than the pack shows
+                    data=json.dumps([], ensure_ascii=False),
+                    fetched_at=datetime.now(UTC),
+                )
+            )
+            await db.commit()
+            pack = await evidence.build(db, licensee="Acme")
+            ev = pack["pack"]["evidence_state"]
+            assert ev["findings_applicable"] == 23
+            assert ev["findings_capped"] is True
+            assert "most severe only" in evidence.to_html(pack)
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_an_uncapped_list_says_nothing_about_a_cap():
+    async def run():
+        engine, Session = await _db()
+        async with Session() as db:
+            _software(db, "7zip.7zip", "7-Zip", "21.07")
+            await db.commit()
+            pack = await evidence.build(db, licensee="Acme")
+            assert pack["pack"]["evidence_state"]["findings_capped"] is False
+            assert "most severe only" not in evidence.to_html(pack)
+        await engine.dispose()
+
+    asyncio.run(run())

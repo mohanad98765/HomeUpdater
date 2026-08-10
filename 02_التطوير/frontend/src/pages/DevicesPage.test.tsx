@@ -247,3 +247,33 @@ describe("DevicesPage", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("a failed fetch must not look like an empty network", () => {
+  it("says the list could not be loaded, and offers a retry", async () => {
+    // "No devices discovered yet" was rendered for a FAILED request too, so a backend
+    // that is down looked exactly like a network with nothing on it — and the
+    // operator's next move, scanning again, cannot fix what actually broke.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url).endsWith("/api/devices")) {
+          return Promise.resolve(res(500, { detail: "database is locked" }, false));
+        }
+        return router(url, init);
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ThemeProvider>
+          <LanguageProvider>
+            <DevicesPage onBack={() => {}} />
+          </LanguageProvider>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/Could not load the device list/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No devices/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /Try again/i })).toBeTruthy();
+  });
+});

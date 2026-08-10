@@ -475,6 +475,8 @@ const resources = {
         offline: "غير متصل",
       },
       devices: {
+        listFailed: "تعذّر تحميل قائمة الأجهزة",
+        listRetry: "أعد المحاولة",
         title: "أجهزة الشبكة",
         scan: "فحص الشبكة الآن",
         scanning: "جارٍ فحص الشبكة…",
@@ -1314,6 +1316,8 @@ const resources = {
         offline: "Offline",
       },
       devices: {
+        listFailed: "Could not load the device list",
+        listRetry: "Try again",
         title: "Network devices",
         scan: "Scan network now",
         scanning: "Scanning network…",
@@ -2153,6 +2157,8 @@ const resources = {
         offline: "Hors ligne",
       },
       devices: {
+        listFailed: "Impossible de charger la liste des appareils",
+        listRetry: "Réessayer",
         title: "Appareils du réseau",
         scan: "Analyser maintenant",
         scanning: "Analyse du réseau…",
@@ -3097,6 +3103,8 @@ const resources = {
         },
       },
       devices: {
+        listFailed: "No se pudo cargar la lista de dispositivos",
+        listRetry: "Reintentar",
         title: "Dispositivos de la red",
         scan: "Analizar la red ahora",
         scanning: "Analizando la red…",
@@ -3936,6 +3944,8 @@ const resources = {
         },
       },
       devices: {
+        listFailed: "Cihaz listesi yüklenemedi",
+        listRetry: "Yeniden dene",
         title: "Ağ cihazları",
         scan: "Ağı şimdi tara",
         scanning: "Ağ taranıyor…",
@@ -4775,6 +4785,8 @@ const resources = {
         },
       },
       devices: {
+        listFailed: "ڈیوائس کی فہرست لوڈ نہیں ہو سکی",
+        listRetry: "دوبارہ کوشش کریں",
         title: "نیٹ ورک آلات",
         scan: "ابھی نیٹ ورک اسکین کریں",
         scanning: "نیٹ ورک اسکین ہو رہا ہے…",

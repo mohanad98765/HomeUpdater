@@ -264,6 +264,12 @@ class WindowsUpdateORM(Base):
     # State / install tracking
     is_installed: Mapped[bool] = mapped_column(Boolean, default=False)
     install_result: Mapped[int] = mapped_column(Integer, default=0)  # 0=not tried, 2=success
+    # Did WE install it, or did it merely stop being offered? Windows withdraws an update
+    # when it is superseded, expired, declined or hidden — and Defender definitions are
+    # superseded several times a day. Inferring "installed" from "no longer offered" put
+    # updates nobody installed into a hash-stamped report under "Applied updates". This
+    # flag is set ONLY by the install path, so the pack can assert what it can prove.
+    applied_by_us: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     last_checked: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     def to_dict(self) -> dict:
@@ -418,6 +424,10 @@ class CVECacheORM(Base):
     # critical records were never seen. Storing the number is what lets the sold report
     # say "examined N of M" instead of implying it examined everything.
     examined: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # How many advisories applied to this exact version BEFORE the display cap. The pack
+    # kept the eight most severe and printed "examined N of N" beside them, which reads
+    # as "these are all of them".
+    applicable: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     data: Mapped[str] = mapped_column(Text, default="[]")  # JSON: list of top CVEs
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -426,6 +436,7 @@ class CVECacheORM(Base):
             "keyword": self.keyword,
             "total_results": self.total_results,
             "examined": self.examined,
+            "applicable": self.applicable,
             "cves": json.loads(self.data or "[]"),
             "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }

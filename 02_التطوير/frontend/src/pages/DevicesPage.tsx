@@ -276,6 +276,18 @@ export function DevicesPage({ onBack }: { onBack: () => void }) {
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-fg-muted" />
           <p className="text-fg-muted">{t("status.loading")}</p>
         </div>
+      ) : list.isError ? (
+        // "No devices discovered yet" was shown for a FAILED fetch too, so a backend
+        // that is down looks exactly like a network with nothing on it — and the
+        // operator's next move (scan again) cannot fix what actually broke.
+        <div className="card text-center py-12 border-danger/30 bg-danger/5">
+          <AlertTriangle className="w-8 h-8 mx-auto mb-3 text-danger" />
+          <p className="font-bold mb-1">{t("devices.listFailed")}</p>
+          <p className="text-sm text-fg-muted mb-3">{(list.error as Error)?.message}</p>
+          <button type="button" onClick={() => list.refetch()} className="btn-secondary text-sm">
+            {t("devices.listRetry")}
+          </button>
+        </div>
       ) : devices.length === 0 && !isScanning ? (
         <EmptyState onScan={() => scan.mutate()} disabled={isScanning || !scanSubnet} />
       ) : devices.length > 0 ? (

@@ -15,9 +15,11 @@ Public API:
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -107,6 +109,57 @@ def _classify_winget_rc(rc: int) -> tuple[bool, bool]:
     if code in _WINGET_NOOP_CODES:
         return True, False
     return False, False
+
+
+# This process runs with a requireAdministrator manifest, and on agent machines a
+# scheduled task fires it every 15 minutes with no one watching. Spawning "winget" by
+# bare name resolves it through the inherited PATH — which the *unprivileged* user can
+# rewrite (HKCU\Environment\Path), and winget is NOT in System32, so nothing shadows a
+# planted copy. Reproduced during an audit: a decoy winget.exe earlier on PATH was
+# executed by this module, and list_installed_software() then returned "0 items,
+# degraded=False" — a clean, empty inventory that an Evidence Pack would be built from.
+#
+# The remote path already knew better: winrm_hosts.py locates winget.exe on the target
+# instead of trusting its PATH. This does the same locally.
+_WINGET_CACHE: str | None = None
+
+
+def winget_path() -> str:
+    """An absolute path to winget.exe, or "winget" if it genuinely cannot be found.
+
+    Falling back to the bare name keeps a machine where winget lives somewhere unusual
+    working; what it must not do is prefer PATH when the real binary is where Windows
+    puts it.
+    """
+    global _WINGET_CACHE
+    if _WINGET_CACHE:
+        return _WINGET_CACHE
+
+    candidates: list[Path] = []
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates.append(Path(local) / "Microsoft" / "WindowsApps" / "winget.exe")
+    program_files = os.environ.get("ProgramW6432") or os.environ.get("ProgramFiles")
+    if program_files:
+        candidates.extend(
+            sorted(
+                (Path(program_files) / "WindowsApps").glob(
+                    "Microsoft.DesktopAppInstaller_*/winget.exe"
+                )
+            )
+        )
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                _WINGET_CACHE = str(candidate)
+                logger.info(f"winget resolved to {_WINGET_CACHE}")
+                return _WINGET_CACHE
+        except OSError:
+            continue
+
+    logger.warning("winget.exe not found in its usual locations — falling back to PATH")
+    _WINGET_CACHE = "winget"
+    return _WINGET_CACHE
 
 
 async def _run(
@@ -397,7 +450,7 @@ async def list_installed_software() -> tuple[list[InstalledSoftwareInfo], bool]:
     """
     _ensure_windows()
     rc, stdout, stderr = await _run(
-        "winget",
+        winget_path(),
         "list",
         "--accept-source-agreements",
         "--disable-interactivity",
@@ -425,7 +478,7 @@ async def list_software_updates() -> tuple[list[SoftwarePackageInfo], bool]:
 
     try:
         rc, stdout, stderr = await _run(
-            "winget",
+            winget_path(),
             "upgrade",
             "--include-unknown",
             "--accept-source-agreements",
@@ -460,7 +513,7 @@ async def install_software_update(package_id: str) -> dict[str, Any]:
     _ensure_windows()
     update_progress.set_phase("installing", f"Installing {package_id}")
     rc, stdout, stderr = await _run(
-        "winget",
+        winget_path(),
         "upgrade",
         package_id,
         "--silent",

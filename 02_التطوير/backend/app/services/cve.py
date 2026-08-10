@@ -457,6 +457,9 @@ async def lookup_by_cpe(
         raise CVEError(f"NVD unreachable: {exc}") from exc
 
     cves = parse_cves(data, limit)
+    # Everything that parsed, before the display cap — so a report can say "showing 8 of
+    # 23" instead of showing 8 beside "examined 2000 of 2000".
+    applicable = len(parse_cves(data, 10**6))
     examined = int(data.get("examined", len(data.get("vulnerabilities", []) or [])))
     ranges = {r["id"]: r for r in matched_ranges(data, identity.product)}
     for c in cves:  # attach the range that made each CVE apply
@@ -469,6 +472,7 @@ async def lookup_by_cpe(
             db.add(row)
         row.total_results = total
         row.examined = examined
+        row.applicable = applicable
         row.data = json.dumps(cves, ensure_ascii=False)
         row.fetched_at = now
         await db.commit()
@@ -480,6 +484,7 @@ async def lookup_by_cpe(
         "match": "cpe",
         "total_results": total,
         "examined": examined,
+        "applicable": applicable,
         "cves": cves,
         "fetched_at": now.isoformat(),
         "cached": False,
