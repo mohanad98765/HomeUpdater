@@ -291,28 +291,84 @@ def _version() -> str:
 
 
 # ------------------------------------------------------------------- commands
-async def _collect() -> tuple[int, int, list[str], list[str]]:
-    """What this machine currently has. Returns (inventory, pending, ids, product_ids).
+# What one check-in reports. The hub caps the same numbers; a machine with more says so
+# rather than sending a partial list that reads like a whole one.
+MAX_REPORTED_UPDATES = 200
+MAX_REPORTED_PACKAGES = 300
 
-    The id lists are what makes "only ids this agent reported" enforceable: a command
-    naming anything else is refused locally, so a wrong or hostile hub cannot make this
-    machine act on an identifier it never saw.
+
+async def _collect() -> dict:
+    """What this machine currently has.
+
+    Returns the counts, the ITEMS to report, and the id lists that enforce "only ids
+    this agent reported": a command naming anything else is refused locally, so a wrong
+    or hostile hub cannot make this machine act on an identifier it never saw.
+
+    The items are new. Reporting counts alone was what made remote updating impossible —
+    the hub could see that a machine had eleven updates and could never name one of
+    them, so every install it issued was refused by this very rule. Sending the items
+    does not weaken the rule: the guard below still checks each id against this list.
     """
     from .services import software_updates, windows_updates
 
     products: list[str] = []
+    packages: list[dict] = []
     try:
         items, _degraded = await software_updates.list_installed_software()
         products = [i.product_id for i in items]
     except Exception as exc:  # noqa: BLE001 — inventory is best-effort, never fatal
         logger.warning(f"inventory failed: {exc}")
+    degraded = False
+    try:
+        upgradable = await software_updates.list_software_updates()
+        rows, degraded = upgradable if isinstance(upgradable, tuple) else (upgradable, False)
+        packages = [
+            {
+                "id": p.package_id,
+                "name": p.name,
+                "current_version": p.current_version,
+                "available_version": p.available_version,
+            }
+            for p in rows
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"upgrade list failed: {exc}")
+
     updates: list[str] = []
+    reported: list[dict] = []
     try:
         found = await windows_updates.check_for_updates()
         updates = [u.update_id for u in found]
+        reported = [
+            {
+                "id": u.update_id,
+                "title": (u.title or "")[:300],
+                "kind": getattr(u, "kind", "windows") or "windows",
+                "severity": getattr(u, "severity", "") or "",
+                "size_mb": float(getattr(u, "size_mb", 0.0) or 0.0),
+                "requires_reboot": bool(getattr(u, "requires_reboot", False)),
+            }
+            for u in found
+        ]
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"update check failed: {exc}")
-    return len(products), len(updates), updates, products
+
+    # A degraded winget run counts as truncated: the list may be missing entries, and a
+    # partial list presented as complete is the failure this whole release is about.
+    truncated = (
+        degraded or len(reported) > MAX_REPORTED_UPDATES or len(packages) > MAX_REPORTED_PACKAGES
+    )
+    return {
+        "inventory_count": len(products),
+        "pending_updates": len(updates),
+        "updates": reported[:MAX_REPORTED_UPDATES],
+        "packages": packages[:MAX_REPORTED_PACKAGES],
+        "truncated": truncated,
+        # Guards — the FULL lists, never truncated: a machine must be able to accept a
+        # command for anything it really has, even past what it could report at once.
+        "known_updates": updates,
+        "known_products": products,
+    }
 
 
 async def execute(command: dict, known_updates: list[str], known_products: list[str]) -> dict:
@@ -361,12 +417,15 @@ async def execute(command: dict, known_updates: list[str], known_products: list[
 
 async def run_once(state: AgentState, client: httpx.Client) -> dict:
     """One check-in plus whatever it comes back with."""
-    inventory, pending, update_ids, product_ids = await _collect()
+    state_now = await _collect()
     body = json.dumps(
         {
             "agent_version": _version(),
-            "inventory_count": inventory,
-            "pending_updates": pending,
+            "inventory_count": state_now["inventory_count"],
+            "pending_updates": state_now["pending_updates"],
+            "updates": state_now["updates"],
+            "packages": state_now["packages"],
+            "truncated": state_now["truncated"],
         }
     ).encode()
     resp = client.post(
@@ -387,7 +446,7 @@ async def run_once(state: AgentState, client: httpx.Client) -> dict:
         logger.warning(f"clock is {skew}s off the hub — fix time sync before it refuses us")
 
     for command in data.get("commands", []):
-        outcome = await execute(command, update_ids, product_ids)
+        outcome = await execute(command, state_now["known_updates"], state_now["known_products"])
         result_body = json.dumps(
             {
                 "command_id": command.get("id"),

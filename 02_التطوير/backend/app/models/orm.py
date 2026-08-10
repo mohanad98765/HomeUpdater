@@ -573,6 +573,10 @@ class AgentORM(Base):
     last_skew_seconds: Mapped[float] = mapped_column(Float, default=0.0)
     inventory_count: Mapped[int] = mapped_column(Integer, default=0)
     pending_updates: Mapped[int] = mapped_column(Integer, default=0)
+    # True when the machine had more items than one check-in body may carry. The hub
+    # says so rather than presenting a partial list as the whole truth — the same rule
+    # the evidence pack follows.
+    report_truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     def to_dict(self) -> dict:
         return {
@@ -587,6 +591,7 @@ class AgentORM(Base):
             "last_skew_seconds": self.last_skew_seconds,
             "inventory_count": self.inventory_count,
             "pending_updates": self.pending_updates,
+            "report_truncated": self.report_truncated,
             # The public key is not secret, but there is no reason to hand it to the
             # UI either; the fingerprint is what an operator compares on the target.
         }
@@ -676,4 +681,51 @@ class UpdateCheckORM(Base):
             "kind": self.kind,
             "checked_at": self.checked_at.isoformat() if self.checked_at else None,
             "found": self.found,
+        }
+
+
+class AgentItemORM(Base):
+    """One thing an agent reported it has: a pending update, or an upgradable package.
+
+    This table is what makes remote updating possible at all. The check-in used to carry
+    two integers — how MANY updates a machine had — so the hub could never name one, and
+    the agent refuses any id it did not itself report. Every remote install was therefore
+    guaranteed to fail, and the product said so on its own Agents page rather than
+    pretend otherwise.
+
+    A check-in is a full snapshot: the rows for an agent are replaced wholesale, so an
+    update installed elsewhere disappears from the hub's view on the next heartbeat
+    instead of lingering as a ghost the operator could try to install again.
+    """
+
+    __tablename__ = "agent_items"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "kind", "item_id", name="uq_agent_items_agent_kind_item"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    agent_id: Mapped[str] = mapped_column(String(36), index=True)
+    # "windows" | "driver" | "package" — the same vocabulary the local machine uses, so
+    # a remote row reads exactly like a local one on screen.
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    item_id: Mapped[str] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(300), default="")
+    current_version: Mapped[str] = mapped_column(String(64), default="")
+    available_version: Mapped[str] = mapped_column(String(64), default="")
+    severity: Mapped[str] = mapped_column(String(32), default="")
+    size_mb: Mapped[float] = mapped_column(Float, default=0.0)
+    requires_reboot: Mapped[bool] = mapped_column(Boolean, default=False)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "kind": self.kind,
+            "item_id": self.item_id,
+            "title": self.title,
+            "current_version": self.current_version,
+            "available_version": self.available_version,
+            "severity": self.severity,
+            "size_mb": self.size_mb,
+            "requires_reboot": self.requires_reboot,
+            "reported_at": self.reported_at.isoformat() if self.reported_at else None,
         }

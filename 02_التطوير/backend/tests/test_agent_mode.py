@@ -100,7 +100,33 @@ def enrolled(client, monkeypatch):
     # Keep the tests off this machine's real winget/WUA: the point here is the
     # protocol, and a real inventory would make them slow and machine-dependent.
     async def fake_collect():
-        return 2, 1, ["KB5000001"], ["7zip.7zip", "Git.Git"]
+        # Since the protocol change the check-in carries the ITEMS, not just how many —
+        # that is what lets the hub name an update the agent will actually accept.
+        return {
+            "inventory_count": 2,
+            "pending_updates": 1,
+            "updates": [
+                {
+                    "id": "KB5000001",
+                    "title": "Security Update for Windows",
+                    "kind": "windows",
+                    "severity": "Critical",
+                    "size_mb": 42.5,
+                    "requires_reboot": True,
+                }
+            ],
+            "packages": [
+                {
+                    "id": "7zip.7zip",
+                    "name": "7-Zip",
+                    "current_version": "21.07",
+                    "available_version": "24.09",
+                }
+            ],
+            "truncated": False,
+            "known_updates": ["KB5000001"],
+            "known_products": ["7zip.7zip", "Git.Git"],
+        }
 
     monkeypatch.setattr(agent_mode, "_collect", fake_collect)
     token = _enrol(client)
@@ -201,3 +227,128 @@ def test_cli_without_enrolment_fails_with_a_usable_message(monkeypatch):
 def test_cli_token_without_hub_is_refused(monkeypatch):
     monkeypatch.setattr(agent_mode, "load_state", lambda: None)
     assert agent_mode.main(["--agent", "--token", "HUENROL1.x.y"]) == 2
+
+
+# --- the protocol change: the hub learns WHICH, not just how many --------------------
+def test_the_hub_now_knows_which_updates_a_machine_has(client, enrolled):
+    """Before this, a check-in carried two integers. The hub could see that a machine
+    had eleven updates and could never name one — and the agent refuses any id it did
+    not itself report, so every remote install it issued failed by construction."""
+    import asyncio
+
+    asyncio.run(agent_mode.run_once(enrolled, client))
+
+    agent_id = client.get("/api/agents").json()["agents"][0]["id"]
+    items = client.get(f"/api/agents/{agent_id}/items").json()
+    assert [u["item_id"] for u in items["updates"]] == ["KB5000001"]
+    assert items["updates"][0]["title"] == "Security Update for Windows"
+    assert items["updates"][0]["requires_reboot"] is True
+    assert [p["item_id"] for p in items["packages"]] == ["7zip.7zip"]
+    assert items["packages"][0]["available_version"] == "24.09"
+    assert items["truncated"] is False
+    assert items["reported_at"]
+
+
+def test_a_command_named_from_that_list_is_accepted_and_runs(client, enrolled, monkeypatch):
+    """The whole point: the operator picks from what the machine reported, and the
+    machine accepts it because it is its own id."""
+    import asyncio
+
+    installed = {}
+
+    async def fake_install(ids):
+        installed["ids"] = list(ids)
+        return {"installed": len(ids), "requested": len(ids), "reboot_required": False}
+
+    monkeypatch.setattr("app.services.windows_updates.install_updates", fake_install)
+
+    asyncio.run(agent_mode.run_once(enrolled, client))
+    agent_id = client.get("/api/agents").json()["agents"][0]["id"]
+    reported = client.get(f"/api/agents/{agent_id}/items").json()
+    chosen = [reported["updates"][0]["item_id"]]
+
+    queued = client.post(
+        f"/api/agents/{agent_id}/command",
+        headers={"X-HomeUpdater": "1"},
+        json={"kind": "windows_updates_install", "update_ids": chosen},
+    )
+    assert queued.status_code == 200, queued.text
+
+    asyncio.run(agent_mode.run_once(enrolled, client))
+    assert installed["ids"] == chosen, "the remote install actually ran"
+
+
+def test_the_agent_still_refuses_an_id_the_hub_invented(client, enrolled, monkeypatch):
+    """Reporting the ids must not weaken the guard that made the protocol safe: a hub
+    that has been taken over must not be able to name an update this machine never saw."""
+    import asyncio
+
+    async def must_not_run(ids):
+        raise AssertionError(f"the agent ran an id it never reported: {ids}")
+
+    monkeypatch.setattr("app.services.windows_updates.install_updates", must_not_run)
+
+    asyncio.run(agent_mode.run_once(enrolled, client))
+    agent_id = client.get("/api/agents").json()["agents"][0]["id"]
+    client.post(
+        f"/api/agents/{agent_id}/command",
+        headers={"X-HomeUpdater": "1"},
+        json={"kind": "windows_updates_install", "update_ids": ["KB-NEVER-REPORTED"]},
+    )
+    asyncio.run(agent_mode.run_once(enrolled, client))
+
+    commands = client.get(f"/api/agents/{agent_id}/commands").json()["commands"]
+    # It reports the refusal rather than acting on it — and the status is not "done",
+    # because a refused command did not do what was asked.
+    assert commands, "the command must be accounted for, not vanish"
+    assert "refused" in (commands[-1]["result"] or ""), commands[-1]
+    assert commands[-1]["status"] != "done"
+
+
+def test_the_snapshot_replaces_rather_than_accumulates(client, enrolled, monkeypatch):
+    """A check-in is a snapshot. Merging would leave ghosts: an update installed by
+    Windows itself would stay on the hub's list, the operator would try it, and the
+    agent would refuse — a failure nobody could explain."""
+    import asyncio
+
+    asyncio.run(agent_mode.run_once(enrolled, client))
+
+    async def fewer():
+        return {
+            "inventory_count": 2,
+            "pending_updates": 0,
+            "updates": [],
+            "packages": [],
+            "truncated": False,
+            "known_updates": [],
+            "known_products": ["7zip.7zip"],
+        }
+
+    monkeypatch.setattr(agent_mode, "_collect", fewer)
+    asyncio.run(agent_mode.run_once(enrolled, client))
+
+    agent_id = client.get("/api/agents").json()["agents"][0]["id"]
+    items = client.get(f"/api/agents/{agent_id}/items").json()
+    assert items["updates"] == [] and items["packages"] == []
+
+
+def test_a_machine_with_more_than_one_body_holds_says_so(client, enrolled, monkeypatch):
+    import asyncio
+
+    async def lots():
+        return {
+            "inventory_count": 5000,
+            "pending_updates": 5000,
+            "updates": [{"id": f"KB{i}", "title": f"u{i}", "kind": "windows"} for i in range(200)],
+            "packages": [],
+            "truncated": True,
+            "known_updates": [f"KB{i}" for i in range(5000)],
+            "known_products": [],
+        }
+
+    monkeypatch.setattr(agent_mode, "_collect", lots)
+    asyncio.run(agent_mode.run_once(enrolled, client))
+    agent_id = client.get("/api/agents").json()["agents"][0]["id"]
+    items = client.get(f"/api/agents/{agent_id}/items").json()
+    assert items["truncated"] is True, "a partial list must not read as the whole state"
+    assert len(items["updates"]) == 200

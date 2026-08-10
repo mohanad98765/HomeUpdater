@@ -8,8 +8,8 @@ import { AgentsPage } from "./AgentsPage";
 
 // This page hands out a credential and grants trust to machines, so the tests police
 // the guards rather than the layout:
-//   • nothing on this page may issue a command — the protocol cannot carry one usefully
-//     and a button that always fails teaches the operator that the page lies;
+//   • a command may now be issued, but ONLY for something the machine itself reported —
+//     the agent refuses every other id, so any wider offer would be a button that lies;
 //   • the answer to the confirmation challenge must never be on the operator's screen;
 //   • the two irreversible actions must not be reachable by clicking;
 //   • the token must never reach storage, and a dead token must leave the DOM.
@@ -37,6 +37,8 @@ let mintStatus: number;
 let mintDetail: string;
 let confirmStatus: number;
 let calls: string[];
+let reportedItems: Record<string, unknown>;
+let commandBodies: Record<string, unknown>[];
 
 const PENDING: AgentRow = {
   id: "a1",
@@ -108,6 +110,13 @@ function router(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
           })
         : res(mintStatus, { detail: mintDetail }),
     );
+  }
+  if (u.includes("/items")) {
+    return Promise.resolve(res(200, reportedItems));
+  }
+  if (u.includes("/command")) {
+    commandBodies.push(JSON.parse(String(init?.body ?? "{}")));
+    return Promise.resolve(res(200, { id: 1, status: "queued" }));
   }
   if (u.includes("/api/agents/refusals")) {
     return Promise.resolve(res(200, { refusals, total: refusals.length }));
@@ -183,6 +192,8 @@ beforeEach(() => {
   mintDetail = "";
   confirmStatus = 200;
   calls = [];
+  reportedItems = { updates: [], packages: [], reported_at: null, truncated: false };
+  commandBodies = [];
 });
 
 afterEach(() => {
@@ -453,5 +464,71 @@ describe("why a machine went quiet", () => {
     refusals = [];
     renderPage();
     expect(await screen.findByText(/never reached the hub at all/i)).toBeTruthy();
+  });
+});
+
+// The protocol change: the hub can now name an update, and only one the machine reported.
+describe("updating another machine from here", () => {
+  it("offers exactly what that machine reported, and queues an install for it", async () => {
+    agents = [ACTIVE];
+    reportedItems = {
+      updates: [
+        {
+          kind: "windows",
+          item_id: "KB5000001",
+          title: "Security Update for Windows",
+          current_version: "",
+          available_version: "",
+          severity: "Critical",
+          size_mb: 42,
+          requires_reboot: true,
+        },
+      ],
+      packages: [
+        {
+          kind: "package",
+          item_id: "7zip.7zip",
+          title: "7-Zip",
+          current_version: "21.07",
+          available_version: "24.09",
+          severity: "",
+          size_mb: 0,
+          requires_reboot: false,
+        },
+      ],
+      reported_at: "2026-08-10T06:00:00Z",
+      truncated: false,
+    };
+    renderPage();
+    await ready();
+
+    fireEvent.click(await screen.findByText(/Show this machine's updates/i));
+    expect(await screen.findByText("Security Update for Windows")).toBeInTheDocument();
+    expect(screen.getByText("7-Zip")).toBeInTheDocument();
+
+    // Target the row's own checkbox, not "the first one on the page" — the page has
+    // others, and picking the wrong one would make this test pass for a broken reason.
+    const row = screen.getByText("Security Update for Windows").closest("label");
+    fireEvent.click(row!.querySelector("input")!);
+    fireEvent.click(await screen.findByText(/Install 1 on this machine/i));
+
+    await waitFor(() =>
+      expect(
+        commandBodies.some(
+          (b) =>
+            b.kind === "windows_updates_install" &&
+            JSON.stringify(b.update_ids) === JSON.stringify(["KB5000001"]),
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("says so when the machine has more than one report can carry", async () => {
+    agents = [ACTIVE];
+    reportedItems = { updates: [], packages: [], reported_at: null, truncated: true };
+    renderPage();
+    await ready();
+    fireEvent.click(await screen.findByText(/Show this machine's updates/i));
+    expect(await screen.findByText(/this list is partial/i)).toBeInTheDocument();
   });
 });

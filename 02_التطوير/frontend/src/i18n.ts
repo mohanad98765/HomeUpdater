@@ -105,6 +105,14 @@ const resources = {
               bad_machine_fingerprint: "البصمة يجب أن تكون ٣٢ خانة ستّ عشريّة كما يطبعها --show-id.",
             },
           },
+          remote: {
+            show: "اعرض تحديثات هذا الجهاز",
+            hide: "أخفِ",
+            nothing: "لا تحديثات معلّقة على هذا الجهاز.",
+            truncated: "لدى هذا الجهاز عناصر أكثر ممّا يسعه تقرير واحد — هذه قائمة جزئيّة.",
+            install: "ثبّت {{n}} على هذا الجهاز",
+            queued: "أُرسل الطلب — يُنفَّذ عند اتّصال الجهاز التالي.",
+          },
           fleet: {
             title: "الأجهزة المسجَّلة",
             empty: "لا يوجد جهاز مسجَّل بعد.",
@@ -134,7 +142,7 @@ const resources = {
             revokeWarn: "الإبطال يوقف هذا الجهاز فورًا، ولا يستطيع التسجيل من جديد ما دام في القائمة. الطريق الوحيد للعودة أن «تنساه» ثم تسجّله من جديد.",
             forgetWarn: "يُحذَف الجهاز من القائمة ويعود بإمكانه التسجيل برمز جديد. ما جرى يبقى مسجَّلًا في سجلّ التدقيق.",
             typeName: "اكتب «{{name}}» للتأكيد",
-            noRemoteInstall: "التثبيت والترقية عن بُعد غير متاحين من هنا: الوكيل يُبلِّغ بعدد التحديثات لا بقائمة معرِّفاتها، وهو يرفض أي معرِّف لم يُبلِّغ عنه هو.",
+            noRemoteInstall: "التثبيت عن بُعد متاح الآن، ومحدود بما أبلغ عنه الجهاز نفسه: يرسل الوكيل قائمة تحديثاته، وترى منها فقط، وهو يرفض أي معرِّف لم يُبلِّغ عنه — فالمركز يطلب ولا يُملي.",
             error: {
               fingerprint_mismatch: "الخانات لا تطابق. اقرأها من شاشة ذلك الجهاز، أو شغّل هناك: HomeUpdater.exe --agent --show-id",
               too_many_attempts: "محاولات كثيرة خاطئة. انتظر قليلًا قبل إعادة المحاولة.",
@@ -920,6 +928,14 @@ const resources = {
               bad_machine_fingerprint: "The fingerprint must be the 32 hex characters that --show-id prints.",
             },
           },
+          remote: {
+            show: "Show this machine's updates",
+            hide: "Hide",
+            nothing: "No pending updates on this machine.",
+            truncated: "This machine has more items than one report carries — this list is partial.",
+            install: "Install {{n}} on this machine",
+            queued: "Queued — it runs at the machine's next check-in.",
+          },
           fleet: {
             title: "Enrolled machines",
             empty: "No machine is enrolled yet.",
@@ -949,7 +965,7 @@ const resources = {
             revokeWarn: "Revoking stops this machine immediately, and it cannot enrol again while it is in the list. The only way back is to forget it and enrol it again.",
             forgetWarn: "The machine leaves the list and can enrol again with a new token. What happened stays in the audit log.",
             typeName: "Type \"{{name}}\" to confirm",
-            noRemoteInstall: "Remote install and upgrade are not available from here: the agent reports how many updates it has, not their ids, and it refuses any id it did not itself report.",
+            noRemoteInstall: "Remote install is available now, and bounded by what the machine itself reported: the agent sends its list, you choose only from it, and it refuses any id it did not report — the hub asks, it does not dictate.",
             error: {
               fingerprint_mismatch: "Those characters do not match. Read them from that machine's screen, or run there: HomeUpdater.exe --agent --show-id",
               too_many_attempts: "Too many wrong attempts. Wait a little before trying again.",
@@ -1735,6 +1751,14 @@ const resources = {
               bad_machine_fingerprint: "L'empreinte doit être les 32 caractères hexadécimaux affichés par --show-id.",
             },
           },
+          remote: {
+            show: "Afficher les mises à jour de cette machine",
+            hide: "Masquer",
+            nothing: "Aucune mise à jour en attente sur cette machine.",
+            truncated: "Cette machine a plus d'éléments qu'un rapport ne peut contenir — liste partielle.",
+            install: "Installer {{n}} sur cette machine",
+            queued: "En file — exécuté au prochain contact de la machine.",
+          },
           fleet: {
             title: "Machines inscrites",
             empty: "Aucune machine n'est encore inscrite.",
@@ -1764,7 +1788,7 @@ const resources = {
             revokeWarn: "La révocation arrête cette machine immédiatement, et elle ne peut plus s'inscrire tant qu'elle figure dans la liste. Le seul retour possible est de l'oublier puis de la réinscrire.",
             forgetWarn: "La machine quitte la liste et peut se réinscrire avec un nouveau jeton. Ce qui s'est passé reste dans le journal d'audit.",
             typeName: "Tapez « {{name}} » pour confirmer",
-            noRemoteInstall: "L'installation et la mise à niveau à distance ne sont pas disponibles ici : l'agent signale le nombre de mises à jour, pas leurs identifiants, et refuse tout identifiant qu'il n'a pas lui-même signalé.",
+            noRemoteInstall: "L'installation à distance est disponible, limitée à ce que la machine a elle-même déclaré : l'agent envoie sa liste, vous n'y choisissez que dedans, et il refuse tout identifiant qu'il n'a pas déclaré.",
             error: {
               fingerprint_mismatch: "Ces caractères ne correspondent pas. Lisez-les sur l'écran de cette machine, ou exécutez-y : HomeUpdater.exe --agent --show-id",
               too_many_attempts: "Trop de tentatives erronées. Attendez un peu avant de réessayer.",
@@ -2550,6 +2574,14 @@ const resources = {
               bad_machine_fingerprint: "La huella deben ser los 32 caracteres hexadecimales que imprime --show-id.",
             },
           },
+          remote: {
+            show: "Ver las actualizaciones de esta máquina",
+            hide: "Ocultar",
+            nothing: "No hay actualizaciones pendientes en esta máquina.",
+            truncated: "Esta máquina tiene más elementos de los que cabe en un informe: lista parcial.",
+            install: "Instalar {{n}} en esta máquina",
+            queued: "En cola: se ejecuta en el próximo contacto de la máquina.",
+          },
           fleet: {
             title: "Equipos inscritos",
             empty: "Aún no hay ningún equipo inscrito.",
@@ -2579,7 +2611,7 @@ const resources = {
             revokeWarn: "Revocar detiene este equipo de inmediato, y no puede volver a inscribirse mientras esté en la lista. La única vuelta atrás es olvidarlo y volver a inscribirlo.",
             forgetWarn: "El equipo sale de la lista y puede volver a inscribirse con un token nuevo. Lo ocurrido permanece en el registro de auditoría.",
             typeName: "Escriba \"{{name}}\" para confirmar",
-            noRemoteInstall: "La instalación y actualización remotas no están disponibles aquí: el agente informa de cuántas actualizaciones tiene, no de sus identificadores, y rechaza cualquiera que no haya informado él mismo.",
+            noRemoteInstall: "La instalación remota ya está disponible, limitada a lo que la propia máquina informó: el agente envía su lista, solo eliges de ella, y rechaza cualquier id que no informó.",
             error: {
               fingerprint_mismatch: "Esos caracteres no coinciden. Léalos en la pantalla de ese equipo, o ejecute allí: HomeUpdater.exe --agent --show-id",
               too_many_attempts: "Demasiados intentos fallidos. Espere un poco antes de volver a intentarlo.",
@@ -3365,6 +3397,14 @@ const resources = {
               bad_machine_fingerprint: "Parmak izi, --show-id komutunun yazdırdığı 32 onaltılık karakter olmalıdır.",
             },
           },
+          remote: {
+            show: "Bu makinenin güncellemelerini göster",
+            hide: "Gizle",
+            nothing: "Bu makinede bekleyen güncelleme yok.",
+            truncated: "Bu makinede tek bir rapora sığmayacak kadar çok öğe var — liste kısmi.",
+            install: "Bu makineye {{n}} kur",
+            queued: "Sıraya alındı — makinenin bir sonraki bağlantısında çalışır.",
+          },
           fleet: {
             title: "Kayıtlı makineler",
             empty: "Henüz kayıtlı makine yok.",
@@ -3394,7 +3434,7 @@ const resources = {
             revokeWarn: "İptal bu makineyi hemen durdurur ve listede olduğu sürece yeniden kaydolamaz. Tek dönüş yolu onu unutup yeniden kaydetmektir.",
             forgetWarn: "Makine listeden çıkar ve yeni bir belirteçle yeniden kaydolabilir. Olanlar denetim günlüğünde kalır.",
             typeName: "Onaylamak için \"{{name}}\" yazın",
-            noRemoteInstall: "Uzaktan kurulum ve yükseltme buradan kullanılamaz: aracı kaç güncellemesi olduğunu bildirir, kimliklerini değil ve kendi bildirmediği hiçbir kimliği kabul etmez.",
+            noRemoteInstall: "Uzaktan kurulum artık mümkün ve makinenin kendi bildirdikleriyle sınırlı: ajan listesini gönderir, yalnızca oradan seçersiniz, bildirmediği hiçbir kimliği kabul etmez.",
             error: {
               fingerprint_mismatch: "Bu karakterler eşleşmiyor. Onları o makinenin ekranından okuyun veya orada çalıştırın: HomeUpdater.exe --agent --show-id",
               too_many_attempts: "Çok fazla hatalı deneme. Yeniden denemeden önce biraz bekleyin.",
@@ -4180,6 +4220,14 @@ const resources = {
               bad_machine_fingerprint: "فنگر پرنٹ وہی ۳۲ سولہ عددی حروف ہونے چاہئیں جو --show-id دکھاتا ہے۔",
             },
           },
+          remote: {
+            show: "اس مشین کی اپڈیٹس دکھائیں",
+            hide: "چھپائیں",
+            nothing: "اس مشین پر کوئی زیرِ التوا اپڈیٹ نہیں۔",
+            truncated: "اس مشین کے پاس ایک رپورٹ سے زیادہ اشیاء ہیں — یہ فہرست نامکمل ہے۔",
+            install: "اس مشین پر {{n}} انسٹال کریں",
+            queued: "قطار میں — مشین کے اگلے رابطے پر چلے گا۔",
+          },
           fleet: {
             title: "مندرج مشینیں",
             empty: "ابھی کوئی مشین مندرج نہیں۔",
@@ -4209,7 +4257,7 @@ const resources = {
             revokeWarn: "منسوخی اس مشین کو فوراً روک دیتی ہے، اور فہرست میں رہتے ہوئے یہ دوبارہ مندرج نہیں ہو سکتی۔ واپسی کا واحد راستہ اسے بھلا کر دوبارہ اندراج کرنا ہے۔",
             forgetWarn: "مشین فہرست سے نکل جاتی ہے اور نئے ٹوکن سے دوبارہ مندرج ہو سکتی ہے۔ جو ہوا وہ آڈٹ لاگ میں رہتا ہے۔",
             typeName: "تصدیق کے لیے «{{name}}» لکھیں",
-            noRemoteInstall: "دور دراز تنصیب اور اپ گریڈ یہاں دستیاب نہیں: ایجنٹ اپ ڈیٹس کی تعداد بتاتا ہے، شناخت نہیں، اور جو شناخت خود نہ بھیجی ہو اسے رد کرتا ہے۔",
+            noRemoteInstall: "ریموٹ انسٹال اب دستیاب ہے، اور صرف اسی تک محدود جو مشین نے خود بتایا: ایجنٹ اپنی فہرست بھیجتا ہے، آپ اسی میں سے چنتے ہیں، اور جو شناخت اس نے نہیں بتائی اسے رد کر دیتا ہے۔",
             error: {
               fingerprint_mismatch: "یہ حروف مطابقت نہیں رکھتے۔ انہیں اُس مشین کی سکرین سے پڑھیں، یا وہاں چلائیں: HomeUpdater.exe --agent --show-id",
               too_many_attempts: "بہت زیادہ غلط کوششیں۔ دوبارہ کوشش سے پہلے تھوڑا انتظار کریں۔",

@@ -27,7 +27,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
-from ..models.orm import AgentCommandORM, AgentNonceORM, AgentORM
+from ..models.orm import AgentCommandORM, AgentItemORM, AgentNonceORM, AgentORM
 from ..services import agent_auth, audit, enrolment
 
 router = APIRouter()
@@ -139,10 +139,81 @@ async def enrol(body: EnrolBody, request: Request, db: AsyncSession = Depends(ge
     }
 
 
+# What one check-in may carry. The signed-body cap is 600 KB, and 200 updates plus 300
+# packages is roughly 90 KB — comfortable, while still bounding what a signed agent can
+# make the hub store. An agent with more says so (report_truncated) instead of quietly
+# sending a partial list.
+MAX_REPORTED_UPDATES = 200
+MAX_REPORTED_PACKAGES = 300
+
+
+class ReportedUpdate(BaseModel):
+    """A pending update as the agent's own machine sees it."""
+
+    id: str = Field(min_length=1, max_length=128)
+    title: str = Field(default="", max_length=300)
+    kind: str = Field(default="windows", pattern=r"^(windows|driver)$")
+    severity: str = Field(default="", max_length=32)
+    size_mb: float = Field(default=0.0, ge=0, le=1_000_000)
+    requires_reboot: bool = False
+
+
+class ReportedPackage(BaseModel):
+    """An upgradable application on the agent's machine."""
+
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(default="", max_length=300)
+    current_version: str = Field(default="", max_length=64)
+    available_version: str = Field(default="", max_length=64)
+
+
 class CheckinBody(BaseModel):
     agent_version: str = Field(default="", max_length=32)
     inventory_count: int = Field(default=0, ge=0, le=100000)
     pending_updates: int = Field(default=0, ge=0, le=100000)
+    # The lists are what make a remote install possible: the agent refuses any id it did
+    # not itself report, so until the hub was told the ids it could not name a
+    # legitimate one either, and every remote install failed by construction.
+    updates: list[ReportedUpdate] = Field(default_factory=list, max_length=MAX_REPORTED_UPDATES)
+    packages: list[ReportedPackage] = Field(default_factory=list, max_length=MAX_REPORTED_PACKAGES)
+    truncated: bool = False
+
+
+async def _store_reported_items(db: AsyncSession, agent_id: str, payload: CheckinBody) -> None:
+    """Replace this agent's reported items wholesale.
+
+    A check-in is a snapshot, not a delta. Merging would leave ghosts: an update
+    installed by Windows itself, or by someone sitting at that machine, would stay on
+    the hub's list and the operator would try to install it again — and the agent would
+    refuse, correctly, leaving a failure nobody could explain.
+    """
+    now = datetime.now(UTC)
+    await db.execute(delete(AgentItemORM).where(AgentItemORM.agent_id == agent_id))
+    for upd in payload.updates:
+        db.add(
+            AgentItemORM(
+                agent_id=agent_id,
+                kind=upd.kind,
+                item_id=upd.id,
+                title=upd.title,
+                severity=upd.severity,
+                size_mb=upd.size_mb,
+                requires_reboot=upd.requires_reboot,
+                reported_at=now,
+            )
+        )
+    for pkg in payload.packages:
+        db.add(
+            AgentItemORM(
+                agent_id=agent_id,
+                kind="package",
+                item_id=pkg.id,
+                title=pkg.name,
+                current_version=pkg.current_version,
+                available_version=pkg.available_version,
+                reported_at=now,
+            )
+        )
 
 
 @router.post("/checkin")
@@ -163,6 +234,8 @@ async def checkin(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     agent.agent_version = payload.agent_version or agent.agent_version
     agent.inventory_count = payload.inventory_count
     agent.pending_updates = payload.pending_updates
+    agent.report_truncated = bool(payload.truncated)
+    await _store_reported_items(db, agent.id, payload)
 
     commands: list[dict] = []
     if agent.status == "active":
@@ -621,6 +694,41 @@ async def queue_command(
         },
     )
     return command.to_dict()
+
+
+@router.get("/{agent_id}/items")
+async def list_reported_items(agent_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """What this machine last reported it has.
+
+    The operator can only ever act on this list, and the agent independently refuses
+    anything outside its own — so the hub can ask, and cannot dictate.
+    """
+    agent = (await db.execute(select(AgentORM).where(AgentORM.id == agent_id))).scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+
+    rows = (
+        (
+            await db.execute(
+                select(AgentItemORM)
+                .where(AgentItemORM.agent_id == agent_id)
+                .order_by(AgentItemORM.kind, AgentItemORM.title)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "agent_id": agent_id,
+        "status": agent.status,
+        "updates": [r.to_dict() for r in rows if r.kind in ("windows", "driver")],
+        "packages": [r.to_dict() for r in rows if r.kind == "package"],
+        "reported_at": rows[0].reported_at.isoformat() if rows else None,
+        # Said, not implied: a machine with more items than one body carries would
+        # otherwise present a partial list as its whole state.
+        "truncated": agent.report_truncated,
+        "last_seen": agent.last_seen.isoformat() if agent.last_seen else None,
+    }
 
 
 @router.get("/{agent_id}/commands")

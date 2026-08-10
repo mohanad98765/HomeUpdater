@@ -39,6 +39,131 @@ import { useLanguage } from "@/lib/language";
 //     ولا يُحدِّث نفسه. عميلٌ يدفع يجب أن يعرف هذا قبل أن يعتمد عليه.
 // ================================================================
 
+interface ReportedItem {
+  kind: string;
+  item_id: string;
+  title: string;
+  current_version: string;
+  available_version: string;
+  severity: string;
+  size_mb: number;
+  requires_reboot: boolean;
+}
+interface ReportedItems {
+  updates: ReportedItem[];
+  packages: ReportedItem[];
+  reported_at: string | null;
+  truncated: boolean;
+}
+
+/** What one machine reported, and the only things the operator may ask it to install.
+ *
+ * The list is deliberately the agent's own report rather than anything the hub composed:
+ * the agent refuses every id it did not itself report, so offering a choice from any
+ * other source would produce commands that are guaranteed to be refused. */
+function RemoteUpdates({ agent }: { agent: Agent }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+
+  const items = useQuery<ReportedItems>({
+    queryKey: ["agent-items", agent.id],
+    queryFn: () => apiFetch<ReportedItems>(`/api/agents/${agent.id}/items`),
+    enabled: open,
+  });
+
+  const send = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiFetch(`/api/agents/${agent.id}/command`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      setPicked({});
+      qc.invalidateQueries({ queryKey: ["agent-commands", agent.id] });
+    },
+  });
+
+  const updates = items.data?.updates ?? [];
+  const packages = items.data?.packages ?? [];
+  const chosenUpdates = updates.filter((u) => picked[`u:${u.item_id}`]).map((u) => u.item_id);
+  const chosenPackages = packages.filter((p) => picked[`p:${p.item_id}`]).map((p) => p.item_id);
+  const total = chosenUpdates.length + chosenPackages.length;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs underline text-primary"
+      >
+        {open ? t("pages.agents.remote.hide") : t("pages.agents.remote.show")}
+      </button>
+
+      {open && (
+        <div className="mt-2 border border-border rounded-md p-3 space-y-2">
+          {items.isLoading && <p className="text-xs text-fg-muted">{t("common.loading")}</p>}
+          {items.data && !updates.length && !packages.length && (
+            <p className="text-xs text-fg-muted">{t("pages.agents.remote.nothing")}</p>
+          )}
+          {items.data?.truncated && (
+            <p className="text-xs text-warning">{t("pages.agents.remote.truncated")}</p>
+          )}
+
+          {[...updates, ...packages].map((it) => {
+            const key = `${it.kind === "package" ? "p" : "u"}:${it.item_id}`;
+            return (
+              <label key={key} className="flex items-start gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!picked[key]}
+                  onChange={(e) => setPicked({ ...picked, [key]: e.target.checked })}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0">
+                  <span className="block truncate">{it.title || it.item_id}</span>
+                  <span className="text-fg-subtle font-mono text-[10px]">
+                    {it.kind === "package"
+                      ? `${it.current_version} → ${it.available_version}`
+                      : [it.severity, it.size_mb ? `${it.size_mb.toFixed(0)} MB` : ""]
+                          .filter(Boolean)
+                          .join(" · ")}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+
+          {total > 0 && (
+            <button
+              type="button"
+              disabled={send.isPending}
+              onClick={() => {
+                if (chosenUpdates.length) {
+                  send.mutate({ kind: "windows_updates_install", update_ids: chosenUpdates });
+                }
+                if (chosenPackages.length) {
+                  send.mutate({ kind: "software_upgrade", product_ids: chosenPackages });
+                }
+              }}
+              className="btn-primary text-xs"
+            >
+              {t("pages.agents.remote.install", { n: total })}
+            </button>
+          )}
+          {send.isSuccess && (
+            <p className="text-xs text-success">{t("pages.agents.remote.queued")}</p>
+          )}
+          {send.isError && (
+            <p className="text-xs text-danger">{(send.error as Error)?.message}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Agent {
   id: string;
   fingerprint: string | null;
@@ -720,6 +845,7 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
                     {a.fingerprint && (
                       <Mono className="text-fg-subtle">{grouped(a.fingerprint)}</Mono>
                     )}
+                    <RemoteUpdates agent={a} />
                   </div>
                 )}
 
