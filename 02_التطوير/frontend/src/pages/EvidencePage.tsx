@@ -114,9 +114,13 @@ export function EvidencePage({ onBack }: { onBack: () => void }) {
 
   const exportJson = useMutation({
     mutationFn: async () => {
-      const pack = await apiFetch<Record<string, unknown>>("/api/evidence/pack");
-      downloadText("homeupdater-evidence.json", JSON.stringify(pack, null, 2), "application/json");
-      return pack;
+      // The EXACT bytes the content stamp was computed over. Re-serializing the response
+      // here produced a third byte sequence — pretty-printed, keys in insertion order,
+      // wrapped in the envelope — so the document's own instruction ("hash this file and
+      // compare") could never succeed, which reads as evidence of tampering.
+      const body = await apiFetchText("/api/evidence/pack.json");
+      downloadText("homeupdater-evidence.json", body, "application/json");
+      return body;
     },
   });
 

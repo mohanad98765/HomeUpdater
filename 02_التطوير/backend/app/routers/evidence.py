@@ -87,6 +87,46 @@ async def pack(db: AsyncSession = Depends(get_db)) -> dict:
     return built
 
 
+@router.get("/pack.json")
+async def pack_canonical(db: AsyncSession = Depends(get_db)) -> Response:
+    """The pack as the EXACT bytes the content stamp is computed over.
+
+    The printed document tells the reader to hash the JSON file and compare it with the
+    stamp. That instruction was not performable on anything the product produced: the
+    stamp covers ``audit.canonical(body)`` — sorted keys, tight separators, the inner
+    pack object only — while the UI downloaded ``JSON.stringify(response, null, 2)`` of
+    the whole envelope. Three different byte sequences, one of which the reader was told
+    to check.
+
+    This endpoint serves the bytes that were hashed. An instruction a reader cannot
+    carry out is worse than no instruction: it invites them to conclude the pack has
+    been tampered with.
+    """
+    try:
+        lic = licensing.require_evidence_export()
+    except licensing.LicenseError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+    built = await evidence.build(db, licensee=lic.licensee)
+    body = audit.canonical(built["pack"]).encode("utf-8")
+    await audit.record_safe(
+        db,
+        "evidence_export",
+        actor="user",
+        target="this-pc",
+        detail={"format": "json-canonical", "stamp": built["content_sha256"]},
+    )
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="homeupdater-evidence.json"',
+            # So a reader can check the file they hold without opening the document.
+            "X-Content-SHA256": built["content_sha256"],
+        },
+    )
+
+
 @router.get("/pack.csv")
 async def pack_csv(db: AsyncSession = Depends(get_db)) -> Response:
     """The findings table as CSV — the form a reviewer actually works in."""

@@ -187,3 +187,23 @@ def test_a_stalled_port_costs_one_attempt_not_the_whole_pairing(monkeypatch):
     ok, msg = ap._pair_blocking("192.168.3.24", 34887, "123456")
     assert ok is True and "aired" in msg
     assert len(tried) == 2, "both ports were attempted"
+
+
+def test_a_stalled_port_does_not_kill_the_connect_sweep_either(monkeypatch):
+    """The pairing sweep was fixed and the identical bug survived one function later, in
+    the step that runs immediately AFTER a successful pair — so the phone would be
+    paired and the operator shown a raw adb timeout instead of a connected device."""
+    import asyncio
+
+    async def fake_ports(host, first=None, last=None):
+        return [49664, 34677]
+
+    def fake_run(args, timeout=30.0, input_text=None):
+        target = args[1]
+        if target.endswith(":49664"):
+            raise AndroidError(f"انتهت مهلة adb (connect {target}).")
+        return 0, f"connected to {target}", ""
+
+    monkeypatch.setattr(ap, "find_open_ports", fake_ports)
+    monkeypatch.setattr(ap, "_run_adb_blocking", fake_run)
+    assert asyncio.run(ap.find_connect_port("192.168.3.24", exclude=34887)) == 34677

@@ -55,9 +55,9 @@ const resources = {
           retry: "أعد المحاولة",
           limits: {
             title: "ما الذي لا يفعله الوكيل بعد",
-            reboot: "يتوقّف عند إغلاق نافذته أو إعادة تشغيل الجهاز — لا تُثبَّت خدمة ولا يبدأ شيء مع الإقلاع.",
+            reboot: "يتّصل عند تسجيل الدخول وكلّ ١٥ دقيقة بمهمّة مجدولة — لكنّه لا يتّصل والجهاز على شاشة الدخول بلا مستخدم.",
             selfUpdate: "لا يُحدِّث نفسه — ترقيته تعني تشغيل الأمر على ذلك الجهاز من جديد.",
-            noCommands: "لا يُثبِّت تحديثات عن بُعد من هنا — المركز يستقبل عدد التحديثات لا قائمة معرِّفاتها.",
+            noCommands: "لا يُلغى عن بُعد: سحب الثقة يوقف قبوله في المركز، وإزالة مهمّته تحتاج الوصول إلى الجهاز.",
           },
           listener: {
             title: "منفذ الوكلاء",
@@ -878,9 +878,9 @@ const resources = {
           retry: "Try again",
           limits: {
             title: "What the agent does not do yet",
-            reboot: "It stops when its window closes or the machine reboots — nothing is installed as a service and nothing starts at boot.",
+            reboot: "It checks in at logon and every 15 minutes via a scheduled task — but not while the machine sits at the login screen with nobody signed in.",
             selfUpdate: "It does not update itself — upgrading it means running the command on that machine again.",
-            noCommands: "It does not install updates remotely from here — the hub receives how many updates a machine has, not which ones.",
+            noCommands: "It cannot be removed remotely: revoking stops the hub accepting it, but removing its task needs access to the machine.",
           },
           listener: {
             title: "Agent port",
@@ -1701,9 +1701,9 @@ const resources = {
           retry: "Réessayer",
           limits: {
             title: "Ce que l'agent ne fait pas encore",
-            reboot: "Il s'arrête quand sa fenêtre se ferme ou que la machine redémarre — rien n'est installé comme service et rien ne démarre au démarrage.",
-            selfUpdate: "Il ne se met pas à jour lui-même — le mettre à niveau signifie relancer la commande sur cette machine.",
-            noCommands: "Il n'installe pas de mises à jour à distance depuis ici — le centre reçoit le nombre de mises à jour, pas leur liste.",
+            reboot: "Il se connecte à l'ouverture de session et toutes les 15 minutes via une tâche planifiée — mais pas quand la machine reste à l'écran de connexion.",
+            selfUpdate: "Il ne se met pas à jour lui-même — le mettre à niveau demande de relancer la commande sur cette machine.",
+            noCommands: "Il ne peut pas être supprimé à distance : révoquer empêche le concentrateur de l'accepter, mais retirer sa tâche exige un accès à la machine.",
           },
           listener: {
             title: "Port des agents",
@@ -2524,9 +2524,9 @@ const resources = {
           retry: "Reintentar",
           limits: {
             title: "Lo que el agente aún no hace",
-            reboot: "Se detiene al cerrar su ventana o al reiniciar el equipo: no se instala como servicio ni arranca con el sistema.",
-            selfUpdate: "No se actualiza solo: actualizarlo significa volver a ejecutar el comando en ese equipo.",
-            noCommands: "No instala actualizaciones en remoto desde aquí: el centro recibe cuántas actualizaciones hay, no cuáles.",
+            reboot: "Se conecta al iniciar sesión y cada 15 minutos mediante una tarea programada, pero no mientras la máquina está en la pantalla de inicio de sesión.",
+            selfUpdate: "No se actualiza solo: actualizarlo implica volver a ejecutar el comando en esa máquina.",
+            noCommands: "No se puede eliminar en remoto: revocarlo impide que el centro lo acepte, pero quitar su tarea requiere acceso a la máquina.",
           },
           listener: {
             title: "Puerto de agentes",
@@ -3347,9 +3347,9 @@ const resources = {
           retry: "Yeniden dene",
           limits: {
             title: "Aracının henüz yapmadıkları",
-            reboot: "Penceresi kapandığında veya makine yeniden başladığında durur — hizmet olarak kurulmaz ve açılışta hiçbir şey başlamaz.",
-            selfUpdate: "Kendini güncellemez — yükseltmek, komutu o makinede yeniden çalıştırmak demektir.",
-            noCommands: "Buradan uzaktan güncelleme kurmaz — merkez kaç güncelleme olduğunu alır, hangileri olduğunu değil.",
+            reboot: "Oturum açıldığında ve her 15 dakikada bir zamanlanmış görevle bağlanır — ancak makine oturum açma ekranındayken bağlanmaz.",
+            selfUpdate: "Kendini güncellemez — yükseltmek için komutu o makinede yeniden çalıştırmak gerekir.",
+            noCommands: "Uzaktan kaldırılamaz: yetkiyi geri almak merkezin onu kabul etmesini durdurur, görevini silmek makineye erişim ister.",
           },
           listener: {
             title: "Aracı bağlantı noktası",
@@ -4170,9 +4170,9 @@ const resources = {
           retry: "دوبارہ کوشش کریں",
           limits: {
             title: "ایجنٹ ابھی کیا نہیں کرتا",
-            reboot: "ونڈو بند ہونے یا مشین دوبارہ چالو ہونے پر رک جاتا ہے — کوئی سروس نصب نہیں ہوتی اور بوٹ پر کچھ شروع نہیں ہوتا۔",
-            selfUpdate: "یہ خود کو اپ ڈیٹ نہیں کرتا — اپ گریڈ کا مطلب ہے اُس مشین پر کمانڈ دوبارہ چلانا۔",
-            noCommands: "یہاں سے دور دراز تنصیب نہیں کرتا — مرکز کو اپ ڈیٹس کی تعداد ملتی ہے، اُن کی فہرست نہیں۔",
+            reboot: "لاگ اِن پر اور ہر ۱۵ منٹ بعد شیڈول شدہ ٹاسک کے ذریعے رابطہ کرتا ہے — مگر جب مشین لاگ اِن اسکرین پر ہو تو نہیں۔",
+            selfUpdate: "یہ خود کو اپڈیٹ نہیں کرتا — اپ گریڈ کے لیے اسی مشین پر کمانڈ دوبارہ چلانا ہوگی۔",
+            noCommands: "اسے دور سے ہٹایا نہیں جا سکتا: منسوخی کے بعد مرکز اسے قبول نہیں کرتا، مگر اس کا ٹاسک ہٹانے کے لیے مشین تک رسائی چاہیے۔",
           },
           listener: {
             title: "ایجنٹ پورٹ",

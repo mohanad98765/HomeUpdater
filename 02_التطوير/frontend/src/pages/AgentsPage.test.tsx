@@ -204,10 +204,15 @@ afterEach(() => {
 
 describe("what the page promises", () => {
   it("states what the agent cannot do, in every state", async () => {
+    // Two of the three limits stopped being true in 1.27.0 and 1.28.0, and this test
+    // demanded the old sentences. A permanent card telling the operator that a shipped
+    // feature does not exist is worse than no card — it teaches them not to read it.
     renderPage();
     expect(await screen.findByText(/does not update itself/i)).toBeTruthy();
-    expect(screen.getByText(/stops when its window closes/i)).toBeTruthy();
-    expect(screen.getByText(/does not install updates remotely/i)).toBeTruthy();
+    expect(screen.getByText(/login screen with nobody signed in/i)).toBeTruthy();
+    expect(screen.getByText(/cannot be removed remotely/i)).toBeTruthy();
+    expect(screen.queryByText(/stops when its window closes/i)).toBeNull();
+    expect(screen.queryByText(/does not install updates remotely/i)).toBeNull();
   });
 
   it("keeps the limits visible when the fleet fails to load", async () => {
@@ -216,7 +221,10 @@ describe("what the page promises", () => {
     expect(await screen.findByText(/does not update itself/i)).toBeTruthy();
   });
 
-  it("never issues a command, whatever is clicked", async () => {
+  it("issues a command only after the operator picks from the machine's own list", async () => {
+    // This test used to demand that NO command could ever be issued. That was right
+    // while the protocol could not carry one usefully; since 1.27.0 it can, and the
+    // guard moved: a command may only name something the machine itself reported.
     listener = RUNNING;
     agents = [ACTIVE];
     renderPage();
@@ -224,7 +232,8 @@ describe("what the page promises", () => {
     await screen.findByText("PC-Accounting");
     document.querySelectorAll("button").forEach((b) => fireEvent.click(b));
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
-    expect(calls.filter((c) => c.includes("/command"))).toHaveLength(0);
+    // Clicking everything without choosing an item must still send nothing.
+    expect(commandBodies).toHaveLength(0);
   });
 });
 

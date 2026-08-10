@@ -166,7 +166,15 @@ async def find_connect_port(host: str, exclude: int | None = None) -> int | None
     for port in ports:
         if port == exclude:
             continue
-        rc, out, err = await _in_executor(_run_adb_blocking, ["connect", f"{host}:{port}"], 20)
+        # The same half-open port that used to kill the PAIRING sweep kills this one
+        # too, one function later: _run_adb_blocking raises on its timeout, and this
+        # runs immediately after a SUCCESSFUL pair — so the phone is paired and the
+        # operator is shown an adb timeout instead of a connected device.
+        try:
+            rc, out, err = await _in_executor(_run_adb_blocking, ["connect", f"{host}:{port}"], 20)
+        except AndroidError as exc:
+            logger.debug(f"connect attempt on {host}:{port} did not complete: {exc}")
+            continue
         if rc == 0 and "connected to" in f"{out}{err}".lower():
             logger.info(f"connected to {host}:{port}")
             return port

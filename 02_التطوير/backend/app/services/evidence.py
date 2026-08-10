@@ -229,10 +229,15 @@ async def build(db: AsyncSession, *, licensee: str = "") -> dict:
     # date on the cover — so an auditor had no way to know. And a product whose answer
     # was ranked from part of NVD's reply looked exactly like one ranked from all of it.
     checked_dates = [m["checked_at"] for m in matched if m.get("checked_at")]
+    # ``examined`` is falsy for a row cached before the paging fix, and "we do not know
+    # how much of NVD was read" is the case that most needs saying — the guard that
+    # skipped it hid exactly the packs built from an older cache. Measured on the real
+    # database: all 25 CPE rows had examined=0, so the pack reported "0 of 15 examined"
+    # and named nothing.
     capped = [
         {"name": m["name"], "examined": m["nvd_examined"], "total": m["nvd_total"]}
         for m in matched
-        if m["nvd_total"] and m["nvd_examined"] and m["nvd_examined"] < m["nvd_total"]
+        if m["nvd_total"] and m["nvd_examined"] < m["nvd_total"]
     ]
     evidence_state = {
         "products_checked": len(matched),
@@ -464,21 +469,6 @@ def to_html(pack: dict) -> str:
 <p class="note">{_esc(c['scope_ar'])}</p>
 <p class="note">{_esc(c['method_ar'])}</p>
 
-<h2>التغطية — Coverage</h2>
-<p class="note">{_esc(c['coverage_ar'])}</p>
-<div class="meta">
-  <div><b>مُطابَق دقيقًا / Precisely matched</b><span>{_esc(cov.get('mapped'))} من
-      {_esc(cov.get('total'))} ({_esc(cov.get('percent'))}%)</span></div>
-  <div><b>من القابل للمطابقة / Of addressable</b>
-      <span>{_esc(cov.get('addressable_percent'))}%
-      ({_esc(cov.get('addressable_total'))})</span></div>
-  <div><b>حِزم متجر / Store packages</b><span>{_esc(by_reason.get('store_package'))}</span></div>
-  <div><b>استثناءات موثَّقة / Documented</b>
-      <span>{_esc(by_reason.get('documented_exclusion'))}</span></div>
-  <div><b>لم تُدرَس / Not investigated</b>
-      <span>{_esc(by_reason.get('not_investigated'))}</span></div>
-</div>
-
 <h2>حالة دليل الثغرات — Vulnerability evidence</h2>
 {_never_checked_block(ev, c)}
 <p class="note">{_esc(c.get('evidence_ar', ''))}</p>
@@ -498,6 +488,21 @@ def to_html(pack: dict) -> str:
           {_esc(ev.get('nvd_records_total', 0))}</td></tr>
 </table>
 {_capped_block(ev)}
+
+<h2>التغطية — Coverage</h2>
+<p class="note">{_esc(c['coverage_ar'])}</p>
+<div class="meta">
+  <div><b>مُطابَق دقيقًا / Precisely matched</b><span>{_esc(cov.get('mapped'))} من
+      {_esc(cov.get('total'))} ({_esc(cov.get('percent'))}%)</span></div>
+  <div><b>من القابل للمطابقة / Of addressable</b>
+      <span>{_esc(cov.get('addressable_percent'))}%
+      ({_esc(cov.get('addressable_total'))})</span></div>
+  <div><b>حِزم متجر / Store packages</b><span>{_esc(by_reason.get('store_package'))}</span></div>
+  <div><b>استثناءات موثَّقة / Documented</b>
+      <span>{_esc(by_reason.get('documented_exclusion'))}</span></div>
+  <div><b>لم تُدرَس / Not investigated</b>
+      <span>{_esc(by_reason.get('not_investigated'))}</span></div>
+</div>
 
 <h2>الثغرات المنطبقة على الإصدارات المثبَّتة — Findings ({_esc(body.get('findings_total'))})</h2>
 <table><thead><tr><th>المنتج</th><th>الإصدار</th><th>CPE</th><th>الثغرة</th>

@@ -289,3 +289,71 @@ def test_the_fetch_pages_until_nvd_is_exhausted(monkeypatch):
     assert pages == [0, 2000], "it must ask for the second page"
     assert data["totalResults"] == 3391
     assert data["examined"] == 3391, "the whole answer, not the oldest page"
+
+
+# --- residuals the verification pass found in the FIX itself --------------------------
+def test_a_cache_that_never_recorded_its_coverage_is_still_disclosed():
+    """The guard read `if total and examined and examined < total`, so `examined == 0`
+    — every row cached before the paging fix — was skipped. Measured on the real
+    database: all 25 CPE rows had examined=0, so the pack said "0 of 15 examined" and
+    named nothing. "We do not know how much of NVD was read" is the case that most
+    needs saying, not the one to hide."""
+
+    async def run():
+        engine, Session = await _db()
+        async with Session() as db:
+            from app.services import cpe as cpe_mod
+
+            _software(db, "7zip.7zip", "7-Zip", "21.07")
+            await db.commit()
+            identity = cpe_mod.resolve("7zip.7zip", "21.07", "7-Zip")
+            if identity is None:
+                pytest.skip("this build maps 7-Zip differently")
+            _cache(db, identity.cpe_name, [], 17, 0, datetime.now(UTC))  # legacy row
+            await db.commit()
+            pack = await evidence.build(db, licensee="Acme")
+            assert pack["pack"]["evidence_state"]["capped_products"], "a legacy row must be named"
+            assert "Not every NVD record was examined" in evidence.to_html(pack)
+        await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_the_caveat_is_read_before_the_percentage():
+    """A reader meeting '100.0% of addressable' before the disclaimer has already formed
+    the belief the disclaimer exists to prevent."""
+
+    async def run():
+        engine, Session = await _db()
+        async with Session() as db:
+            _software(db, "7zip.7zip", "7-Zip", "21.07")
+            await db.commit()
+            return evidence.to_html(await evidence.build(db, licensee="Acme"))
+
+    html = asyncio.run(run())
+    assert html.index("Vulnerability evidence") < html.index("Coverage")
+
+
+def test_the_stamp_covers_exactly_what_the_reader_is_told_to_hash():
+    """The document says: hash the JSON file and compare. That has to be true of the
+    file the product hands over — three different byte sequences were in play."""
+    import hashlib
+
+    from app.services import audit as audit_mod
+
+    async def run():
+        engine, Session = await _db()
+        async with Session() as db:
+            _software(db, "7zip.7zip", "7-Zip", "21.07")
+            await db.commit()
+            return await evidence.build(db, licensee="Acme")
+
+    pack = asyncio.run(run())
+    served = audit_mod.canonical(pack["pack"]).encode("utf-8")  # what /pack.json returns
+    assert hashlib.sha256(served).hexdigest() == pack["content_sha256"]
+    # And the envelope-with-indent form, which the UI used to download, does NOT match —
+    # that is the whole reason this test exists.
+    import json as _json
+
+    envelope = _json.dumps(pack, indent=2, ensure_ascii=False).encode("utf-8")
+    assert hashlib.sha256(envelope).hexdigest() != pack["content_sha256"]
