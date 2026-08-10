@@ -106,6 +106,14 @@ const resources = {
             },
           },
           remote: {
+            queueTitle: "الأوامر المُرسَلة",
+            waiting: "ينتظر اتّصال الجهاز التالي (كلّ ١٥ دقيقة).",
+            state: {
+              queued: "في الانتظار",
+              sent: "أُرسل",
+              done: "تمّ",
+              failed: "فشل",
+            },
             show: "اعرض تحديثات هذا الجهاز",
             hide: "أخفِ",
             nothing: "لا تحديثات معلّقة على هذا الجهاز.",
@@ -180,6 +188,14 @@ const resources = {
           },
         },
         evidence: {
+          audit: {
+            allKinds: "الكلّ",
+            show: "افتح سجلّ العمليّات",
+            hide: "أخفِ سجلّ العمليّات",
+            intact: "السلسلة سليمة — {{n}} قيدًا، لم يُحذف ولم يُعدَّل شيء.",
+            broken: "السلسلة مكسورة عند القيد {{seq}} — عُدِّل أو حُذف ما قبله.",
+            empty: "لا قيود بعد.",
+          },
           title: "حزمة الدليل",
           subtitle: "تقرير قابل للتدقيق + الترخيص + تجميع المواقع",
           license: {
@@ -929,6 +945,14 @@ const resources = {
             },
           },
           remote: {
+            queueTitle: "Commands sent",
+            waiting: "Waiting for the machine's next check-in (every 15 minutes).",
+            state: {
+              queued: "Queued",
+              sent: "Sent",
+              done: "Done",
+              failed: "Failed",
+            },
             show: "Show this machine's updates",
             hide: "Hide",
             nothing: "No pending updates on this machine.",
@@ -1003,6 +1027,14 @@ const resources = {
           },
         },
         evidence: {
+          audit: {
+            allKinds: "All",
+            show: "Open the operations log",
+            hide: "Hide the operations log",
+            intact: "Chain intact — {{n}} entries, nothing removed or altered.",
+            broken: "Chain broken at entry {{seq}} — something before it was changed or removed.",
+            empty: "No entries yet.",
+          },
           title: "Evidence Pack",
           subtitle: "An auditable report, licensing, and multi-site roll-up",
           license: {
@@ -1752,6 +1784,14 @@ const resources = {
             },
           },
           remote: {
+            queueTitle: "Commandes envoyées",
+            waiting: "En attente du prochain contact de la machine (toutes les 15 minutes).",
+            state: {
+              queued: "En file",
+              sent: "Envoyée",
+              done: "Terminée",
+              failed: "Échec",
+            },
             show: "Afficher les mises à jour de cette machine",
             hide: "Masquer",
             nothing: "Aucune mise à jour en attente sur cette machine.",
@@ -1826,6 +1866,14 @@ const resources = {
           },
         },
         evidence: {
+          audit: {
+            allKinds: "Tout",
+            show: "Ouvrir le journal des opérations",
+            hide: "Masquer le journal",
+            intact: "Chaîne intacte — {{n}} entrées, rien de supprimé ni modifié.",
+            broken: "Chaîne rompue à l'entrée {{seq}} — quelque chose avant a été modifié ou supprimé.",
+            empty: "Aucune entrée pour l'instant.",
+          },
           title: "Dossier de preuve",
           subtitle: "Un rapport auditable, les licences et la consolidation multi-sites",
           license: {
@@ -2575,6 +2623,14 @@ const resources = {
             },
           },
           remote: {
+            queueTitle: "Comandos enviados",
+            waiting: "Esperando el próximo contacto de la máquina (cada 15 minutos).",
+            state: {
+              queued: "En cola",
+              sent: "Enviado",
+              done: "Hecho",
+              failed: "Falló",
+            },
             show: "Ver las actualizaciones de esta máquina",
             hide: "Ocultar",
             nothing: "No hay actualizaciones pendientes en esta máquina.",
@@ -2649,6 +2705,14 @@ const resources = {
           },
         },
         evidence: {
+          audit: {
+            allKinds: "Todo",
+            show: "Abrir el registro de operaciones",
+            hide: "Ocultar el registro",
+            intact: "Cadena intacta: {{n}} entradas, nada eliminado ni alterado.",
+            broken: "Cadena rota en la entrada {{seq}}: algo anterior fue modificado o eliminado.",
+            empty: "Todavía no hay entradas.",
+          },
           title: "Paquete de evidencia",
           subtitle: "Un informe auditable, licencias y consolidación multisitio",
           license: {
@@ -3398,6 +3462,14 @@ const resources = {
             },
           },
           remote: {
+            queueTitle: "Gönderilen komutlar",
+            waiting: "Makinenin bir sonraki bağlantısı bekleniyor (her 15 dakikada).",
+            state: {
+              queued: "Sırada",
+              sent: "Gönderildi",
+              done: "Tamam",
+              failed: "Başarısız",
+            },
             show: "Bu makinenin güncellemelerini göster",
             hide: "Gizle",
             nothing: "Bu makinede bekleyen güncelleme yok.",
@@ -3472,6 +3544,14 @@ const resources = {
           },
         },
         evidence: {
+          audit: {
+            allKinds: "Tümü",
+            show: "İşlem kaydını aç",
+            hide: "İşlem kaydını gizle",
+            intact: "Zincir sağlam — {{n}} kayıt, hiçbir şey silinmedi veya değiştirilmedi.",
+            broken: "Zincir {{seq}} numaralı kayıtta kırık — öncesinde bir şey değişti veya silindi.",
+            empty: "Henüz kayıt yok.",
+          },
           title: "Kanıt Paketi",
           subtitle: "Denetlenebilir rapor, lisanslama ve çok siteli birleştirme",
           license: {
@@ -4221,6 +4301,14 @@ const resources = {
             },
           },
           remote: {
+            queueTitle: "بھیجے گئے کمانڈز",
+            waiting: "مشین کے اگلے رابطے کا انتظار (ہر ۱۵ منٹ)۔",
+            state: {
+              queued: "قطار میں",
+              sent: "بھیج دیا",
+              done: "مکمل",
+              failed: "ناکام",
+            },
             show: "اس مشین کی اپڈیٹس دکھائیں",
             hide: "چھپائیں",
             nothing: "اس مشین پر کوئی زیرِ التوا اپڈیٹ نہیں۔",
@@ -4295,6 +4383,14 @@ const resources = {
           },
         },
         evidence: {
+          audit: {
+            allKinds: "سب",
+            show: "آپریشنز لاگ کھولیں",
+            hide: "لاگ چھپائیں",
+            intact: "چین محفوظ ہے — {{n}} اندراجات، کچھ حذف یا تبدیل نہیں ہوا۔",
+            broken: "چین اندراج {{seq}} پر ٹوٹی ہے — اس سے پہلے کچھ بدلا یا حذف ہوا۔",
+            empty: "ابھی کوئی اندراج نہیں۔",
+          },
           title: "ثبوتی پیکیج",
           subtitle: "قابلِ آڈٹ رپورٹ، لائسنسنگ اور کئی مقامات کا مجموعہ",
           license: {

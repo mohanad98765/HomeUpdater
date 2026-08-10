@@ -39,6 +39,15 @@ import { useLanguage } from "@/lib/language";
 //     ولا يُحدِّث نفسه. عميلٌ يدفع يجب أن يعرف هذا قبل أن يعتمد عليه.
 // ================================================================
 
+interface AgentCommand {
+  id: number;
+  kind: string;
+  status: string;
+  result: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+}
+
 interface ReportedItem {
   kind: string;
   item_id: string;
@@ -73,6 +82,20 @@ function RemoteUpdates({ agent }: { agent: Agent }) {
     enabled: open,
   });
 
+  // The queue was invisible: the endpoint existed, nothing rendered it, and the
+  // invalidation below pointed at a key no query registered. So the operator pressed
+  // "install", saw nothing, and was told by the test script to wait fifteen minutes and
+  // guess. It polls while anything is outstanding and stops when nothing is.
+  const commands = useQuery<{ commands: AgentCommand[] }>({
+    queryKey: ["agent-commands", agent.id],
+    queryFn: () => apiFetch<{ commands: AgentCommand[] }>(`/api/agents/${agent.id}/commands`),
+    enabled: open,
+    refetchInterval: (q) => {
+      const rows = (q.state.data as { commands: AgentCommand[] } | undefined)?.commands ?? [];
+      return rows.some((c) => c.status === "queued" || c.status === "sent") ? 10_000 : false;
+    },
+  });
+
   const send = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       apiFetch(`/api/agents/${agent.id}/command`, {
@@ -82,6 +105,7 @@ function RemoteUpdates({ agent }: { agent: Agent }) {
     onSuccess: () => {
       setPicked({});
       qc.invalidateQueries({ queryKey: ["agent-commands", agent.id] });
+      qc.invalidateQueries({ queryKey: ["agent-items", agent.id] });
     },
   });
 
@@ -157,6 +181,38 @@ function RemoteUpdates({ agent }: { agent: Agent }) {
           )}
           {send.isError && (
             <p className="text-xs text-danger">{(send.error as Error)?.message}</p>
+          )}
+
+          {!!commands.data?.commands.length && (
+            <div className="pt-2 border-t border-border">
+              <p className="text-[11px] font-bold text-fg-muted mb-1">
+                {t("pages.agents.remote.queueTitle")}
+              </p>
+              <ul className="space-y-1">
+                {commands.data.commands.slice(0, 8).map((c) => (
+                  <li key={c.id} className="text-[11px] flex items-start gap-2">
+                    <span
+                      className={cn(
+                        "px-1.5 rounded shrink-0",
+                        c.status === "done" && "bg-success/15 text-success",
+                        c.status === "failed" && "bg-danger/15 text-danger",
+                        (c.status === "queued" || c.status === "sent") &&
+                          "bg-warning/15 text-warning",
+                      )}
+                    >
+                      {t(`pages.agents.remote.state.${c.status}`, c.status)}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block">{c.kind}</span>
+                      {c.result && <span className="text-fg-subtle">{c.result}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {commands.data.commands.some(
+                (c) => c.status === "queued" || c.status === "sent",
+              ) && <p className="text-[11px] text-fg-subtle mt-1">{t("pages.agents.remote.waiting")}</p>}
+            </div>
           )}
         </div>
       )}

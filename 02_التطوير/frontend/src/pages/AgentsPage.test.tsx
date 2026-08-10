@@ -39,6 +39,7 @@ let confirmStatus: number;
 let calls: string[];
 let reportedItems: Record<string, unknown>;
 let commandBodies: Record<string, unknown>[];
+let agentCommands: Record<string, unknown>[];
 
 const PENDING: AgentRow = {
   id: "a1",
@@ -114,7 +115,12 @@ function router(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (u.includes("/items")) {
     return Promise.resolve(res(200, reportedItems));
   }
-  if (u.includes("/command")) {
+  // "/commands" contains "/command": checking the shorter one first swallowed the queue
+  // GET and recorded it as a command being issued.
+  if (u.includes("/commands")) {
+    return Promise.resolve(res(200, { commands: agentCommands }));
+  }
+  if (u.includes("/command") && method === "POST") {
     commandBodies.push(JSON.parse(String(init?.body ?? "{}")));
     return Promise.resolve(res(200, { id: 1, status: "queued" }));
   }
@@ -194,6 +200,7 @@ beforeEach(() => {
   calls = [];
   reportedItems = { updates: [], packages: [], reported_at: null, truncated: false };
   commandBodies = [];
+  agentCommands = [];
 });
 
 afterEach(() => {

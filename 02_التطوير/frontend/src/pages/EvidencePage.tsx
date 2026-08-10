@@ -15,6 +15,7 @@ import {
   Printer,
   AlertTriangle,
   Info,
+  FileText,
 } from "lucide-react";
 import { apiFetch, apiFetchText, cn, downloadText, type ApiError } from "@/lib/utils";
 import { useLanguage } from "@/lib/language";
@@ -71,6 +72,133 @@ interface Rollup {
     avg_coverage_percent: number;
   };
 }
+
+interface AuditEvent {
+  seq: number;
+  kind: string;
+  actor: string;
+  target: string;
+  outcome: string;
+  detail: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+/** The log the pack's headline claim rests on, opened.
+ *
+ * The chain had three endpoints and no screen: the page showed a green "chain intact"
+ * badge summarising a record nobody could read. Selling "a tamper-evident log" while
+ * offering no way to look at it asks the buyer to take the one claim on trust that the
+ * whole document exists to remove from trust. */
+function AuditTrail() {
+  const { t, i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState("");
+
+  const events = useQuery<{ events: AuditEvent[]; returned: number }>({
+    queryKey: ["audit-events", kind],
+    queryFn: () =>
+      apiFetch<{ events: AuditEvent[]; returned: number }>(
+        `/api/audit/events?limit=100${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`,
+      ),
+    enabled: open,
+  });
+  const verify = useQuery<{ ok: boolean; entries: number; broken_at: number | null; reason: string }>(
+    {
+      queryKey: ["audit-verify"],
+      queryFn: () => apiFetch("/api/audit/verify"),
+      enabled: open,
+    },
+  );
+
+  const kinds = [...new Set((events.data?.events ?? []).map((e) => e.kind))].sort();
+
+  return (
+    <div className="card mt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 text-sm font-bold"
+      >
+        <FileText className="w-4 h-4 text-primary" />
+        {open ? t("pages.evidence.audit.hide") : t("pages.evidence.audit.show")}
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          {verify.data && (
+            <p
+              className={cn(
+                "text-xs",
+                verify.data.ok ? "text-success" : "text-danger",
+              )}
+            >
+              {verify.data.ok
+                ? t("pages.evidence.audit.intact", { n: verify.data.entries })
+                : t("pages.evidence.audit.broken", { seq: verify.data.broken_at ?? "—" })}
+            </p>
+          )}
+
+          {kinds.length > 1 && (
+            <div className="flex gap-1 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setKind("")}
+                className={cn("text-[11px] px-2 py-0.5 rounded border", !kind && "bg-primary/10")}
+              >
+                {t("pages.evidence.audit.allKinds")}
+              </button>
+              {kinds.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setKind(k)}
+                  className={cn(
+                    "text-[11px] px-2 py-0.5 rounded border font-mono",
+                    kind === k && "bg-primary/10",
+                  )}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {events.isLoading && <p className="text-xs text-fg-muted">{t("common.loading")}</p>}
+          {events.data && !events.data.events.length && (
+            <p className="text-xs text-fg-muted">{t("pages.evidence.audit.empty")}</p>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <tbody>
+                {(events.data?.events ?? []).map((e) => (
+                  <tr key={e.seq} className="border-b border-border/60">
+                    <td className="py-1 pe-2 font-mono text-fg-subtle align-top">{e.seq}</td>
+                    <td className="py-1 pe-2 align-top whitespace-nowrap text-fg-subtle">
+                      {e.created_at ? new Date(e.created_at).toLocaleString(i18n.language) : "—"}
+                    </td>
+                    <td className="py-1 pe-2 align-top font-mono">{e.kind}</td>
+                    <td className="py-1 pe-2 align-top">{e.actor}</td>
+                    <td className="py-1 pe-2 align-top min-w-0 break-all">{e.target}</td>
+                    <td
+                      className={cn(
+                        "py-1 align-top",
+                        e.outcome === "ok" ? "text-success" : "text-warning",
+                      )}
+                    >
+                      {e.outcome}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export function EvidencePage({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
@@ -373,6 +501,8 @@ export function EvidencePage({ onBack }: { onBack: () => void }) {
                 </span>
               </div>
             )}
+
+            <AuditTrail />
 
             {/* الصدق في العرض: ماذا لا تُثبِته البصمة، وماذا تعني «لا نتائج» */}
             <div className="card flex items-start gap-2 text-xs border-info/30 bg-info/5">
